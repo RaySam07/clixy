@@ -40,3 +40,9 @@ jobs:
           grep -E "^E  " pytest.txt | head -30 | while IFS= read -r line; do
             echo "::warning title=pytest detail::${line}"
           done
+          tail -25 pytest.txt | while IFS= read -r line; do
+            echo "::warning title=pytest tail::${line}"
+          done
+          pip freeze | grep -i -E "^(pyqt6|sounddevice|numpy|pytest|keyring|faster-whisper|comtypes|pynput|mss)" | while IFS= read -r line; do
+            echo "::notice title=version::${line}"
+          done
