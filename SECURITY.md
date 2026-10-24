@@ -20,3 +20,6 @@ Clixy sees your screen and holds an API key, so security matters.
 Please don't open a public issue for a security problem. Use GitHub's
 [private vulnerability reporting](https://github.com/RaySam07/clixy/security/advisories/new)
 with steps to reproduce. You'll get a reply within a few days.
+
+If that link doesn't work for you, open an issue titled "Security contact
+needed", without any details, and we'll set up a private channel.

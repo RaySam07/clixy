@@ -19,10 +19,10 @@
 Stuck in an app, a spreadsheet, a maths problem or a video? Ask your buddy.</p>
 
 <!--
-  YOUR VIDEO GOES HERE.
-  On github.com, click the pencil to edit this README, then drag your .mp4
-  onto the empty line below. GitHub uploads it and pastes a link that plays
-  right here in the README. Keep it under 100 MB.
+  LAUNCH VIDEO GOES HERE.
+  On github.com, click the pencil to edit this README, then drag
+  docs/media/clixy-launch.mp4 (or any .mp4 under 100 MB) onto the empty line
+  below. GitHub uploads it and pastes a link that plays right here.
 -->
 
 <p align="center">
@@ -36,7 +36,7 @@ Stuck in an app, a spreadsheet, a maths problem or a video? Ask your buddy.</p>
 1. **Download** [`Clixy-Setup.exe`](https://github.com/RaySam07/clixy/releases/latest/download/Clixy-Setup.exe) and run it. No admin rights needed.
    Clixy is new and isn't code-signed yet, so you may see two warnings. If your browser asks whether to keep the download, choose **Keep** (in Edge: **⋯ → Keep → Show more → Keep anyway**). If Windows says *"Windows protected your PC"*, click **More info → Run anyway**. The installer is built in the open by [GitHub Actions](https://github.com/RaySam07/clixy/actions/workflows/release.yml) from this repo's code.
 2. **Drop in your API key.** Clixy asks for it on first launch: paste it into the box and it checks itself.
-   - **Recommended: Claude Haiku 5.5.** Get a key at [console.anthropic.com](https://console.anthropic.com/settings/keys). It's fast, points accurately and costs about **$0.0003 a question**, roughly 250,000 questions per $100.
+   - **Recommended: Claude Haiku 5.5.** Get a key at [console.anthropic.com](https://console.anthropic.com/settings/keys). It's fast, points accurately and costs **a fraction of a cent per question**. The notch shows the exact cost of every answer.
    - Also works: an OpenRouter key (`sk-or-…`), OpenAI, Google Gemini, or a local model through Ollama (Settings › Advanced).
 3. **Say hi to your buddies**, pick one, pick your shortcut, and you're done.
 
@@ -144,6 +144,7 @@ Built with Python and PyQt6. Voice on your PC with faster-whisper and Kokoro. Sc
 
 ## Roadmap
 
+- [ ] MCP access: plug your buddy into your own tools
 - [ ] Code-signed installer, so there's no SmartScreen warning
 - [ ] More buddies, and a way to draw your own
 - [ ] Graphs and charts: mark a point, read a slope
