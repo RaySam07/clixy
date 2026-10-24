@@ -24,4 +24,4 @@ soundfile>=0.13.0          # Audio I/O helper for the local providers
 
 # Dev / test
 pytest>=8.3.0              # Unit tests
-pytest-mock>=3.14.0        # Mock Anthropic client, audio device, screen capture in tests
+pytest-mock>=3.17.0        # Mock Anthropic client, audio device, screen capture in tests
