@@ -161,6 +161,12 @@ Ideas and pull requests welcome: see [CONTRIBUTING.md](CONTRIBUTING.md).
   <a href="https://star-history.com/#RaySam07/clixy&Date"><img src="https://api.star-history.com/svg?repos=RaySam07/clixy&type=Date" width="560" alt="Star history" /></a>
 </p>
 
+## Acknowledgements
+
+Inspired by [Clicky](https://github.com/farzaa/clicky) by Farza, the macOS original that showed how good an AI buddy that points at your screen can be. Clixy also builds on other open-source work, credited with its licenses in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
 ## License
 
-[MIT](LICENSE) © 2026 Rayan Sameer. Clixy builds on earlier open-source work, credited in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+[MIT](LICENSE) © 2026 Rayan Sameer.
+
+<p align="center">Made by <a href="https://github.com/RaySam07"><b>Rayan Sameer</b></a> 🔥</p>
