@@ -64,6 +64,24 @@ Settings > General > Shortcut by pressing the keys you want.
     "got it" and fades. The rest fade a few seconds after Clixy finishes
     talking, and all vanish when you ask the next question.
 
+## If your buddy can't hear you
+
+Open Settings > General and talk: the **Microphone** row shows a live meter
+and says what's wrong.
+
+- *Silent: it's muted, or Windows is blocking it.* Click **Open Windows
+  microphone settings** and turn on "Microphone access" and "Let desktop
+  apps access your microphone". Also check the laptop's mic-mute key.
+- *No microphone found.* Plug one in; Clixy picks it up on your next press.
+- Wrong mic (say, a headset you're not wearing)? Pick the right one in the
+  list. It switches at once.
+
+Clixy reopens the microphone by itself after sleep or when a headset comes
+or goes, and the buddy tells you in the notch when it can't hear anything.
+The first question with on-device listening downloads its model once
+(about 150 MB); the notch says so while it does. Settings shows which
+version you're running under your buddy.
+
 ## Private by default
 
 - Keys stay on this PC, encrypted by Windows Credential Manager.

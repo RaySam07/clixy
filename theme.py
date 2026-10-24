@@ -914,6 +914,7 @@ QPushButton#nav {{ text-align: left; background: transparent; border: none; bord
     padding: 9px 12px; font-family: "{light}"; font-size: 16px; color: #9c9cab; }}
 QPushButton#nav:hover {{ color: #ffffff; }}
 QPushButton#nav:checked {{ background: {butter}; color: {ink}; }}
+QLabel#railVersion {{ font-family: "{regular}"; font-size: 10.5px; color: #5c5c6b; }}
 QLabel#railBuddy {{ font-family: "{regular}"; font-size: 12px; color: #9c9cab; padding-bottom: 4px; }}
 QWidget#pane {{ background: {paper}; }}
 QScrollArea#pageScroll, QWidget#page {{ background: transparent; border: none; }}

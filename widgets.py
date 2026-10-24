@@ -465,6 +465,38 @@ class ConnectionCard(QFrame):
         self.cost.setVisible(bool(cost))
 
 
+# --- Microphone meter ----------------------------------------------------------------
+
+class MicMeter(QWidget):
+    """Nine little bars that rise with your voice, like the notch's."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setFixedSize(58, 24)
+        self._level = 0.0
+        self._t0 = time.monotonic()
+
+    def set_level(self, level: float) -> None:
+        level = max(0.0, min(1.0, level))
+        if abs(level - self._level) > 0.005 or level > 0:
+            self._level = level
+            self.update()
+
+    def paintEvent(self, _event) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        p.setPen(Qt.PenStyle.NoPen)
+        t = time.monotonic() - self._t0
+        n, gap = 9, 3.0
+        w = (self.width() - gap * (n - 1)) / n
+        mid = (n - 1) / 2
+        for i in range(n):
+            weight = 1 - abs(i - mid) / (mid + 1)
+            h = 3 + (self.height() - 3) * self._level * weight * (0.75 + 0.25 * math.sin(t * 11 + i))
+            p.setBrush(theme.INK if self._level > 0.03 else QColor(217, 212, 198))
+            p.drawRoundedRect(QRectF(i * (w + gap), (self.height() - h) / 2, w, h), w / 2, w / 2)
+
+
 # --- Look preview --------------------------------------------------------------------
 
 class LookPreview(QWidget):

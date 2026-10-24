@@ -52,7 +52,20 @@ from PyQt6.QtWidgets import (
 )
 
 import theme
-from widgets import BuddyView, ConnectionCard, KeyCaps, LookPreview, PasteZone, Segmented, Toggle, buddy_grid, mark_label
+import mic
+from version import NAME, VERSION
+from widgets import (
+    BuddyView,
+    ConnectionCard,
+    KeyCaps,
+    LookPreview,
+    MicMeter,
+    PasteZone,
+    Segmented,
+    Toggle,
+    buddy_grid,
+    mark_label,
+)
 
 from config import KEYRING_SERVICE, OLLAMA_HOST
 
@@ -317,6 +330,7 @@ def _row(title: str, subtitle: str, *controls: QWidget) -> QWidget:
         sub.setObjectName("rowSub")
         sub.setWordWrap(True)
         text.addWidget(sub)
+        row.sub = sub  # so a row can update its own line
     h.addLayout(text, stretch=1)
     for control in controls:
         h.addWidget(control, alignment=Qt.AlignmentFlag.AlignVCenter)
@@ -483,6 +497,10 @@ class SettingsDialog(QDialog):
         self._rail_name.setObjectName("railBuddy")
         self._rail_name.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         v.addWidget(self._rail_name)
+        version = QLabel(f"{NAME} {VERSION}")
+        version.setObjectName("railVersion")
+        version.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        v.addWidget(version)
         self._refresh_rail_buddy()
         return rail
 
@@ -553,17 +571,84 @@ class SettingsDialog(QDialog):
         self._draw_checkbox = Toggle()
         self._draw_checkbox.setChecked(resolve_setting("ANNOTATION_MODE", "off") == "on")
 
+        # Microphone: which one, a live meter, and what's wrong if it's silent.
+        self._mic_box = QComboBox()
+        self._mic_box.setMinimumWidth(190)
+        self._mic_box.setMaximumWidth(240)
+        self._mic_box.addItem("Windows default", "")
+        for name in mic.input_devices():
+            self._mic_box.addItem(name, name)
+        chosen = resolve_setting("MIC_DEVICE", default="")
+        if chosen and self._mic_box.findData(chosen) < 0:
+            self._mic_box.addItem(chosen, chosen)
+        self._mic_box.setCurrentIndex(max(0, self._mic_box.findData(chosen)))
+        self._mic_box.currentIndexChanged.connect(self._on_mic_changed)
+        self._mic_meter = MicMeter()
+        self._mic_row = _row("Microphone", "Say something to test it.", self._mic_box, self._mic_meter)
+        self._mic_fix = QPushButton("Open Windows microphone settings")
+        self._mic_fix.setObjectName("quiet")
+        self._mic_fix.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._mic_fix.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(mic.PRIVACY_SETTINGS_URI)))
+        self._mic_fix.setVisible(False)
+        self._test_mic = mic.Microphone(lambda *_a: None, device_name=chosen)
+        self._test_mic.start()
+        self._heard_at = 0.0
+        self._mic_timer = QTimer(self)
+        self._mic_timer.timeout.connect(self._update_mic)
+        self._mic_timer.start(60)
+
         v.addWidget(_rows(
             _row("Shortcut", "Hold to talk, let go to ask.", self._caps, change),
             _row("Voice", "Hearing you and talking back.", self._voice),
-            _row("Draw on screen", "Circle and label what your buddy points at.", self._draw_checkbox),
+            self._mic_row,
+            _row("Draw on screen", "Your buddy draws on the screen to show you.", self._draw_checkbox),
         ))
+        hints = QHBoxLayout()
         self._voice_hint = QLabel("Cloud voice uses one Cartesia key for both. Add it in Advanced.")
         self._voice_hint.setObjectName("rowSub")
         self._voice_hint.setVisible(False)
-        v.addWidget(self._voice_hint)
+        hints.addWidget(self._voice_hint)
+        hints.addWidget(self._mic_fix)
+        hints.addStretch(1)
+        v.addLayout(hints)
         v.addStretch(1)
         return page
+
+    def _on_mic_changed(self, _index: int) -> None:
+        self._test_mic.set_device(self._mic_box.currentData() or "")
+        self._heard_at = 0.0
+
+    def _update_mic(self) -> None:
+        """Move the meter and say plainly whether the microphone hears you."""
+        import time as _time
+        test = self._test_mic
+        level = test.level
+        test.level *= 0.85  # decays between chunks so the meter falls back
+        self._mic_meter.set_level(level)
+        now = _time.monotonic()
+        if level > 0.05:
+            self._heard_at = now
+        test.check_silence()
+        blocked = test.problem == mic.BLOCKED
+        if test.problem == mic.MISSING:
+            text = "No microphone found. Plug one in."
+        elif test.problem == mic.FAILED:
+            text = "This microphone won't open. Pick another one."
+        elif blocked:
+            text = "Silent: it's muted, or Windows is blocking it."
+        elif now - self._heard_at < 2.0:
+            text = f"Hearing you on {test.device_label or 'your microphone'}."
+        else:
+            text = "Say something to test it."
+        if self._mic_row.sub.text() != text:
+            self._mic_row.sub.setText(text)
+        self._mic_fix.setVisible(blocked)
+
+    def done(self, result: int) -> None:
+        """Closing the window releases the test microphone."""
+        self._mic_timer.stop()
+        self._test_mic.close()
+        super().done(result)
 
     def _connection(self) -> tuple[str, str, str, bool]:
         """(model as rich text, key, cost, local) for the connection card."""
@@ -1186,6 +1271,7 @@ class SettingsDialog(QDialog):
         if self._draw_checkbox is not None:
             self._store("ANNOTATION_MODE", "on" if self._draw_checkbox.isChecked() else "off")
         self._store("HOTKEY", self._hotkey)
+        self._store("MIC_DEVICE", self._mic_box.currentData() or "")
         self._store("EDGE_GLOW", "on" if self._glow.isChecked() else "off")
         self._store("ISLAND_SIDE", self._side.value() or "right")
         self._store("KEEP_HISTORY", "on" if self._keep_history.isChecked() else "off")

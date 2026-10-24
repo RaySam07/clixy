@@ -120,6 +120,44 @@ class STT(ABC):
         ...
 
 
+    # -- microphone health (shared) -------------------------------------------
+
+    def mic_problem(self) -> str | None:
+        """What's wrong with the microphone, if anything: mic.BLOCKED
+        (silent: muted or blocked by Windows), MISSING or FAILED."""
+        mic = getattr(self, "_audio_stream", None)
+        check = getattr(mic, "check_silence", None)
+        if callable(check):
+            check()
+        problem = getattr(mic, "problem", None)
+        return problem if isinstance(problem, str) else None
+
+    def set_mic_device(self, name: str | None) -> None:
+        """Switch to the named microphone ('' for Windows' default)."""
+        mic = getattr(self, "_audio_stream", None)
+        switch = getattr(mic, "set_device", None)
+        if callable(switch):
+            switch(name)
+
+    def _ensure_mic(self) -> None:
+        """Reopen a microphone that died since the last question."""
+        ensure = getattr(getattr(self, "_audio_stream", None), "ensure_alive", None)
+        if callable(ensure):
+            ensure()
+
+
+class ListeningUnavailable(RuntimeError):
+    """On-device listening can't run; the message says why, in plain words."""
+
+
+def _microphone(callback, sample_rate: int, chunk_frames: int):
+    """The self-healing microphone (mic.py) on the device picked in Settings."""
+    from config import resolve_setting
+    from mic import Microphone
+    return Microphone(callback, samplerate=sample_rate, blocksize=chunk_frames,
+                      device_name=resolve_setting("MIC_DEVICE", default=""))
+
+
 # --- Concrete AssemblyAI streaming implementation ---------------------------
 
 class _StreamingSTT(STT):
@@ -246,17 +284,9 @@ class _StreamingSTT(STT):
     # -- mic ------------------------------------------------------------------
 
     def _default_audio_stream_factory(self, callback):
-        """``sounddevice.RawInputStream``, imported lazily so the module loads
-        on machines without portaudio."""
-        import sounddevice as sd
-
-        return sd.RawInputStream(
-            samplerate=self._sample_rate,
-            blocksize=self._chunk_frames,
-            dtype="int16",
-            channels=1,
-            callback=callback,
-        )
+        """The self-healing microphone (mic.py); sounddevice is imported
+        lazily so the module loads on machines without portaudio."""
+        return _microphone(callback, self._sample_rate, self._chunk_frames)
 
     def connect(self, warm: bool = True) -> None:
         """Open the microphone and, with ``warm``, start a session in the
@@ -272,7 +302,9 @@ class _StreamingSTT(STT):
         try:
             self._audio_stream = self._audio_stream_factory(self._on_audio_chunk)
             self._audio_stream.start()
-            print(f"[stt] mic opened in {(_t.time()-_t0)*1000:.0f}ms", flush=True)
+            problem = self.mic_problem()
+            print(f"[stt] mic opened in {(_t.time()-_t0)*1000:.0f}ms"
+                  + (f" (problem: {problem})" if problem else ""), flush=True)
         except Exception as exc:
             raise RuntimeError(
                 "Microphone input stream failed to open "
@@ -420,6 +452,7 @@ class _StreamingSTT(STT):
         """Begin capturing the question. Called on hotkey press."""
         if not self._connected:
             self.connect()
+        self._ensure_mic()
         self._cancel_idle_close()
         unfinished = None
         with self._lock:
@@ -986,6 +1019,9 @@ class _CartesiaSession:
 
 # --- FasterWhisperSTT (local offline provider) ------------------------------
 
+_MODEL_WAIT_S = 300.0
+"""How long a question waits for the speech model on its first download."""
+
 class FasterWhisperSTT(STT):
     """Local offline STT via faster-whisper (CTranslate2 Whisper).
 
@@ -1028,6 +1064,8 @@ class FasterWhisperSTT(STT):
         self._tts_grace_until: float = 0.0
         self._chunk_count = 0
         self._latest_partial = ""
+        self._model_ready = threading.Event()
+        self._model_error: Exception | None = None
 
     def _default_model_factory(self):
         from faster_whisper import WhisperModel  # lazy import
@@ -1036,25 +1074,33 @@ class FasterWhisperSTT(STT):
         )
 
     def _default_audio_stream_factory(self, callback):
-        import sounddevice as sd  # lazy import
-        return sd.RawInputStream(
-            samplerate=self._sample_rate,
-            blocksize=self._chunk_frames,
-            dtype="int16",
-            channels=1,
-            callback=callback,
-        )
+        return _microphone(callback, self._sample_rate, self._chunk_frames)
 
     def connect(self) -> None:
-        """Load the model + open the mic once. Idempotent."""
+        """Open the mic, then load the model in the background (the first
+        time it downloads, about 150 MB), so Clicky starts at once and a
+        slow or failed download never stops it hearing you. Idempotent."""
         if self._connected:
             return
-        self._model = (self._model_factory or self._default_model_factory)()
         factory = self._audio_stream_factory or self._default_audio_stream_factory
         self._audio_stream = factory(self._on_audio)
         if hasattr(self._audio_stream, "start"):
             self._audio_stream.start()
         self._connected = True
+        threading.Thread(target=self._load_model, daemon=True, name="whisper-load").start()
+
+    def _load_model(self) -> None:
+        try:
+            self._model = (self._model_factory or self._default_model_factory)()
+        except Exception as exc:
+            self._model_error = exc
+        finally:
+            self._model_ready.set()
+
+    @property
+    def loading(self) -> bool:
+        """The speech model is still loading (or downloading, the first time)."""
+        return self._connected and not self._model_ready.is_set()
 
     def _on_audio(self, indata, frames, time_info, status) -> None:
         """Mic callback: emit RMS level always; buffer PCM only while recording
@@ -1073,15 +1119,28 @@ class FasterWhisperSTT(STT):
             self._chunk_count += 1
 
     def start_recording(self) -> None:
+        if not self._connected:
+            self.connect()
+        self._ensure_mic()
         self._buffer = bytearray()
         self._chunk_count = 0
         self._recording = True
 
     def stop_recording(self) -> str:
-        """Stop buffering, transcribe the buffer, return the text."""
+        """Stop buffering, transcribe the buffer, return the text. Waits for
+        the model if it's still loading."""
         self._recording = False
         if not self._buffer:
             return ""
+        if not self._model_ready.wait(timeout=_MODEL_WAIT_S):
+            raise ListeningUnavailable(
+                "On-device listening is still downloading (one time, about 150 MB). Try again in a minute."
+            )
+        if self._model_error is not None:
+            raise ListeningUnavailable(
+                "On-device listening couldn't load its model. Check your internet for the one-time "
+                "download, or set Voice to Cloud in Clixy's Settings."
+            ) from self._model_error
         import numpy as np
         audio = (
             np.frombuffer(bytes(self._buffer), dtype=np.int16).astype(np.float32)

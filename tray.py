@@ -82,7 +82,8 @@ class ClickyTray(QObject):
         self._icon = QSystemTrayIcon(parent=self)
         from hotkey import DEFAULT_COMBO, describe
         from config import resolve_setting
-        self._icon.setToolTip(f"Clicky: hold {describe(resolve_setting('HOTKEY', DEFAULT_COMBO))} and ask")
+        from version import NAME, VERSION
+        self._icon.setToolTip(f"{NAME} {VERSION}: hold {describe(resolve_setting('HOTKEY', DEFAULT_COMBO))} and ask")
         self._icon.setIcon(theme.avatar_icon(theme.current_avatar_id()))
 
         self._menu = QMenu()

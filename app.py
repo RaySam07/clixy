@@ -67,6 +67,7 @@ from config import (
 # resolve_api_key) instead of imported, so a key saved in the first-launch
 # dialog is used in the same session. Module constants freeze at import.
 from hotkey import DEFAULT_COMBO, PushToTalkHotkey, describe as describe_hotkey, parse_combo
+import mic
 from memory import MemoryStore
 from overlay import OverlayController
 from stt import AssemblyAIStreamingSTT, create_stt_client
@@ -355,6 +356,9 @@ def _friendly_error(stage: str, exc: BaseException) -> str:
     while e is not None and e not in chain:
         chain.append(e)
         e = e.__cause__ or e.__context__
+    from stt import ListeningUnavailable
+    if isinstance(exc, ListeningUnavailable):
+        return str(exc)  # already in plain words
     # SDK errors carry status_code; a rejected WebSocket handshake carries it on .response.
     codes = (getattr(x, "status_code", None) or getattr(getattr(x, "response", None), "status_code", None) for x in chain)
     status = next((c for c in codes if isinstance(c, int)), None)
@@ -494,6 +498,7 @@ class ClickyApp(QObject):
         self._stt = stt_client or AssemblyAIStreamingSTT(
             api_key=ASSEMBLYAI_API_KEY
         )
+        self._mic_device = resolve_setting("MIC_DEVICE", default="")  # what the mic opened with
         self._tts = tts_client or CartesiaSonicTTS(api_key=CARTESIA_API_KEY)
         self._tts.on_error(lambda exc: self._notify("voice", exc))
         self._notice_times: dict[str, float] = {}  # message -> when it was last shown
@@ -563,12 +568,24 @@ class ClickyApp(QObject):
         self._hotkey.start()
         _log(f"Listening for {describe_hotkey(self._hotkey.combo)}...")
 
+    def _mic_problem(self) -> str | None:
+        check = getattr(self._stt, "mic_problem", None)
+        try:
+            problem = check() if callable(check) else None
+        except Exception:
+            return None
+        return problem if isinstance(problem, str) else None
+
     def apply_live_settings(self) -> None:
         """Apply what Settings can change without a restart: the shortcut,
         drawing on screen, the edge glow and the island's side. (The buddy
         switches by itself.)"""
         global ANNOTATION_MODE
         ANNOTATION_MODE = resolve_setting("ANNOTATION_MODE", default="off").lower()
+        device = resolve_setting("MIC_DEVICE", default="")
+        if device != self._mic_device:
+            self._stt.set_mic_device(device)
+        self._mic_device = device
         combo = _hotkey_combo()
         if self._hotkey is not None and parse_combo(combo) != self._hotkey.tokens:
             self._hotkey.stop()
@@ -783,6 +800,11 @@ class ClickyApp(QObject):
             _log(f"ERROR: STT start failed: {exc}")
             self._notify("speech-to-text", exc)
             return
+        # No microphone at all: say so now, not after you've talked to nothing.
+        problem = self._mic_problem()
+        if problem in (mic.MISSING, mic.FAILED):
+            _log(f"MIC: {problem}")
+            self.sig_island_note.emit(mic.problem_message(problem))
 
         # Open the LLM and TTS connections while the user is still talking, so
         # the requests on release skip the TCP and TLS handshake.
@@ -1026,6 +1048,8 @@ class ClickyApp(QObject):
             if cancel.is_set():
                 return
 
+            if getattr(self._stt, "loading", False) is True:
+                self.sig_island_note.emit("Getting my ears ready: a one-time download, about 150 MB.")
             dbg.log("STT: calling stop_recording()...")
             transcript = self._stt.stop_recording()
             dbg.log(f"STT: {self._stt._chunk_count} audio chunks captured")
@@ -1036,7 +1060,9 @@ class ClickyApp(QObject):
                 dbg.log("NO SPEECH DETECTED, skipping interaction")
                 _log("No speech detected, skipping.")
                 keys = describe_hotkey(self._hotkey.combo) if self._hotkey is not None else "the keys"
-                self.sig_island_note.emit(f"I didn't catch that. Hold {keys} and try again?")
+                problem = self._mic_problem()
+                dbg.log(f"MIC: problem={problem}")
+                self.sig_island_note.emit(mic.problem_message(problem, keys))
                 return
             self.sig_island_transcript.emit(transcript)
 
