@@ -1182,9 +1182,9 @@ class SettingsDialog(QDialog):
                 if model_id:
                     self._store(provider.model_setting, model_id, restart=True)
 
-        # The draw-on-screen prompt is chosen at startup; the rest apply live.
+        # These all apply at once (app.apply_live_settings).
         if self._draw_checkbox is not None:
-            self._store("ANNOTATION_MODE", "on" if self._draw_checkbox.isChecked() else "off", restart=True)
+            self._store("ANNOTATION_MODE", "on" if self._draw_checkbox.isChecked() else "off")
         self._store("HOTKEY", self._hotkey)
         self._store("EDGE_GLOW", "on" if self._glow.isChecked() else "off")
         self._store("ISLAND_SIDE", self._side.value() or "right")
@@ -1200,7 +1200,7 @@ class SettingsDialog(QDialog):
         keyring.set_password(KEYRING_SERVICE, name, value)
 
     def needs_restart(self) -> bool:
-        """True after Save changed a provider, key, model or drawing mode."""
+        """True after Save changed a provider, key or model."""
         return self._needs_restart
 
     def reject(self) -> None:

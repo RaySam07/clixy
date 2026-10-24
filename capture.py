@@ -91,6 +91,8 @@ class LabeledCapture:
     target_height: int
     scale_x: float
     scale_y: float
+    full: Image.Image | None = None
+    """The cursor screen at full resolution, for close-ups (aim.py)."""
 
 
 # --- Pure functions ----------------------------------------------------------
@@ -356,6 +358,7 @@ def capture_all_screens() -> list[LabeledCapture]:
             target_height=target_h,
             scale_x=scale_x,
             scale_y=scale_y,
+            full=raw_img if is_cursor else None,
         ))
 
     results.sort(key=lambda c: (not c.is_cursor_screen,))

@@ -540,29 +540,3 @@ class TestAnnotationsToLocal:
         assert annotations_to_local([], screen) == []
 
 
-class TestCircleLabelPlacement:
-    """A circle's label sits centred above it, so labels on circles side by
-    side in one line of text never run over each other."""
-
-    def test_a_label_never_covers_the_next_circle_or_its_label(self):
-        from overlay import _circle_label_origin
-        width, ascent = 120, 14  # "should be minus" in 12pt bold
-        def box(x, y):  # label baseline origin -> (left, top, right, bottom)
-            return (x, y - ascent, x + width, y)
-        def hits(a, b):
-            return not (a[2] <= b[0] or b[2] <= a[0] or a[3] <= b[1] or b[3] <= a[1])
-        label_a = box(*_circle_label_origin(435, 507, 16, width, ascent))
-        label_b = box(*_circle_label_origin(591, 509, 16, width, ascent))
-        circle_b = (591 - 16, 509 - 16, 591 + 16, 509 + 16)
-        assert not hits(label_a, circle_b)
-        assert not hits(label_a, label_b)
-
-    def test_label_is_centred_above_the_circle(self):
-        from overlay import _circle_label_origin
-        x, y = _circle_label_origin(400, 300, 20, 100, 14)
-        assert x == 350 and y < 300 - 20
-
-    def test_label_goes_below_when_there_is_no_room_above(self):
-        from overlay import _circle_label_origin
-        x, y = _circle_label_origin(400, 25, 20, 100, 14)
-        assert y - 14 > 25 + 20

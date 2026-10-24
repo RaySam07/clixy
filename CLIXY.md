@@ -48,6 +48,21 @@ Settings > General > Shortcut by pressing the keys you want.
   at once; only a new AI or voice provider needs a restart.
 - **Ctrl + Win** instead of Ctrl + Alt + Space (which Luma uses). Clicky
   keeps the Start menu from opening when you let go.
+- **Your buddy draws** (Settings > General > Draw on screen). It flies over
+  and traces each mark with its tip: a snug loop around a button, a
+  hand-drawn box around a chart, a highlighter over text, an underline or
+  an arrow. Several marks get step numbers.
+  - *Precise:* after answering, Clixy looks again at a close-up around
+    each mark and asks for its exact box, and on Windows snaps buttons and
+    menus to their real edges. A mark it can't find isn't drawn.
+  - *Concise:* at most three marks, no giant circles, nothing that covers
+    half the screen or repeats another mark.
+  - *Readable labels:* each label tries the spots around its mark and picks
+    the one clear of text, other marks, the screen edge and the notch, with
+    a thin line back to its mark when it has to sit further away.
+  - *Interactive:* move your mouse onto a marked thing and that mark says
+    "got it" and fades. The rest fade a few seconds after Clixy finishes
+    talking, and all vanish when you ask the next question.
 
 ## Private by default
 
@@ -64,8 +79,9 @@ Settings > General > Shortcut by pressing the keys you want.
 ## Cost
 
 Claude Haiku 5.5: about $0.0003 a question (screenshot plus a short spoken
-answer), so roughly 250,000 questions per $100. The notch shows the real
-cost of each answer. An OpenRouter key (`sk-or-`) works too.
+answer), so roughly 250,000 questions per $100. With drawing on, each mark's
+close-up look adds about $0.0001-0.0002. The notch shows what each answer
+cost (not counting the close-ups). An OpenRouter key (`sk-or-`) works too.
 
 ## Develop
 

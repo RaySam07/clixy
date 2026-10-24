@@ -48,7 +48,7 @@ from capture import (
     unscale_claude_coords,
 )
 from config import (
-    ANNOTATION_MODE,
+    ANNOTATION_MODE as _ANNOTATION_MODE_AT_START,
     ASSEMBLYAI_API_KEY,
     CARTESIA_API_KEY,
     DEFAULT_STT_PROVIDER,
@@ -71,6 +71,10 @@ from memory import MemoryStore
 from overlay import OverlayController
 from stt import AssemblyAIStreamingSTT, create_stt_client
 from tts import CartesiaSonicTTS
+
+ANNOTATION_MODE: str = _ANNOTATION_MODE_AT_START
+"""Draw on screen, "on" or "off". Read once here and refreshed when
+Settings are saved (ClickyApp.apply_live_settings), never per question."""
 
 
 # --- Constants + sentence splitter --------------------------------------------
@@ -142,12 +146,14 @@ def _drawing_anchor(annotations: list) -> tuple[int, int] | None:
     """Where the cursor lands when a draw-mode answer has shapes but no
     [POINT]: the first shape, in screenshot coords, placed so the cursor does
     not cover what the shape marks. A text label alone is not a target."""
-    from annotations import Arrow, Circle, Underline
+    from annotations import Arrow, Box, Circle, Highlight, Underline
 
     for ann in annotations:
         if isinstance(ann, Circle):
             edge = math.ceil(ann.r * 0.7071)  # 45 degrees: on the circle's lower-right edge
             return (ann.x + edge, ann.y + edge)
+        if isinstance(ann, (Box, Highlight)):
+            return (ann.x2, ann.y2)  # the lower-right corner, off the element
         if isinstance(ann, Arrow):
             return (ann.x2, ann.y2)
         if isinstance(ann, Underline):
@@ -165,7 +171,7 @@ def _annotations_to_physical(annotations: list, cursor_capture) -> list:
     Lengths (circle radius, underline width) only scale by scale_x (they're
     sizes, not positions: no origin, no clamp). Returns NEW annotation objects.
     """
-    from annotations import Arrow, Circle, Underline, Label
+    from annotations import Arrow, Box, Circle, Highlight, Underline, Label
 
     if not annotations:
         return []
@@ -195,10 +201,14 @@ def _annotations_to_physical(annotations: list, cursor_capture) -> list:
             out.append(Arrow(x1, y1, x2, y2))
         elif isinstance(a, Underline):
             x, y = pt(a.x, a.y)
-            out.append(Underline(x, y, int(a.w * cap.scale_x)))
+            out.append(Underline(x, y, int(a.w * cap.scale_x), a.label))
         elif isinstance(a, Label):
             x, y = pt(a.x, a.y)
             out.append(Label(x, y, a.text))
+        elif isinstance(a, (Box, Highlight)):
+            x1, y1 = pt(a.x1, a.y1)
+            x2, y2 = pt(a.x2, a.y2)
+            out.append((Box if isinstance(a, Box) else Highlight)(x1, y1, x2, y2, a.label))
     return out
 
 
@@ -429,7 +439,7 @@ class ClickyApp(QObject):
     sig_hide_spinner = pyqtSignal()
     # Draw-on-screen teaching annotations. Carries a list of annotation
     # dataclasses (PHYSICAL coords) + the target monitor dict.
-    sig_show_annotations = pyqtSignal(list, dict)
+    sig_show_annotations = pyqtSignal(list, dict, object)
     # Clear all teaching shapes (fired at the start of each press so stale
     # annotations never survive a no-speech / cancelled / errored turn).
     sig_clear_annotations = pyqtSignal()
@@ -555,7 +565,10 @@ class ClickyApp(QObject):
 
     def apply_live_settings(self) -> None:
         """Apply what Settings can change without a restart: the shortcut,
-        the edge glow and the island's side. (The buddy switches by itself.)"""
+        drawing on screen, the edge glow and the island's side. (The buddy
+        switches by itself.)"""
+        global ANNOTATION_MODE
+        ANNOTATION_MODE = resolve_setting("ANNOTATION_MODE", default="off").lower()
         combo = _hotkey_combo()
         if self._hotkey is not None and parse_combo(combo) != self._hotkey.tokens:
             self._hotkey.stop()
@@ -629,7 +642,7 @@ class ClickyApp(QObject):
                     label, cap, self._realtime_vision
                 )
                 if shapes:
-                    self.sig_show_annotations.emit(shapes, cap.monitor)
+                    self.sig_show_annotations.emit(shapes, cap.monitor, None)
                     _log(f"REALTIME: drew {len(shapes)} shapes (label={label!r})")
                     return
             phys = self._realtime_locate_point(label, cap, self._realtime_vision)
@@ -1211,17 +1224,6 @@ class ClickyApp(QObject):
                 # the tail flush (coords never reach TTS even if the coordinate
                 # transform below fails). Only the physical transform is guarded.
                 spoken_text, _anns = parse_annotations(result.spoken_text)
-                if _anns:
-                    try:
-                        phys_annotations = _annotations_to_physical(
-                            _anns, cursor_capture
-                        )
-                        dbg.log(
-                            f"ANNOTATIONS: {len(_anns)} shapes parsed -> "
-                            f"{len(phys_annotations)} physical"
-                        )
-                    except Exception as exc:  # never break the pipeline
-                        dbg.log(f"ANNOTATIONS: transform skipped: {exc}")
 
             # Flush the tail (everything in spoken_text that hasn't yet been
             # sent to TTS). Uses the tag-stripped spoken_text so the
@@ -1233,6 +1235,27 @@ class ClickyApp(QObject):
                     self._tts.speak_sentence(tail)
                     self.sig_island_say.emit(tail)
 
+            if cancel.is_set():
+                return
+
+            # Aim the marks while the answer is being spoken: a close-up look
+            # per mark for its exact box (aim.py), then on Windows a snap to
+            # the real control's edges (snap.py). Never breaks the pipeline.
+            marks_busy = None
+            if _anns:
+                try:
+                    import aim
+                    _anns = aim.aim(self._ai, cursor_capture, _anns, question=transcript, dbg=dbg)
+                    if cancel.is_set():
+                        return
+                    phys_annotations = _annotations_to_physical(_anns, cursor_capture)
+                    import snap
+                    phys_annotations = snap.refine(phys_annotations, cursor_capture.monitor, dbg=dbg)
+                    marks_busy = aim.busy_map(cursor_capture.image)
+                    dbg.log(f"ANNOTATIONS: {len(phys_annotations)} marks to draw")
+                except Exception as exc:  # never break the pipeline
+                    dbg.log(f"ANNOTATIONS: skipped: {type(exc).__name__}: {exc}")
+                    phys_annotations = []
             if cancel.is_set():
                 return
 
@@ -1277,13 +1300,18 @@ class ClickyApp(QObject):
             if cancel.is_set():
                 return
 
-            # Draw mode often answers with shapes only; the cursor still flies
-            # to the first one, so Clicky points in both modes.
+            # Draw mode often answers with shapes only. When there are marks,
+            # the buddy flies over and draws them itself (show_annotations);
+            # the anchor is still what memory records as where it pointed.
             draw_anchor = (
                 _drawing_anchor(_anns) if annotation_mode and not result.coordinate else None
             )
+            buddy_draws = annotation_mode and bool(phys_annotations)
 
-            if result.coordinate:
+            if buddy_draws:
+                dbg.log(f"COORDS: the buddy draws {len(phys_annotations)} marks")
+                self.sig_hide_spinner.emit()
+            elif result.coordinate:
                 x_claude, y_claude = result.coordinate
                 screen_num = result.screen_number
 
@@ -1362,7 +1390,7 @@ class ClickyApp(QObject):
                 return
             if annotation_mode:
                 self.sig_show_annotations.emit(
-                    phys_annotations, cursor_capture.monitor
+                    phys_annotations, cursor_capture.monitor, marks_busy
                 )
 
             pointer_targets = []
@@ -1485,9 +1513,9 @@ class ClickyApp(QObject):
         if self._overlay:
             self._overlay.hide_spinner()
 
-    def _on_show_annotations(self, annotations: list, monitor: dict) -> None:
+    def _on_show_annotations(self, annotations: list, monitor: dict, busy=None) -> None:
         if self._overlay:
-            self._overlay.show_annotations(annotations, monitor)
+            self._overlay.show_annotations(annotations, monitor, busy=busy)
 
     def _on_clear_annotations(self) -> None:
         if self._overlay:

@@ -8,9 +8,11 @@ Claude (natively accurate at coordinates) and GPT-4o (selectable) both emit
 the same grammar.
 
 Grammar (coords are integer screenshot pixels, origin top-left):
-    [ARROW:x1,y1->x2,y2]    arrow from (x1,y1) to (x2,y2)
+    [BOX:x1,y1,x2,y2:label] loop hugging an element's box, optional :label
     [CIRCLE:x,y,r:label]    circle center (x,y) radius r, optional :label
-    [UNDERLINE:x,y,w]       horizontal underline at (x,y), width w
+    [HIGHLIGHT:x1,y1,x2,y2:text] highlighter stroke over text
+    [UNDERLINE:x,y,w:text]  horizontal underline at (x,y), width w
+    [ARROW:x1,y1->x2,y2]    arrow from (x1,y1) to (x2,y2)
     [LABEL:x,y:text]        floating text at (x,y)
 
 The same `[SHAPE:coords]` text-tag + regex pattern the `[POINT:x,y]` cursor
@@ -44,6 +46,7 @@ class Underline:
     x: int
     y: int
     w: int
+    label: str = ""
 
 
 @dataclass(frozen=True)
@@ -51,6 +54,26 @@ class Label:
     x: int
     y: int
     text: str
+
+
+@dataclass(frozen=True)
+class Box:
+    """An element's box, (x1, y1) top-left to (x2, y2) bottom-right."""
+    x1: int
+    y1: int
+    x2: int
+    y2: int
+    label: str = ""
+
+
+@dataclass(frozen=True)
+class Highlight:
+    """Text to mark like a highlighter, (x1, y1) top-left to (x2, y2)."""
+    x1: int
+    y1: int
+    x2: int
+    y2: int
+    label: str = ""
 
 
 # All shape regexes are case-INSENSITIVE + tolerate whitespace after '['.
@@ -62,12 +85,19 @@ class Label:
 # coordinates never reach TTS (the never-speak-coords invariant).
 _ARROW_RE = re.compile(r"\[\s*ARROW\s*:\s*(\d+)\s*,\s*(\d+)\s*->\s*(\d+)\s*,\s*(\d+)\s*\]", re.IGNORECASE)
 _CIRCLE_RE = re.compile(r"\[\s*CIRCLE\s*:\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?::([^\]]*))?\]", re.IGNORECASE)
-_UNDERLINE_RE = re.compile(r"\[\s*UNDERLINE\s*:\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\]", re.IGNORECASE)
+_UNDERLINE_RE = re.compile(r"\[\s*UNDERLINE\s*:\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?::([^\]]*))?\]", re.IGNORECASE)
 _LABEL_RE = re.compile(r"\[\s*LABEL\s*:\s*(\d+)\s*,\s*(\d+)\s*:([^\]]*)\]", re.IGNORECASE)
+_BOX_RE = re.compile(
+    r"\[\s*BOX\s*:\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?::([^\]]*))?\]", re.IGNORECASE
+)
+_HIGHLIGHT_RE = re.compile(
+    r"\[\s*HIGHLIGHT\s*:\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?::([^\]]*))?\]", re.IGNORECASE
+)
 
-# Strips any COMPLETE shape tag from the spoken text. Narrow to the four
+# Strips any COMPLETE shape tag from the spoken text. Narrow to the shape
 # keywords so we never eat unrelated bracketed text.
-_ANY_TAG_RE = re.compile(r"\[\s*(?:ARROW|CIRCLE|UNDERLINE|LABEL)\s*:[^\]]*\]", re.IGNORECASE)
+_KEYWORDS = r"(?:ARROW|CIRCLE|UNDERLINE|LABEL|BOX|HIGHLIGHT)"
+_ANY_TAG_RE = re.compile(r"\[\s*" + _KEYWORDS + r"\s*:[^\]]*\]", re.IGNORECASE)
 
 # Fail-closed strip: removes an UNTERMINATED shape tag (and everything after
 # it), e.g. a truncated `look here [CIRCLE:120,40,15` with no closing `]`.
@@ -75,9 +105,7 @@ _ANY_TAG_RE = re.compile(r"\[\s*(?:ARROW|CIRCLE|UNDERLINE|LABEL)\s*:[^\]]*\]", r
 # and TTS would read the coordinates aloud, violating the hard invariant that
 # coordinates are never spoken. Matches the pipeline's "stop at the first '['"
 # streaming guard. DOTALL so it eats across newlines to end-of-string.
-_UNTERMINATED_TAG_RE = re.compile(
-    r"\[\s*(?:ARROW|CIRCLE|UNDERLINE|LABEL)\s*:.*$", re.IGNORECASE | re.DOTALL
-)
+_UNTERMINATED_TAG_RE = re.compile(r"\[\s*" + _KEYWORDS + r"\s*:.*$", re.IGNORECASE | re.DOTALL)
 
 
 def parse_annotations(text: str) -> tuple[str, list]:
@@ -100,11 +128,22 @@ def parse_annotations(text: str) -> tuple[str, list]:
         )))
     for m in _UNDERLINE_RE.finditer(text):
         found.append((m.start(), Underline(
-            int(m.group(1)), int(m.group(2)), int(m.group(3)),
+            int(m.group(1)), int(m.group(2)), int(m.group(3)), (m.group(4) or "").strip(),
         )))
     for m in _LABEL_RE.finditer(text):
         found.append((m.start(), Label(
             int(m.group(1)), int(m.group(2)), m.group(3).strip(),
+        )))
+
+    for m in _BOX_RE.finditer(text):
+        x1, y1, x2, y2 = (int(m.group(i)) for i in range(1, 5))
+        found.append((m.start(), Box(
+            min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2), (m.group(5) or "").strip(),
+        )))
+    for m in _HIGHLIGHT_RE.finditer(text):
+        x1, y1, x2, y2 = (int(m.group(i)) for i in range(1, 5))
+        found.append((m.start(), Highlight(
+            min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2), (m.group(5) or "").strip(),
         )))
 
     found.sort(key=lambda pair: pair[0])

@@ -75,6 +75,12 @@ for _pkg in (
 # extensions; the av.libs DLLs go in as binaries. This combo was verified
 # importable inside a frozen test EXE; without it, local STT crashes on launch.
 _local_hidden += collect_submodules("av")
+# UI Automation for snapping marks to controls (snap.py). comtypes writes its
+# generated wrapper for UIAutomationCore.dll to a cache folder at run time.
+try:
+    _local_hidden += collect_submodules("comtypes")
+except Exception:
+    pass
 try:
     import av as _av
     _av_libs = os.path.dirname(_av.__file__) + ".libs"
@@ -103,6 +109,9 @@ a = Analysis(
         "island",
         "widgets",
         "onboarding",
+        "drawing",
+        "aim",
+        "snap",
         # Qt 6 sub-modules: PyInstaller's hook misses some by default.
         "PyQt6.QtCore",
         "PyQt6.QtGui",

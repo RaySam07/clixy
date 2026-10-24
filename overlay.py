@@ -41,7 +41,7 @@ from PyQt6.QtCore import (
     QVariantAnimation,
     Qt,
 )
-from PyQt6.QtGui import QColor, QCursor, QFont, QGuiApplication, QPainter, QPen, QPolygonF, QScreen
+from PyQt6.QtGui import QColor, QCursor, QFont, QGuiApplication, QPainter, QScreen
 from PyQt6.QtWidgets import QWidget
 
 import theme
@@ -321,7 +321,7 @@ def annotations_to_local(annotations: list, screen) -> list:
     QApplication. The per-screen ratio is never cached globally: mixed-DPI
     setups have a different ratio per screen.
     """
-    from annotations import Arrow, Circle, Underline, Label
+    from annotations import Arrow, Box, Circle, Highlight, Underline, Label
 
     ratio = screen.devicePixelRatio() or 1.0
     out: list = []
@@ -335,25 +335,18 @@ def annotations_to_local(annotations: list, screen) -> list:
             out.append(Arrow(x1, y1, x2, y2))
         elif isinstance(a, Underline):
             lx, ly = physical_to_local_logical(a.x, a.y, screen)
-            out.append(Underline(lx, ly, int(a.w / ratio)))
+            out.append(Underline(lx, ly, int(a.w / ratio), a.label))
         elif isinstance(a, Label):
             lx, ly = physical_to_local_logical(a.x, a.y, screen)
             out.append(Label(lx, ly, a.text))
+        elif isinstance(a, (Box, Highlight)):
+            x1, y1 = physical_to_local_logical(a.x1, a.y1, screen)
+            x2, y2 = physical_to_local_logical(a.x2, a.y2, screen)
+            out.append((Box if isinstance(a, Box) else Highlight)(x1, y1, x2, y2, a.label))
     return out
 
 
 # --- Overlay window ----------------------------------------------------------
-
-def _circle_label_origin(x: float, y: float, r: float, text_width: float, ascent: float) -> tuple[float, float]:
-    """Baseline origin for a circle's label: centred above the circle, or below
-    it when there is no room above. Labels beside the circle would run over a
-    neighbouring circle on the same line of text."""
-    gap = 6
-    top_baseline = y - r - gap
-    if top_baseline - ascent >= 0:
-        return (x - text_width / 2, top_baseline)
-    return (x - text_width / 2, y + r + gap + ascent)
-
 
 class OverlayWindow(QWidget):
     """One transparent click-through overlay for a single QScreen.
@@ -448,15 +441,22 @@ class OverlayWindow(QWidget):
         self.glow_enabled = True
         self._life_t0 = time.monotonic()
 
-        # Teaching annotations (arrows/circles/underlines/labels)
-        # drawn IN ADDITION to the cursor. Stored in this window's LOCAL-logical
-        # coords (the controller transforms physical->local before storing, the
-        # same way point_at computes local_x/local_y). Auto-clear after 30s or
-        # on the next set_annotations call (next-question clear).
-        self._annotations: list = []
+        # Teaching marks (drawing.py) in this window's LOCAL-logical coords:
+        # the controller maps physical->local first, like point_at. While a
+        # tour runs the buddy flies along them and they draw behind its tip.
+        # They fade when the answer is over, one by one as you hover what they
+        # mark, after a minute at most, and vanish on the next question.
+        self._marks: list = []
+        self._tour = None
+        self._tour_t0 = 0.0
+        self._tour_end = 0.0
+        self._tour_done_cb = None
+        self._marks_fade_at: float | None = None
+        self._fade_after_tour = False
+        self._marks_rect = QRect()
         self._annotation_clear_timer = QTimer(self)
         self._annotation_clear_timer.setSingleShot(True)
-        self._annotation_clear_timer.timeout.connect(self.clear_annotations)
+        self._annotation_clear_timer.timeout.connect(self.fade_annotations)
 
         # Blinking, flicker and the glow need repaints even while nothing
         # moves. Only the avatar's square and the glowing edge strips repaint.
@@ -465,29 +465,146 @@ class OverlayWindow(QWidget):
         self._life_timer.start(self._LIFE_INTERVAL_MS)
 
     def set_annotations(self, annotations: list) -> None:
-        """Replace the current annotations (LOCAL-logical coords) + repaint.
-        Auto-clears after 30s; a new call cancels the prior timer. An empty
-        list clears immediately."""
-        self._annotations = list(annotations)
-        self.update()
-        self._annotation_clear_timer.stop()
-        if self._annotations:
-            self._annotation_clear_timer.start(30_000)
+        """Show these shapes (LOCAL-logical coords) as marks, drawn by the
+        buddy. An empty list clears them."""
+        self.start_drawing(annotations)
+
+    def start_drawing(self, annotations: list, on_done=None, *, avoid=None, busy=None) -> None:
+        """The buddy flies to each shape and draws it with its tip, then
+        rests beside the last one and calls ``on_done``. Labels keep out of
+        ``avoid`` (local rects) and off busy parts of the screen (``busy``,
+        a drawing.BusyMap)."""
+        import drawing
+
+        self._flight_anim.stop()
+        self._drop_marks()
+        marks = drawing.build_marks(annotations, QRectF(self.rect()), avoid=avoid, busy=busy)
+        if not marks:
+            if on_done is not None:
+                QTimer.singleShot(0, on_done)
+            return
+        start = QPointF(self._pointer_pos) if self._pointer_visible else marks[0].points[0]
+        self._marks = marks
+        self._tour = drawing.plan_tour(marks, start)
+        self._tour_t0 = time.monotonic()
+        self._tour_end = self._tour_t0 + self._tour.total
+        self._tour_done_cb = on_done
+        rect = QRectF()
+        for mark in marks:
+            rect = rect.united(mark.bounds())
+        self._marks_rect = rect.toAlignedRect()
+        self._pointer_visible = True
+        self.point_label = ""
+        self._annotation_clear_timer.start(60_000)
+        self._speed_up()
+
+    def fade_annotations(self) -> None:
+        """Fade the marks out: the answer is over. Waits for the drawing."""
+        if not self._marks or self._marks_fade_at is not None:
+            return
+        if self._tour is not None:
+            self._fade_after_tour = True
+            return
+        self._marks_fade_at = time.monotonic()
+        self._speed_up()
 
     def clear_annotations(self) -> None:
-        # Cheap no-op when already empty so clearing on every press (the stale-
-        # annotation guard) costs nothing in the common no-annotation case.
-        if not self._annotations:
-            return
-        self._annotations = []
+        """Remove the marks at once (a new question is coming)."""
+        if self._marks:
+            self._drop_marks()
+
+    def _drop_marks(self) -> None:
+        if not self._marks_rect.isNull():
+            self.update(self._marks_rect)
+        self._marks = []
+        self._tour = None
+        self._tour_done_cb = None
+        self._marks_fade_at = None
+        self._fade_after_tour = False
+        self._marks_rect = QRect()
         self._annotation_clear_timer.stop()
-        self.update()
+
+    def _speed_up(self) -> None:
+        if self._life_timer.interval() != 16:
+            self._life_timer.setInterval(16)
+
+    def _step_marks(self, now: float) -> bool:
+        """Move the buddy along its drawing tour, notice hovers, run fades.
+        Returns True while anything is still moving."""
+        import drawing
+
+        if not self._marks:
+            return False
+        moving = False
+        if self._tour is not None:
+            t = now - self._tour_t0
+            pos, scale, _mark = self._tour.pen(t)
+            old = self.avatar_rect()
+            self._pointer_pos = QPoint(round(pos.x()), round(pos.y()))
+            self._flight_scale = scale
+            self.update(old.united(self.avatar_rect()))
+            if t >= self._tour.total:
+                self._finish_tour(now)
+            moving = True
+        elif self._marks_fade_at is None:
+            self._check_hover(now)
+        if now - self._tour_end < 0.6:
+            moving = True  # labels and step numbers still popping in
+        if any(m.acked_at is not None and now - m.acked_at < drawing.ACK_S for m in self._marks):
+            moving = True
+        if self._marks_fade_at is not None:
+            if now - self._marks_fade_at >= _MARKS_FADE_S:
+                self._drop_marks()
+                return False
+            moving = True
+        if self._marks and all(m.acked_at is not None and now - m.acked_at >= drawing.ACK_S for m in self._marks
+                               if m.kind != "label"):
+            self._drop_marks()  # every mark found: nothing left to show
+            return False
+        if moving:
+            self.update(self._marks_rect)
+        return moving
+
+    def _finish_tour(self, now: float) -> None:
+        self._tour = None
+        self._flight_scale = 1.0
+        self._landed_at = now  # squash and burst: done!
+        callback, self._tour_done_cb = self._tour_done_cb, None
+        if self._fade_after_tour:
+            self._fade_after_tour = False
+            QTimer.singleShot(2500, self.fade_annotations)
+        if callback is not None:
+            callback()
+
+    def _check_hover(self, now: float) -> None:
+        """Your mouse on a marked thing means you found it: that mark (and
+        any arrow pointing at it) says "got it" and fades. A mark only
+        reacts once the mouse has been outside it, so one drawn under the
+        mouse doesn't vanish at once."""
+        local = QPointF(self.mapFromGlobal(QCursor.pos()))
+        for mark in self._marks:
+            if mark.kind == "label" or mark.acked_at is not None:
+                continue
+            inside = mark.target.adjusted(-6, -6, 6, 6).contains(local)
+            if not inside:
+                mark.armed = True
+            elif mark.armed:
+                mark.acked_at = now
+                near = mark.target.adjusted(-36, -36, 36, 36)
+                for other in self._marks:
+                    if other.kind == "arrow" and other.acked_at is None and near.contains(other.head[1]):
+                        other.acked_at = now
+
+    @property
+    def drawing_labels(self) -> set[str]:
+        return {m.label.strip().lower() for m in self._marks if m.label}
 
     # --- Life: mood, glow, partial repaints ------------------------------------
 
     def _mood(self) -> str:
         """Which face the avatar makes, from what the overlay is showing."""
-        if self._flight_anim.state() == QVariantAnimation.State.Running or self._burst_progress() is not None:
+        if self._flight_anim.state() == QVariantAnimation.State.Running or self._burst_progress() is not None \
+                or self._tour is not None:
             return "happy"
         if self._waveform_visible:
             return "listening"
@@ -526,8 +643,11 @@ class OverlayWindow(QWidget):
         self._glow_level += (self._glow_target() - self._glow_level) * 0.12
         if self._glow_level < 0.01:
             self._glow_level = 0.0
-        # 60 fps while the glow flows, 30 fps for blinking and flicker alone.
-        interval = 16 if self._glow_level > 0.0 or self._glow_target() > 0.0 else self._LIFE_INTERVAL_MS
+        drawing_busy = self._step_marks(time.monotonic())
+        # 60 fps while the glow flows or the buddy draws, 30 fps for blinking
+        # and flicker alone.
+        busy = drawing_busy or self._glow_level > 0.0 or self._glow_target() > 0.0
+        interval = 16 if busy else self._LIFE_INTERVAL_MS
         if self._life_timer.interval() != interval:
             self._life_timer.setInterval(interval)
         if self._glow_level > 0.0 or self._glow_painted:
@@ -555,10 +675,13 @@ class OverlayWindow(QWidget):
                 audio=self._audio_level if self._waveform_visible else 0.0,
             )
 
-        # Teaching annotations paint independently of the avatar.
-        if self._annotations:
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-            self._paint_annotations(painter)
+        # The marks go under the buddy, so it draws on top of its own ink.
+        if self._marks:
+            import drawing
+            fade = 1.0
+            if self._marks_fade_at is not None:
+                fade = max(0.0, 1.0 - (now - self._marks_fade_at) / _MARKS_FADE_S)
+            drawing.paint_marks(painter, self._marks, now - self._tour_t0, now=now, fade=fade)
 
         if not self._pointer_visible:
             return
@@ -573,9 +696,8 @@ class OverlayWindow(QWidget):
             theme.paint_burst(painter, px, py, burst)
         # The tag names what the buddy points at, unless a drawing already
         # labels it with the same name.
-        drawn = {getattr(a, "label", "").strip().lower() for a in self._annotations}
         if self.point_label and self._landed_at is not None \
-                and self.point_label.strip().lower() not in drawn \
+                and self.point_label.strip().lower() not in self.drawing_labels \
                 and self._flight_anim.state() != QVariantAnimation.State.Running:
             self._paint_point_tag(painter, px, py, now - self._landed_at)
 
@@ -607,84 +729,6 @@ class OverlayWindow(QWidget):
         painter.setPen(theme.INK)
         painter.drawText(QRectF(x, y, w, h), Qt.AlignmentFlag.AlignCenter, self.point_label)
         painter.restore()
-
-    def _paint_annotations(self, painter: QPainter) -> None:
-        """Draw the teaching annotations. Coords are this window's LOCAL-logical
-        space (the controller already mapped physical->local). The theme's
-        accent over a cream halo, so they read on light and dark apps alike;
-        circles/underlines are outlines (never filled) so they frame the
-        element without covering it."""
-        from annotations import Arrow, Circle, Underline, Label
-
-        accent = theme.CORAL
-        painter.setFont(theme.ui_font(11.5, QFont.Weight.DemiBold))
-        # Two passes: the halo for every shape first, then the colored strokes,
-        # so one shape's halo never cuts through another's line.
-        for pen in (self._annotation_pen(_ANNOTATION_HALO, 7.0), self._annotation_pen(accent, 3.5)):
-            painter.setPen(pen)
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-            for ann in self._annotations:
-                if isinstance(ann, Circle):
-                    painter.drawEllipse(QPointF(ann.x, ann.y), float(ann.r), float(ann.r))
-                elif isinstance(ann, Arrow):
-                    painter.drawLine(QPointF(ann.x1, ann.y1), QPointF(ann.x2, ann.y2))
-                    self._draw_arrowhead(painter, ann.x1, ann.y1, ann.x2, ann.y2)
-                elif isinstance(ann, Underline):
-                    painter.drawLine(QPointF(ann.x, ann.y), QPointF(ann.x + ann.w, ann.y))
-
-        metrics = painter.fontMetrics()
-        for ann in self._annotations:
-            if isinstance(ann, Circle) and ann.label:
-                lx, ly = _circle_label_origin(
-                    ann.x, ann.y, ann.r, metrics.horizontalAdvance(ann.label), metrics.ascent(),
-                )
-                self._draw_label(painter, lx, ly, ann.label)
-            elif isinstance(ann, Label):
-                self._draw_label(painter, ann.x, ann.y, ann.text)
-
-    @staticmethod
-    def _annotation_pen(color: QColor, width: float) -> QPen:
-        pen = QPen(color, width)
-        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-        return pen
-
-    @staticmethod
-    def _draw_label(painter: QPainter, x: float, y: float, text: str) -> None:
-        """Label text on a butter pill, the same as the pointer's tag, so it
-        reads over a busy screen."""
-        metrics = painter.fontMetrics()
-        pad_x, pad_y = 9.0, 3.0
-        box = QRectF(
-            x - pad_x, y - metrics.ascent() - pad_y,
-            metrics.horizontalAdvance(text) + 2 * pad_x, metrics.height() + 2 * pad_y,
-        )
-        painter.save()
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(theme.BUTTER)
-        painter.drawRoundedRect(box, box.height() / 2, box.height() / 2)
-        painter.setPen(theme.INK)
-        painter.drawText(QPointF(x, y), text)
-        painter.restore()
-
-    @staticmethod
-    def _draw_arrowhead(
-        painter: QPainter, x1: float, y1: float, x2: float, y2: float
-    ) -> None:
-        """Rounded open arrowhead at (x2,y2) along the (x1,y1)->(x2,y2) line,
-        drawn with the current pen so it gets the same halo as the line."""
-        angle = math.atan2(y2 - y1, x2 - x1)
-        size = 13.0
-        tip = QPointF(x2, y2)
-        left = QPointF(
-            x2 - size * math.cos(angle - math.pi / 6),
-            y2 - size * math.sin(angle - math.pi / 6),
-        )
-        right = QPointF(
-            x2 - size * math.cos(angle + math.pi / 6),
-            y2 - size * math.sin(angle + math.pi / 6),
-        )
-        painter.drawPolyline(QPolygonF([left, tip, right]))
 
     def animate_pointer_to(self, local_logical_x: int, local_logical_y: int) -> None:
         """Fly the pointer along a quadratic Bezier arc to (x, y).
@@ -784,8 +828,8 @@ class OverlayWindow(QWidget):
         self._audio_level = max(0.0, min(float(level), 1.0))
 
 
-_ANNOTATION_HALO = QColor(255, 255, 255, 190)
-"""White stroke under each coral annotation so it stays visible on dark apps."""
+_MARKS_FADE_S = 0.45
+"""Seconds the marks take to fade out once the answer is over."""
 
 
 # --- Thinking phase ------------------------------------------------------------
@@ -827,6 +871,7 @@ class OverlayController:
     _FOLLOW_OFFSET_X = 35
     _FOLLOW_OFFSET_Y = 25
     _DWELL_MS = 3000
+    _MARKS_LINGER_MS = 5000
     _FOLLOW_INTERVAL_MS = 16
 
     def __init__(
@@ -866,6 +911,15 @@ class OverlayController:
         self._follow_timer.setInterval(self._FOLLOW_INTERVAL_MS)
         self._follow_timer.timeout.connect(self._on_follow_tick)
         self._follow_timer.start()
+        # After pointing or drawing the buddy waits, then flies back to the
+        # mouse. A timer, not singleShot, so a new question can cancel it.
+        self._dwell_timer = QTimer()
+        self._dwell_timer.setSingleShot(True)
+        self._dwell_timer.timeout.connect(self._fly_back)
+        # The marks fade a few seconds after the answer is spoken.
+        self._marks_fade_timer = QTimer()
+        self._marks_fade_timer.setSingleShot(True)
+        self._marks_fade_timer.timeout.connect(self._fade_marks)
 
     def _on_follow_tick(self) -> None:
         """Poll cursor position and lerp the Clicky cursor toward it.
@@ -931,6 +985,7 @@ class OverlayController:
     ) -> None:
         """Fly the cursor from current position to Claude's target coordinate."""
         self._follow_timer.stop()
+        self._dwell_timer.stop()
         self._state = _OverlayState.POINTING
 
         screens = QGuiApplication.screens()
@@ -958,7 +1013,7 @@ class OverlayController:
             self._pointing_overlay._flight_anim.finished.disconnect(
                 self._on_point_animation_finished
             )
-        QTimer.singleShot(self._DWELL_MS, self._fly_back)
+        self._dwell_timer.start(self._DWELL_MS)
 
     def _fly_back(self) -> None:
         """Animate the cursor back to the current mouse position."""
@@ -999,11 +1054,11 @@ class OverlayController:
                 return overlay
         return None
 
-    def show_annotations(self, annotations: list, monitor: dict) -> None:
-        """Render teaching annotations (PHYSICAL-pixel coords) on the monitor's
-        overlay. Routes to the per-monitor window like point_at, transforms the
-        coords physical->local via annotations_to_local, and clears annotations
-        on every OTHER overlay so only the active screen shows them."""
+    def show_annotations(self, annotations: list, monitor: dict, busy=None) -> None:
+        """Draw teaching marks (PHYSICAL-pixel coords) on the monitor's
+        overlay: the buddy flies over and draws them one by one, then waits
+        beside them and flies back to the mouse. Other overlays are cleared.
+        An empty list clears any old marks."""
         screens = QGuiApplication.screens()
         target_screen = screen_for_monitor(monitor, screens)
         target_overlay = self._overlay_for_screen(target_screen)
@@ -1014,21 +1069,61 @@ class OverlayController:
 
         local = annotations_to_local(annotations, target_screen)
         for overlay in self.overlays:
-            if overlay is target_overlay:
-                overlay.set_annotations(local)
-            else:
+            if overlay is not target_overlay:
                 overlay.clear_annotations()
+        if not local:
+            target_overlay.clear_annotations()
+            return
+
+        # The buddy is the pen: take it over from following or pointing.
+        self._follow_timer.stop()
+        self._dwell_timer.stop()
+        self._marks_fade_timer.stop()
+        self._state = _OverlayState.POINTING
+        for handler in (self._on_point_animation_finished, self._on_return_finished):
+            for overlay in self.overlays:
+                try:
+                    overlay._flight_anim.finished.disconnect(handler)
+                except TypeError:
+                    pass  # not connected
+        for overlay in self.overlays:
+            if overlay is not target_overlay and overlay._pointer_visible:
+                overlay._pointer_visible = False
+                overlay.update(overlay.avatar_rect())
+        self._pointing_overlay = target_overlay
+        self._pending_label = ""
+        # Labels keep clear of the island, where the answer's words show.
+        avoid = []
+        if self.island is not None and self.island.isVisible():
+            geo = self.island.geometry()
+            top_left = target_overlay.mapFromGlobal(geo.topLeft())
+            avoid.append(QRectF(top_left.x(), top_left.y(), geo.width(), geo.height()))
+        target_overlay.start_drawing(local, on_done=self._on_drawing_done, avoid=avoid, busy=busy)
+        if self.island is not None:
+            for label in sorted(target_overlay.drawing_labels):
+                self.island.highlight(label)
+
+    def _on_drawing_done(self) -> None:
+        """The buddy finished drawing: rest a moment beside the marks."""
+        if self._state == _OverlayState.POINTING:
+            self._dwell_timer.start(self._DWELL_MS)
+
+    def _fade_marks(self) -> None:
+        for overlay in self.overlays:
+            overlay.fade_annotations()
 
     def clear_all_annotations(self) -> None:
         """Clear teaching annotations on every overlay. Called at the start of
         each new interaction so stale shapes never survive a no-speech /
-        cancelled / errored turn (they'd otherwise linger until the 30s timer)."""
+        cancelled / errored turn."""
+        self._marks_fade_timer.stop()
         for overlay in self.overlays:
             overlay.clear_annotations()
 
     def hide_for_capture(self) -> None:
         """Hide ALL overlays + stop timer for screen capture."""
         self._follow_timer.stop()
+        self._dwell_timer.stop()
         if self._pointing_overlay and self._pointing_overlay._flight_anim.state() == QVariantAnimation.State.Running:
             self._pointing_overlay._flight_anim.stop()
             try:
@@ -1134,9 +1229,12 @@ class OverlayController:
             self.island.note(text)
 
     def island_done(self) -> None:
-        """The turn is over; the island tucks itself away after a pause."""
+        """The turn is over; the island tucks itself away after a pause, and
+        the marks fade a few seconds later."""
         if self.island is not None:
             self.island.done()
+        if any(overlay._marks for overlay in self.overlays):
+            self._marks_fade_timer.start(self._MARKS_LINGER_MS)
 
     def apply_look(self, *, glow_enabled: bool, island_side: str) -> None:
         """Settings that change without a restart: the edge glow and which
