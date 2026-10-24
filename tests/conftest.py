@@ -1,4 +1,6 @@
 """Shared pytest fixtures."""
+import gc
+
 import pytest
 
 
@@ -42,3 +44,14 @@ def _keep_qt_app_alive():
         app = QApplication.instance()
         if app is not None:
             _QT_APP.append(app)
+
+
+@pytest.fixture(autouse=True)
+def _collect_between_tests():
+    """Collect garbage only between tests. Left to itself the collector can
+    run in the middle of a widget's paint and free Qt objects that earlier
+    tests dropped, which aborts the run on the Windows runner."""
+    gc.disable()
+    yield
+    gc.collect()
+    gc.enable()
