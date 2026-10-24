@@ -571,7 +571,11 @@ class OverlayWindow(QWidget):
         burst = self._burst_progress()
         if burst is not None:
             theme.paint_burst(painter, px, py, burst)
+        # The tag names what the buddy points at, unless a drawing already
+        # labels it with the same name.
+        drawn = {getattr(a, "label", "").strip().lower() for a in self._annotations}
         if self.point_label and self._landed_at is not None \
+                and self.point_label.strip().lower() not in drawn \
                 and self._flight_anim.state() != QVariantAnimation.State.Running:
             self._paint_point_tag(painter, px, py, now - self._landed_at)
 

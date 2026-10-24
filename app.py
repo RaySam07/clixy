@@ -1022,7 +1022,8 @@ class ClickyApp(QObject):
             if not transcript.strip():
                 dbg.log("NO SPEECH DETECTED, skipping interaction")
                 _log("No speech detected, skipping.")
-                self.sig_island_note.emit("I didn't catch that. Hold the keys and try again?")
+                keys = describe_hotkey(self._hotkey.combo) if self._hotkey is not None else "the keys"
+                self.sig_island_note.emit(f"I didn't catch that. Hold {keys} and try again?")
                 return
             self.sig_island_transcript.emit(transcript)
 

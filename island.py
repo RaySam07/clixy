@@ -379,7 +379,7 @@ class SideIsland(QWidget):
         t = time.monotonic() - self._t0
         mood = "thinking" if self._state == "note" else "happy"
         theme.paint_avatar_in(painter, QRectF(x0, y, self._HEAD, self._HEAD), t=t, mood=mood, scale=1.0,
-                              device_pixel_ratio=self.devicePixelRatioF())
+                              device_pixel_ratio=self.devicePixelRatioF(), glow=True)
         tx = x0 + self._HEAD + 12
         two_lines = bool(self._transcript) and self._state == "answer"
         name_y = y + (15 if two_lines else 23)

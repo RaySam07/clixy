@@ -1,3 +1,6 @@
+> **Clixy, my private build.** New look, side notch, pixel buddies, Ctrl + Win.
+> To install on Windows, double-click `Install-Clicky.bat`. See [CLIXY.md](CLIXY.md).
+
 <p align="center">
   <img src="assets/clicky-logo.png" alt="Clicky Windows" width="180" />
 </p>

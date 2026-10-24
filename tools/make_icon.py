@@ -1,11 +1,12 @@
-"""Regenerate assets/clicky_tray.ico (the EXE's icon) from an avatar.
+"""Regenerate assets/clicky_tray.ico (the EXE's icon) and
+assets/clicky-logo.png.
 
-The running app draws its tray and window icons live from theme.py, so they
-follow the chosen avatar; the EXE file itself needs a static .ico. Run from
+The running app draws its icons live from theme.py: the mark for windows,
+your buddy in the tray. The EXE file itself needs a static .ico. Run from
 the repo root:
 
-    python tools/make_icon.py            # Ember, the default avatar
-    python tools/make_icon.py mochi
+    python tools/make_icon.py            # the mark (butter C on ink)
+    python tools/make_icon.py mochi      # a buddy instead
 """
 import io
 import sys
@@ -24,18 +25,23 @@ SIZES = (16, 24, 32, 48, 64, 128, 256)
 _APP = None  # Qt needs an application object alive while painting
 
 
-def main(avatar_id: str = theme.DEFAULT_AVATAR) -> None:
+def main(avatar_id: str | None = None) -> None:
     global _APP
     _APP = QGuiApplication.instance() or QGuiApplication(sys.argv[:1])
     frames = []
     for size in SIZES:
         buffer = QBuffer()
         buffer.open(QIODevice.OpenModeFlag.WriteOnly)
-        theme.avatar_image(avatar_id, size).save(buffer, "PNG")
+        image = theme.avatar_image(avatar_id, size) if avatar_id else theme.app_icon_image(size)
+        image.save(buffer, "PNG")
         frames.append(Image.open(io.BytesIO(bytes(buffer.data()))).convert("RGBA"))
     out = ROOT / "assets" / "clicky_tray.ico"
     frames[-1].save(out, format="ICO", sizes=[(s, s) for s in SIZES], append_images=frames[:-1])
     print(f"wrote {out}")
+    if avatar_id is None:
+        logo = ROOT / "assets" / "clicky-logo.png"
+        theme.app_icon_image(360).save(str(logo))
+        print(f"wrote {logo}")
 
 
 if __name__ == "__main__":
