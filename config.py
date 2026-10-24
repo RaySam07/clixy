@@ -279,6 +279,20 @@ rather than calling resolve_setting on the hot path, so there is no
 per-interaction keyring read/write latency. Set it in .env and restart to
 toggle."""
 
+HOTKEY: str = resolve_setting("HOTKEY", default="ctrl+win")
+"""Push-to-talk combo, e.g. "ctrl+win" (see hotkey.parse_combo). Settings
+records it by having you press it; takes effect on the next start."""
+
+EDGE_GLOW: bool = resolve_setting("EDGE_GLOW", default="on").lower() == "on"
+"""Light the screen edges in the buddy's colors while you talk."""
+
+ISLAND_SIDE: str = resolve_setting("ISLAND_SIDE", default="right").lower()
+"""Which screen edge the notch lives on: "right" or "left"."""
+
+KEEP_HISTORY: bool = resolve_setting("KEEP_HISTORY", default="on").lower() == "on"
+"""Keep a short note per app of what you asked, so follow-ups have context.
+Off: nothing is written to the memory folder."""
+
 DEBUG_LOG: bool = resolve_setting("DEBUG_LOG", default="off").lower() == "on"
 """Write a per-question log (what you asked, what Clicky answered, timings) to
 ~/.clicky-windows/debug/. Off by default so your questions aren't kept on

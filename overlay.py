@@ -441,6 +441,11 @@ class OverlayWindow(QWidget):
         # celebrates; the flight back to the mouse lands quietly.
         self._celebrate_next_landing = False
         self._landed_at: float | None = None
+        # Name of what the avatar points at, shown as a butter tag beside it
+        # while it dwells there. Set by the controller, cleared on fly-back.
+        self.point_label: str = ""
+        # Screen-edge glow can be turned off in Settings.
+        self.glow_enabled = True
         self._life_t0 = time.monotonic()
 
         # Teaching annotations (arrows/circles/underlines/labels)
@@ -497,6 +502,8 @@ class OverlayWindow(QWidget):
         return progress if progress < 1.0 else None
 
     def _glow_target(self) -> float:
+        if not self.glow_enabled:
+            return 0.0
         if self._waveform_visible:
             return 1.0
         if self._spinner_visible:
@@ -564,6 +571,38 @@ class OverlayWindow(QWidget):
         burst = self._burst_progress()
         if burst is not None:
             theme.paint_burst(painter, px, py, burst)
+        if self.point_label and self._landed_at is not None \
+                and self._flight_anim.state() != QVariantAnimation.State.Running:
+            self._paint_point_tag(painter, px, py, now - self._landed_at)
+
+    def _paint_point_tag(self, painter: QPainter, px: float, py: float, since: float) -> None:
+        """Butter tag with the name of what the avatar points at, popping in
+        just after it lands. The side island shows the same name as a chip."""
+        grow = min(1.0, max(0.0, (since - 0.12) / 0.3))
+        if grow <= 0.0:
+            return
+        pop = 1.0 + 0.12 * math.sin(grow * math.pi)
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setOpacity(grow)
+        font = theme.ui_font(9.5, QFont.Weight.DemiBold)
+        painter.setFont(font)
+        w = painter.fontMetrics().horizontalAdvance(self.point_label) + 20
+        h = painter.fontMetrics().height() + 8
+        x, y = px + 30, py + 22
+        if x + w > self.width() - 8:  # flip to the left near the screen edge
+            x = px - w - 10
+        painter.translate(x, y + h / 2)
+        painter.scale(pop, pop)
+        painter.translate(-x, -(y + h / 2))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(0, 0, 0, 60))
+        painter.drawRoundedRect(QRectF(x, y + 3, w, h), h / 2, h / 2)
+        painter.setBrush(theme.BUTTER)
+        painter.drawRoundedRect(QRectF(x, y, w, h), h / 2, h / 2)
+        painter.setPen(theme.INK)
+        painter.drawText(QRectF(x, y, w, h), Qt.AlignmentFlag.AlignCenter, self.point_label)
+        painter.restore()
 
     def _paint_annotations(self, painter: QPainter) -> None:
         """Draw the teaching annotations. Coords are this window's LOCAL-logical
@@ -573,8 +612,8 @@ class OverlayWindow(QWidget):
         element without covering it."""
         from annotations import Arrow, Circle, Underline, Label
 
-        accent = theme.current_palette().accent
-        painter.setFont(theme.ui_font(11.5, QFont.Weight.ExtraBold))
+        accent = theme.CORAL
+        painter.setFont(theme.ui_font(11.5, QFont.Weight.DemiBold))
         # Two passes: the halo for every shape first, then the colored strokes,
         # so one shape's halo never cuts through another's line.
         for pen in (self._annotation_pen(_ANNOTATION_HALO, 7.0), self._annotation_pen(accent, 3.5)):
@@ -608,20 +647,19 @@ class OverlayWindow(QWidget):
 
     @staticmethod
     def _draw_label(painter: QPainter, x: float, y: float, text: str) -> None:
-        """Label text on a pill in the theme's colors, so it stays readable
-        over a busy screen and matches the island."""
-        palette = theme.current_palette()
+        """Label text on a butter pill, the same as the pointer's tag, so it
+        reads over a busy screen."""
         metrics = painter.fontMetrics()
-        pad_x, pad_y = 8.0, 3.0
+        pad_x, pad_y = 9.0, 3.0
         box = QRectF(
             x - pad_x, y - metrics.ascent() - pad_y,
             metrics.horizontalAdvance(text) + 2 * pad_x, metrics.height() + 2 * pad_y,
         )
         painter.save()
-        painter.setPen(QPen(palette.accent, 1.5))
-        painter.setBrush(palette.surface_top)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(theme.BUTTER)
         painter.drawRoundedRect(box, box.height() / 2, box.height() / 2)
-        painter.setPen(palette.text)
+        painter.setPen(theme.INK)
         painter.drawText(QPointF(x, y), text)
         painter.restore()
 
@@ -742,8 +780,8 @@ class OverlayWindow(QWidget):
         self._audio_level = max(0.0, min(float(level), 1.0))
 
 
-_ANNOTATION_HALO = QColor(255, 248, 240, 170)
-"""Cream stroke under each annotation so it stays visible on dark apps."""
+_ANNOTATION_HALO = QColor(255, 255, 255, 190)
+"""White stroke under each coral annotation so it stays visible on dark apps."""
 
 
 # --- Thinking phase ------------------------------------------------------------
@@ -794,10 +832,17 @@ class OverlayController:
         cursor_pos_fn=None,
     ) -> None:
         self.island = None
+        self._pending_label = ""
+        glow_enabled = True
         if overlay_factory is None:
             overlay_factory = OverlayWindow
             from island import SideIsland
             self.island = SideIsland()
+            try:
+                from config import EDGE_GLOW
+                glow_enabled = EDGE_GLOW
+            except Exception:
+                pass
         if screens is None:
             screens = QGuiApplication.screens()
         self._cursor_pos_fn = cursor_pos_fn or QCursor.pos
@@ -807,6 +852,7 @@ class OverlayController:
             overlay = overlay_factory(qscreen)
             overlay.show()
             overlay.apply_win32_clickthrough()
+            overlay.glow_enabled = glow_enabled
             self.overlays.append(overlay)
 
         self._state = _OverlayState.IDLE
@@ -897,6 +943,8 @@ class OverlayController:
         )
         target_overlay._pointer_visible = True
         target_overlay._celebrate_next_landing = True
+        target_overlay.point_label = self._pending_label
+        self._pending_label = ""
         target_overlay.animate_pointer_to(local_x, local_y)
         target_overlay._flight_anim.finished.connect(self._on_point_animation_finished)
 
@@ -915,6 +963,7 @@ class OverlayController:
         if self._pointing_overlay is None:
             self._resume_idle()
             return
+        self._pointing_overlay.point_label = ""
         global_pos = self._cursor_pos_fn()
         local = self._pointing_overlay.mapFromGlobal(global_pos)
         target = QPoint(
@@ -1063,6 +1112,13 @@ class OverlayController:
         if self.island is not None:
             self.island.say(sentence)
 
+    def point_label(self, label: str) -> None:
+        """Name of what the next point_at points at: a tag beside the avatar
+        when it lands, and a chip in the island's captions."""
+        self._pending_label = (label or "").strip()
+        if self.island is not None and self._pending_label:
+            self.island.highlight(self._pending_label)
+
     def island_meta(self, text: str) -> None:
         """The small chip: model, or time and cost of the answer."""
         if self.island is not None:
@@ -1077,6 +1133,20 @@ class OverlayController:
         """The turn is over; the island tucks itself away after a pause."""
         if self.island is not None:
             self.island.done()
+
+    def apply_look(self, *, glow_enabled: bool, island_side: str) -> None:
+        """Settings that change without a restart: the edge glow and which
+        side of the screen the island lives on."""
+        for overlay in self.overlays:
+            overlay.glow_enabled = glow_enabled
+            overlay.update()
+        if self.island is not None:
+            side = "left" if island_side == "left" else "right"
+            if side != self.island.side:
+                self.island.side = side
+                if self.island._screen is not None:
+                    self.island.dock(self.island._screen)
+                self.island.update()
 
     def _pick_overlay_for_point(
         self, physical_x: int, physical_y: int, monitor: dict,

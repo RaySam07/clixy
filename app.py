@@ -66,7 +66,7 @@ from config import (
 # LLM_PROVIDER and the LLM keys are read fresh (resolve_setting /
 # resolve_api_key) instead of imported, so a key saved in the first-launch
 # dialog is used in the same session. Module constants freeze at import.
-from hotkey import PushToTalkHotkey
+from hotkey import DEFAULT_COMBO, PushToTalkHotkey, describe as describe_hotkey, parse_combo
 from memory import MemoryStore
 from overlay import OverlayController
 from stt import AssemblyAIStreamingSTT, create_stt_client
@@ -382,6 +382,16 @@ _PRICES_PER_MTOK = {
 }
 
 
+def _hotkey_combo() -> str:
+    """The saved push-to-talk combo, or the default if it's missing or broken."""
+    combo = resolve_setting("HOTKEY", default=DEFAULT_COMBO)
+    try:
+        parse_combo(combo)
+    except ValueError:
+        return DEFAULT_COMBO
+    return combo
+
+
 def _answer_meta(first_sentence_s: float | None, model_id: str, usage: dict) -> str:
     """Chip text for the island: time to the first spoken sentence and, for
     models with a known price, roughly what the answer cost."""
@@ -432,6 +442,8 @@ class ClickyApp(QObject):
     sig_island_meta = pyqtSignal(str)
     sig_island_note = pyqtSignal(str)
     sig_island_done = pyqtSignal()
+    # Name of what the next point_at points at (the [POINT] tag's label).
+    sig_point_label = pyqtSignal(str)
 
     def __init__(
         self,
@@ -513,6 +525,7 @@ class ClickyApp(QObject):
         self.sig_island_meta.connect(lambda text: self._island("island_meta", text))
         self.sig_island_note.connect(lambda text: self._island("island_note", text))
         self.sig_island_done.connect(lambda: self._island("island_done"))
+        self.sig_point_label.connect(lambda label: self._island("point_label", label))
 
     def start(self) -> None:
         """Initialize overlay + hotkey and begin listening.
@@ -530,6 +543,7 @@ class ClickyApp(QObject):
             self._hotkey = PushToTalkHotkey(
                 on_press=lambda: self.sig_pressed.emit(),
                 on_release=lambda: self.sig_released.emit(),
+                combo=_hotkey_combo(),
             )
         # Wire RMS audio-level → Qt-thread-safe signal → overlay waveform.
         # stt's callback runs on the portaudio thread; pyqtSignal marshals
@@ -537,7 +551,26 @@ class ClickyApp(QObject):
         self._stt.on_audio_level(lambda lvl: self.sig_audio_level.emit(lvl))
 
         self._hotkey.start()
-        _log("Listening for Ctrl+Alt+Space...")
+        _log(f"Listening for {describe_hotkey(self._hotkey.combo)}...")
+
+    def apply_live_settings(self) -> None:
+        """Apply what Settings can change without a restart: the shortcut,
+        the edge glow and the island's side. (The buddy switches by itself.)"""
+        combo = _hotkey_combo()
+        if self._hotkey is not None and parse_combo(combo) != self._hotkey.tokens:
+            self._hotkey.stop()
+            self._hotkey = PushToTalkHotkey(
+                on_press=lambda: self.sig_pressed.emit(),
+                on_release=lambda: self.sig_released.emit(),
+                combo=combo,
+            )
+            self._hotkey.start()
+            _log(f"Listening for {describe_hotkey(combo)}...")
+        if self._overlay is not None and hasattr(self._overlay, "apply_look"):
+            self._overlay.apply_look(
+                glow_enabled=resolve_setting("EDGE_GLOW", default="on").lower() == "on",
+                island_side=resolve_setting("ISLAND_SIDE", default="right").lower(),
+            )
 
     def stop(self) -> None:
         """Clean shutdown of all services."""
@@ -1236,7 +1269,7 @@ class ClickyApp(QObject):
                     dbg=dbg,
                 )
             # POST-LOCATOR cancel guard: if locator just ran (took seconds on
-            # Ollama), the user may have pressed Ctrl+Alt+Space again. Stop
+            # Ollama), the user may have pressed the hotkey again. Stop
             # before emitting any pointer / memory side effects, which would
             # race the new pipeline and write history for an interaction that
             # no longer matters.
@@ -1284,6 +1317,7 @@ class ClickyApp(QObject):
                 # so the overlay paints cleanly (no flicker of spinner +
                 # cursor at the same time during the transition).
                 self.sig_hide_spinner.emit()
+                self.sig_point_label.emit(result.element_label or "")
                 self.sig_point_at.emit(phys_x, phys_y, target_capture.monitor)
             elif draw_anchor is not None:
                 # Shapes are always on the cursor screen.
@@ -1307,6 +1341,7 @@ class ClickyApp(QObject):
                 phys_x, phys_y = locator_phys_xy
                 dbg.log(f"COORDS: grid-locator -> physical=({phys_x},{phys_y})")
                 self.sig_hide_spinner.emit()
+                self.sig_point_label.emit(result.element_label or "")
                 self.sig_point_at.emit(phys_x, phys_y, cursor_capture.monitor)
             else:
                 dbg.log("COORDS: no coordinate returned (text-only response)")
@@ -1412,6 +1447,8 @@ class ClickyApp(QObject):
         response: str,
         pointer_targets: list,
     ) -> None:
+        if not resolve_setting("KEEP_HISTORY", default="on").lower() == "on":
+            return  # history is off in Settings: keep nothing
         try:
             self._memory.record(
                 app_name=app_name,
@@ -1463,7 +1500,7 @@ _T0 = __import__("time").time()
 #
 # Without this, double-clicking the installed shortcut spawns multiple
 # Clicky.exe processes. Each installs its own pynput.Listener (suppress=False
-# is observe-only, so multiple listeners coexist), so one Ctrl+Alt+Space press
+# is observe-only, so multiple listeners coexist), so one hotkey press
 # fires N parallel STT->LLM->TTS pipelines. User hears N overlapping
 # voices answering one question.
 #
@@ -1799,7 +1836,7 @@ if __name__ == "__main__":
     # _mutex_handle == "fail-open" or a real handle: proceed with startup.
 
     print("=" * 70)
-    print("Clicky Windows: hold Ctrl+Alt+Space and ask")
+    print(f"Clicky Windows: hold {describe_hotkey(_hotkey_combo())} and ask")
     print("=" * 70)
 
     set_dpi_awareness()
@@ -1809,8 +1846,7 @@ if __name__ == "__main__":
     # embeds assets/clicky_tray.ico as the EXE's own icon.
     import theme
     theme.apply(qt_app)
-    qt_app.setWindowIcon(theme.avatar_icon(theme.current_avatar_id()))
-    theme.on_avatar_changed(lambda avatar_id: qt_app.setWindowIcon(theme.avatar_icon(avatar_id)))
+    qt_app.setWindowIcon(theme.app_icon())
     # Tray-only mode: closing the overlay (or any internal window)
     # must NOT exit the app; only the Quit menu item should.
     qt_app.setQuitOnLastWindowClosed(False)
@@ -1951,16 +1987,17 @@ if __name__ == "__main__":
         if dlg.exec() != dlg.DialogCode.Accepted:
             return
         _log("Settings saved.")
-        # Providers/models are built ONCE at startup, so a Settings change
-        # can't affect the already-running instance. Close cleanly and tell
-        # the user to reopen. No auto-relaunch: it pops a stray terminal and
-        # sometimes fails.
+        clicky.apply_live_settings()
+        if not dlg.needs_restart():
+            return
+        # Providers and models are built once at startup, so a new AI or voice
+        # provider needs a fresh start. No auto-relaunch: it pops a stray
+        # terminal and sometimes fails.
         ctypes.windll.user32.MessageBoxW(
             None,
-            "Settings saved.\n\nClicky will now close so your change can take "
-            "effect. Reopen it from the Start Menu (or your desktop shortcut) "
-            "to continue.",
-            "Clicky - reopen to apply",
+            "Saved. Your new AI or voice provider starts next time.\n\n"
+            "Clicky will close now. Reopen it from the Start menu to continue.",
+            "Clicky",
             0x40,  # MB_ICONINFORMATION (OK only)
         )
         clicky.stop()
@@ -1992,6 +2029,6 @@ if __name__ == "__main__":
     signal.signal(signal.SIGINT, _shutdown)
 
     _log(f"Model: {_llm_model_id}")
-    _log("Listening for Ctrl+Alt+Space... (Ctrl+C to quit)")
+    _log(f"Listening for {describe_hotkey(_hotkey_combo())}... (Ctrl+C to quit)")
 
     sys.exit(qt_app.exec())

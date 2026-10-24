@@ -1,53 +1,58 @@
-"""First-launch + tray-menu settings dialog for Clicky Windows.
+"""Clicky's Settings window.
 
-Modal QDialog with one row per category (AI model, Listening, Voice): a
-provider dropdown and that provider's key field. Save persists the choices
-and keys to Windows Credential Manager via keyring. A new install needs two
-keys: one for the AI model and one Cartesia key, which covers both
-listening and the voice.
+An ink rail on the left (the mark, the pages, and your buddy at the
+bottom) and one page at a time on the right:
 
-The dialog is reusable: it's shown at first launch when keys are missing,
-and from the tray menu as "Settings...". Users can swap keys or providers
-without editing .env.
+- General: your AI connection as a card (model, status, key ending, cost);
+  Replace opens the paste zone. The push-to-talk shortcut as keycaps you
+  re-record by pressing them, voice on this PC or in the cloud, and
+  drawing on screen.
+- Buddies: "Say hi to your buddies", the five pixel buddies, alive. Picking
+  one previews it everywhere right away; Cancel puts the old one back.
+- Look: the screen-edge glow and which side the island lives on.
+- Privacy: where each thing goes, keep or forget history.
+- Advanced: every provider with its own key, for the few who need them.
 
-Ergonomics:
-- Password-mode fields (echoed as bullets), with a checkbox to reveal so
-  users can paste-verify long keys.
-- Existing keyring values are pre-populated; the placeholder shows only a
-  masked preview.
-- When two rows use the same key, only one key field is shown.
-- Save is disabled until every provider that needs a key has one.
+Save persists everything to Windows Credential Manager via keyring. The
+shortcut, glow, island side, history and buddy apply at once; a new AI or
+voice provider needs a restart, which ``needs_restart()`` reports.
 
-Threading: this dialog runs on the Qt main thread (it's modal). No
-threading concerns. ``keyring.set_password`` is synchronous + ~10ms
-on Windows DPAPI, so no async needed.
+The provider rows are the original dialog's, kept whole: one dropdown and
+key field per category (AI model, Listening, Voice), shared keys shown
+once, a pasted key moving to the provider it belongs to, and Save disabled
+until every provider that needs a key has one.
+
+Threading: Qt main thread only (modal). ``keyring.set_password`` is
+synchronous and ~10 ms on Windows DPAPI.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 
 import keyring
 
-from PyQt6.QtCore import QSize, Qt, QUrl
-from PyQt6.QtGui import QDesktopServices, QIcon, QPixmap
+from PyQt6.QtCore import Qt, QTimer, QUrl
+from PyQt6.QtGui import QDesktopServices, QFont
 from PyQt6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
     QPushButton,
-    QToolButton,
+    QScrollArea,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
 import theme
+from widgets import BuddyView, ConnectionCard, KeyCaps, PasteZone, Segmented, Toggle, buddy_grid, mark_label
 
 from config import KEYRING_SERVICE, OLLAMA_HOST
 
@@ -269,32 +274,83 @@ def _mask(value: str | None) -> str:
     return f"{value[:5]}{'*' * 6}{value[-4:]}"
 
 
+_PAGES: tuple[tuple[str, str], ...] = (
+    ("general", "General"),
+    ("buddies", "Buddies"),
+    ("look", "Look"),
+    ("privacy", "Privacy"),
+    ("advanced", "Advanced"),
+)
+
+_LOCAL_VOICE = ("faster-whisper", "kokoro")
+_CLOUD_VOICE = ("cartesia", "cartesia")
+
+
+def _rows(*rows: QWidget) -> QFrame:
+    """Rows in one white card, with hairlines between them."""
+    frame = QFrame()
+    frame.setObjectName("rows")
+    v = QVBoxLayout(frame)
+    v.setContentsMargins(0, 2, 0, 2)
+    v.setSpacing(0)
+    for i, row in enumerate(rows):
+        if i:
+            line = QFrame()
+            line.setObjectName("rowSep")
+            v.addWidget(line)
+        v.addWidget(row)
+    return frame
+
+
+def _row(title: str, subtitle: str, *controls: QWidget) -> QWidget:
+    row = QWidget()
+    h = QHBoxLayout(row)
+    h.setContentsMargins(22, 15, 18, 15)
+    h.setSpacing(14)
+    text = QVBoxLayout()
+    text.setSpacing(2)
+    title_label = QLabel(title)
+    title_label.setObjectName("rowTitle")
+    text.addWidget(title_label)
+    if subtitle:
+        sub = QLabel(subtitle)
+        sub.setObjectName("rowSub")
+        sub.setWordWrap(True)
+        text.addWidget(sub)
+    h.addLayout(text, stretch=1)
+    for control in controls:
+        h.addWidget(control, alignment=Qt.AlignmentFlag.AlignVCenter)
+    return row
+
+
+def _heading(text: str, lead: str = "") -> QWidget:
+    box = QWidget()
+    v = QVBoxLayout(box)
+    v.setContentsMargins(0, 0, 0, 6)
+    v.setSpacing(6)
+    h1 = QLabel(text)
+    h1.setObjectName("h1")
+    v.addWidget(h1)
+    if lead:
+        label = QLabel(lead)
+        label.setObjectName("lead")
+        label.setWordWrap(True)
+        v.addWidget(label)
+    return box
+
+
 class SettingsDialog(QDialog):
-    """Modal dialog for entering / rotating BYOK API keys.
-
-    Constructor doesn't block; call ``exec()`` to show modally and
-    wait for OK/Cancel. Returns ``QDialog.DialogCode.Accepted`` on
-    Save, ``QDialog.DialogCode.Rejected`` on Cancel.
-
-    Saved values land in Windows Credential Manager under service
-    ``KEYRING_SERVICE`` ("clicky-windows"), one entry per env-var name.
-    """
+    """Clicky's Settings. ``exec()`` returns Accepted on Save, Rejected on
+    Cancel. Saved values land in Windows Credential Manager under
+    ``KEYRING_SERVICE`` ("clicky-windows"), one entry per setting."""
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Clicky Settings")
         self.setModal(True)
-        self.setMinimumWidth(560)
-        # Use the tray icon as the window icon for visual consistency.
-        # Path resolved via __file__ so it works inside both the dev
-        # checkout (CWD = repo root) AND the bundled EXE (CWD =
-        # wherever the user launched from). Plain "assets/..." would
-        # be CWD-relative, which breaks in the bundled case.
-        icon_path = Path(__file__).parent / "assets" / "clicky_tray.ico"
-        try:
-            self.setWindowIcon(QIcon(str(icon_path)))
-        except Exception:
-            pass  # icon missing in dev install; not critical
+        self.setWindowIcon(theme.app_icon())
+        self.resize(900, 660)
+        self.setMinimumSize(820, 600)
 
         self._dropdowns: dict[str, QComboBox] = {}
         self._key_inputs: dict[str, QLineEdit] = {}
@@ -308,95 +364,387 @@ class SettingsDialog(QDialog):
         # True once an AI provider was chosen (saved earlier, or picked in the
         # dropdown now). Until then a pasted OpenRouter key picks the provider.
         self._llm_chosen = False
-        # Per-provider model picker. One model combo + row per category that
-        # has any provider with models (in practice just LLM). The row is shown
-        # only when the selected provider has models; the combo is repopulated
-        # on provider change.
+        # Per-provider model picker (in practice only Ollama has one). The row
+        # shows only when the selected provider has models.
         self._model_combos: dict[str, QComboBox] = {}
         self._model_rows: dict[str, QWidget] = {}
-        # Per-category container widgets, so the realtime provider can
-        # collapse the STT + TTS rows (it does speech end-to-end).
+        # Per-category containers, so the realtime provider can collapse the
+        # STT + TTS rows (it does speech end-to-end).
         self._category_widgets: dict[str, QWidget] = {}
         self._realtime_note: QLabel | None = None
         self._draw_checkbox: QCheckBox | None = None
-        # Avatar picked in this dialog. Clicking one previews its theme live;
-        # Cancel puts the previous one back.
+        # Buddy picked in this dialog: previewed live, put back on Cancel.
         self._avatar_at_open = theme.current_avatar_id()
-        self._avatar_buttons: dict[str, QToolButton] = {}
-        self._header_avatar: QLabel | None = None
+        self._avatar_cards: dict = {}
+        self._needs_restart = False
+        self._nav: dict[str, QPushButton] = {}
+        self._pages: dict[str, QWidget] = {}
         self._build_ui()
 
-    # ---------- UI construction -----------------------------------------
+    # ---------- Layout ------------------------------------------------------
 
     def _build_ui(self) -> None:
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(22, 18, 22, 18)
-        outer.setSpacing(8)
-        outer.addLayout(self._build_header())
-        outer.addWidget(self._build_avatar_picker())
-
-        # Lean privacy framing, two sentences; a multi-line splash reads as
-        # too loud. On the cloud defaults, screenshots and audio go straight
-        # to the providers picked below, so the second sentence says where
-        # they go. Deliberately NOT phrased as a denial ("no server", "no
-        # telemetry"): denying something the user never suspected reads as
-        # defensive.
-        privacy = QLabel(
-            "🔒 Keys stay on this PC, encrypted by Windows Credential Manager. "
-            "Your screen, your question and Clicky's notes for the current app go to the AI you pick; "
-            "with the local options your voice stays on this PC."
-        )
-        privacy.setWordWrap(True)
-        privacy.setObjectName("clickyMuted")
-        outer.addWidget(privacy)
-
-        for category in _PROVIDER_CATEGORIES:
-            category_widget = self._build_category_row(category)
-            self._category_widgets[category.category_key] = category_widget
-            outer.addWidget(category_widget)
-
-        # Draw-on-screen teaching mode toggle. Single checkbox, off by
-        # default. Persists ANNOTATION_MODE to keyring (config reads it). When
-        # on, Clicky circles/arrows/underlines answers on screen.
         from config import resolve_setting
-        self._draw_checkbox = QCheckBox(
-            "✏️  Draw on screen: circle, arrow and underline the answer (teaching mode)"
-        )
-        self._draw_checkbox.setChecked(
-            resolve_setting("ANNOTATION_MODE", "off") == "on"
-        )
-        outer.addWidget(self._draw_checkbox)
 
-        self._reveal = QCheckBox("Show keys in plain text (paste-verify)")
+        root = QHBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+        root.addWidget(self._build_rail())
+
+        pane = QWidget()
+        pane.setObjectName("pane")
+        pv = QVBoxLayout(pane)
+        pv.setContentsMargins(0, 0, 0, 0)
+        pv.setSpacing(0)
+        self._stack = QStackedWidget()
+        pv.addWidget(self._stack, stretch=1)
+        root.addWidget(pane, stretch=1)
+
+        self._hotkey = resolve_setting("HOTKEY", default="ctrl+win")
+        self._reveal = Toggle()
         self._reveal.toggled.connect(self._on_reveal_toggled)
-        outer.addWidget(self._reveal)
+        # Advanced first: the other pages read its dropdowns and key fields.
+        pages = {"advanced": self._build_advanced()}
+        pages["general"] = self._build_general()
+        pages["buddies"] = self._build_buddies()
+        pages["look"] = self._build_look()
+        pages["privacy"] = self._build_privacy()
+        for key, _label in _PAGES:
+            scroll = QScrollArea()
+            scroll.setObjectName("pageScroll")
+            scroll.setWidgetResizable(True)
+            scroll.setFrameShape(QFrame.Shape.NoFrame)
+            scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            page = pages[key]
+            page.setObjectName("page")
+            scroll.setWidget(page)
+            self._stack.addWidget(scroll)
+            self._pages[key] = scroll
 
-        # Apply the initial realtime collapse (if LLM provider is realtime).
-        self._apply_realtime_collapse()
-
+        # Bottom bar: why Save is off (when it is), Cancel, Save.
+        bar = QHBoxLayout()
+        bar.setContentsMargins(48, 14, 36, 22)
+        bar.setSpacing(12)
+        self._save_hint = QLabel()
+        self._save_hint.setObjectName("bad")
+        bar.addWidget(self._save_hint, stretch=1)
         self._buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save
             | QDialogButtonBox.StandardButton.Cancel
         )
         self._buttons.accepted.connect(self._on_save)
         self._buttons.rejected.connect(self.reject)
-        self._buttons.button(QDialogButtonBox.StandardButton.Save).setObjectName("clickyPrimary")
-        outer.addWidget(self._buttons)
-        self._update_save_enabled()
+        save = self._buttons.button(QDialogButtonBox.StandardButton.Save)
+        save.setObjectName("primary")
+        for button in self._buttons.buttons():
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+            button.setMinimumWidth(104)
+        bar.addWidget(self._buttons)
+        pv.addLayout(bar)
 
-    def _build_category_row(self, category: _ProviderCategory) -> QWidget:
-        """Build one (label + dropdown + Get-key + key-field) row group."""
+        self._apply_realtime_collapse()
+        self._update_save_enabled()
+        self._refresh_connection()
+        self.show_page("general")
+
+    def _build_rail(self) -> QWidget:
+        rail = QWidget()
+        rail.setObjectName("rail")
+        rail.setFixedWidth(212)
+        v = QVBoxLayout(rail)
+        v.setContentsMargins(20, 28, 16, 20)
+        v.setSpacing(4)
+        logo = QHBoxLayout()
+        logo.setContentsMargins(8, 0, 0, 0)
+        logo.setSpacing(10)
+        logo.addWidget(mark_label(26, theme.BUTTER))
+        wordmark = QLabel("clicky")
+        wordmark.setObjectName("railWordmark")
+        logo.addWidget(wordmark)
+        logo.addStretch(1)
+        v.addLayout(logo)
+        v.addSpacing(28)
+        group = QButtonGroup(rail)
+        group.setExclusive(True)
+        for key, label in _PAGES:
+            button = QPushButton(label)
+            button.setObjectName("nav")
+            button.setCheckable(True)
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+            button.clicked.connect(lambda _c=False, k=key: self.show_page(k))
+            group.addButton(button)
+            v.addWidget(button)
+            self._nav[key] = button
+        v.addStretch(1)
+        # Your buddy keeps you company at the bottom of the rail.
+        self._rail_buddy = BuddyView(84, scale=2.0, glow=True)
+        v.addWidget(self._rail_buddy, alignment=Qt.AlignmentFlag.AlignHCenter)
+        self._rail_name = QLabel()
+        self._rail_name.setObjectName("railBuddy")
+        self._rail_name.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        v.addWidget(self._rail_name)
+        self._refresh_rail_buddy()
+        return rail
+
+    def _page(self) -> tuple[QWidget, QVBoxLayout]:
+        page = QWidget()
+        v = QVBoxLayout(page)
+        v.setContentsMargins(48, 40, 36, 12)
+        v.setSpacing(16)
+        return page, v
+
+    def show_page(self, key: str) -> None:
+        """Switch to a page: general, buddies, look, privacy or advanced."""
+        self._stack.setCurrentWidget(self._pages[key])
+        self._nav[key].setChecked(True)
+
+    # ---------- General -----------------------------------------------------
+
+    def _build_general(self) -> QWidget:
         from config import resolve_setting
 
-        container = QWidget()
+        page, v = self._page()
+        v.addWidget(_heading("General"))
+
+        self._replacing = False
+        self._settle = QTimer(self)
+        self._settle.setSingleShot(True)
+        self._settle.setInterval(650)
+        self._settle.timeout.connect(self._after_paste)
+        self._conn_card = ConnectionCard()
+        self._conn_card.replaceClicked.connect(lambda: self._show_paste_zone(True))
+        v.addWidget(self._conn_card)
+        self._paste_box = QWidget()
+        pb = QVBoxLayout(self._paste_box)
+        pb.setContentsMargins(0, 0, 0, 0)
+        pb.setSpacing(8)
+        self._paste = PasteZone()
+        self._paste.keyChanged.connect(self._on_paste_key)
+        pb.addWidget(self._paste)
+        links = QHBoxLayout()
+        get_key = QPushButton("Get a key from Anthropic")
+        get_key.setObjectName("quiet")
+        get_key.setCursor(Qt.CursorShape.PointingHandCursor)
+        get_key.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl("https://console.anthropic.com/settings/keys"))
+        )
+        links.addWidget(get_key)
+        links.addStretch(1)
+        self._keep_key = QPushButton("Keep my current key")
+        self._keep_key.setObjectName("quiet")
+        self._keep_key.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._keep_key.clicked.connect(lambda: self._show_paste_zone(False))
+        links.addWidget(self._keep_key)
+        pb.addLayout(links)
+        v.addWidget(self._paste_box)
+
+        # Shortcut: keycaps, re-recorded by pressing the new keys.
+        self._caps = KeyCaps(self._hotkey)
+        self._caps.recorded.connect(self._on_hotkey_recorded)
+        change = QPushButton("Change")
+        change.setObjectName("quiet")
+        change.setCursor(Qt.CursorShape.PointingHandCursor)
+        change.clicked.connect(self._caps.record)
+
+        self._voice = Segmented([("local", "On this PC"), ("cloud", "Cloud · faster")])
+        self._voice.changed.connect(self._on_voice_changed)
+        self._sync_voice_switch()
+
+        self._draw_checkbox = Toggle()
+        self._draw_checkbox.setChecked(resolve_setting("ANNOTATION_MODE", "off") == "on")
+
+        v.addWidget(_rows(
+            _row("Shortcut", "Hold to talk, let go to ask.", self._caps, change),
+            _row("Voice", "Hearing you and talking back.", self._voice),
+            _row("Draw on screen", "Circle and label what your buddy points at.", self._draw_checkbox),
+        ))
+        self._voice_hint = QLabel("Cloud voice uses one Cartesia key for both. Add it in Advanced.")
+        self._voice_hint.setObjectName("rowSub")
+        self._voice_hint.setVisible(False)
+        v.addWidget(self._voice_hint)
+        v.addStretch(1)
+        return page
+
+    def _connection(self) -> tuple[str, str, str, bool]:
+        """(model as rich text, key, cost, local) for the connection card."""
+        from config import resolve_model
+        from island import model_label
+
+        provider = self._selected_provider("LLM")
+        key = self._key_inputs["LLM"].text().strip()
+        semi = theme.family(QFont.Weight.DemiBold)
+
+        def html(brand: str, model: str) -> str:
+            return f'{brand} <span style="font-family:\'{semi}\'">{model}</span>'
+
+        via = " · via OpenRouter" if key.startswith("sk-or-") else ""
+        if provider.provider_id == "ollama":
+            model = self._selected_model_id(self._category("LLM"), provider) or "a local model"
+            return html("Ollama", model), "", "free · on this PC", True
+        if provider.provider_id == "anthropic":
+            model = resolve_model("ANTHROPIC_MODEL", "claude-haiku-5-5")
+            cost = "≈ $0.0003 a question" if "haiku" in model else ""
+            return html("Claude", model_label(model)), key, cost + via, False
+        if provider.provider_id == "gemini":
+            model = resolve_model("GEMINI_MODEL_VISION", "google/gemini-4-argon")
+            return html("Gemini", model_label(model).removeprefix("gemini-")), key, via.lstrip(" ·"), False
+        model = resolve_model("OPENAI_MODEL_VISION", "gpt-6.1-sol")
+        return html("OpenAI", model_label(model)), key, via.lstrip(" ·"), False
+
+    def _refresh_connection(self) -> None:
+        if not hasattr(self, "_conn_card"):
+            return
+        model, key, cost, local = self._connection()
+        self._conn_card.show_connection(model, key, cost, local=local)
+        if not key and not local:
+            self._show_paste_zone(True, can_keep=False)  # no key yet: paste is the whole story
+        elif not self._replacing:
+            self._show_paste_zone(False)
+
+    def _show_paste_zone(self, show: bool, *, can_keep: bool = True) -> None:
+        self._replacing = show and can_keep
+        self._paste_box.setVisible(show)
+        self._conn_card.setVisible(not show)
+        self._keep_key.setVisible(can_keep)
+        if show:
+            self._paste.field.setFocus()
+
+    def _on_paste_key(self, text: str) -> None:
+        if self._paste.kind is None:
+            return  # half a key, or not a Claude key: the zone says so
+        self._replacing = True  # hold the zone while its check mark lands
+        self._key_inputs["LLM"].setText(text)
+        self._settle.start()
+
+    def _after_paste(self) -> None:
+        self._replacing = False
+        self._refresh_connection()
+
+    def _on_hotkey_recorded(self, combo: str) -> None:
+        self._hotkey = combo
+
+    def _sync_voice_switch(self) -> None:
+        pair = (self._dropdowns["STT"].currentData(), self._dropdowns["TTS"].currentData())
+        self._voice.set_value("local" if pair == _LOCAL_VOICE else "cloud" if pair == _CLOUD_VOICE else "")
+
+    def _on_voice_changed(self, value: str) -> None:
+        stt, tts = _LOCAL_VOICE if value == "local" else _CLOUD_VOICE
+        for key, provider_id in (("STT", stt), ("TTS", tts)):
+            dropdown = self._dropdowns[key]
+            dropdown.setCurrentIndex(max(0, dropdown.findData(provider_id)))
+        self._update_save_enabled()
+
+    # ---------- Buddies -----------------------------------------------------
+
+    def _build_buddies(self) -> QWidget:
+        page, v = self._page()
+        v.addWidget(_heading(
+            "Say hi to your buddies",
+            "Pick who points for you. Each one brings its own colors to the screen glow.",
+        ))
+        grid, self._avatar_cards = buddy_grid(self._on_avatar_picked, columns=3)
+        v.addWidget(grid)
+        v.addStretch(1)
+        return page
+
+    def _on_avatar_picked(self, avatar_id: str) -> None:
+        """Preview the buddy everywhere right away; Save keeps it."""
+        theme.set_avatar(avatar_id, persist=False)
+        self._refresh_rail_buddy()
+
+    def _refresh_rail_buddy(self) -> None:
+        av = theme.current_avatar()
+        self._rail_name.setText(f"{av.name} is with you")
+
+    # ---------- Look ----------------------------------------------------------
+
+    def _build_look(self) -> QWidget:
+        from config import resolve_setting
+
+        page, v = self._page()
+        v.addWidget(_heading("Look"))
+        self._glow = Toggle()
+        self._glow.setChecked(resolve_setting("EDGE_GLOW", default="on").lower() == "on")
+        self._side = Segmented([("left", "Left"), ("right", "Right")])
+        self._side.set_value("left" if resolve_setting("ISLAND_SIDE", default="right").lower() == "left" else "right")
+        v.addWidget(_rows(
+            _row("Edge glow", "Your buddy's colors flow around the screen while you talk.", self._glow),
+            _row("Island side", "Which edge of the screen the notch lives on.", self._side),
+        ))
+        v.addStretch(1)
+        return page
+
+    # ---------- Privacy ---------------------------------------------------------
+
+    def _build_privacy(self) -> QWidget:
+        from config import resolve_setting
+
+        page, v = self._page()
+        v.addWidget(_heading("Privacy"))
+        # Say where each thing goes. Not phrased as a denial ("nothing leaves
+        # your PC"): that would be false, the screenshot goes to the AI.
+        privacy = QLabel(
+            "Keys stay on this PC, encrypted by Windows Credential Manager. "
+            "Your screenshot, your question and Clicky's notes for that app go to the AI you pick. "
+            "With voice on this PC, what you say stays here too."
+        )
+        privacy.setObjectName("lead")
+        privacy.setWordWrap(True)
+        v.addWidget(privacy)
+        self._keep_history = Toggle()
+        self._keep_history.setChecked(resolve_setting("KEEP_HISTORY", default="on").lower() == "on")
+        forget = QPushButton("Forget…")
+        forget.setObjectName("danger")
+        forget.setCursor(Qt.CursorShape.PointingHandCursor)
+        forget.clicked.connect(self._on_forget)
+        v.addWidget(_rows(
+            _row("Keep history", "Short notes about what you asked in each app, so answers get better.",
+                 self._keep_history),
+            _row("Forget history", "Deletes those notes and any logs. Keeps your key and settings.", forget),
+        ))
+        v.addStretch(1)
+        return page
+
+    def _on_forget(self) -> None:
+        from tray import forget_dialog, forget_history
+        if forget_dialog().exec() != QMessageBox.StandardButton.Yes:
+            return
+        failed = forget_history()
+        QMessageBox.information(
+            self, "Clicky",
+            "Some files were in use and stayed. Quit Clicky and try again." if failed else "Done. Your history is gone.",
+        )
+
+    # ---------- Advanced ----------------------------------------------------------
+
+    def _build_advanced(self) -> QWidget:
+        page, v = self._page()
+        v.addWidget(_heading("Advanced", "Other AI and voice providers, each with its own key. Most people never need these."))
+        for category in _PROVIDER_CATEGORIES:
+            widget = self._build_category_row(category)
+            self._category_widgets[category.category_key] = widget
+            v.addWidget(widget)
+        v.addWidget(_rows(_row("Show keys", "In plain text, to check a pasted key.", self._reveal)))
+        v.addStretch(1)
+        return page
+
+    def _category(self, key: str) -> _ProviderCategory:
+        return next(c for c in _PROVIDER_CATEGORIES if c.category_key == key)
+
+    def _build_category_row(self, category: _ProviderCategory) -> QWidget:
+        """One provider card: title, dropdown + Get key, key field, notes."""
+        from config import resolve_setting
+
+        container = QFrame()
+        container.setObjectName("rows")
         v = QVBoxLayout(container)
-        v.setContentsMargins(0, 4, 0, 8)
+        v.setContentsMargins(22, 16, 18, 18)
+        v.setSpacing(10)
 
         label = QLabel(category.label)
-        label.setObjectName("clickySection")
+        label.setObjectName("rowTitle")
         v.addWidget(label)
 
-        # Resolve currently-selected provider for this category.
         selected_provider_id = resolve_setting(
             f"{category.category_key}_PROVIDER",
             default=_default_provider_id(category),
@@ -409,8 +757,8 @@ class SettingsDialog(QDialog):
         except StopIteration:
             selected_index = category.default_index
 
-        # Dropdown + Get-key button on one horizontal row.
         h = QHBoxLayout()
+        h.setSpacing(10)
         dropdown = QComboBox()
         for provider in category.providers:
             dropdown.addItem(provider.display_name, provider.provider_id)
@@ -425,6 +773,7 @@ class SettingsDialog(QDialog):
         h.addWidget(dropdown, stretch=1)
 
         signup_button = QPushButton("Get key →")
+        signup_button.setCursor(Qt.CursorShape.PointingHandCursor)
         signup_button.clicked.connect(
             lambda _checked=False, c=category: self._on_signup_clicked(c)
         )
@@ -432,7 +781,6 @@ class SettingsDialog(QDialog):
         h.addWidget(signup_button)
         v.addLayout(h)
 
-        # API key field.
         key_input = QLineEdit()
         key_input.setEchoMode(QLineEdit.EchoMode.Password)
         key_input.textChanged.connect(self._update_save_enabled)
@@ -443,17 +791,13 @@ class SettingsDialog(QDialog):
         v.addWidget(key_input)
 
         share_note = QLabel()
-        share_note.setObjectName("clickyMuted")
+        share_note.setObjectName("rowSub")
         share_note.setVisible(False)
         self._share_notes[category.category_key] = share_note
         v.addWidget(share_note)
 
-        # Pre-populate the key field with masked existing value (if any).
         self._refresh_key_field_for_category(category)
 
-        # Per-provider model picker row. Built if ANY provider in this
-        # category has models; shown only when the selected provider has
-        # models. Populated for the current provider.
         if any(p.models for p in category.providers):
             model_row = self._build_model_row(category)
             v.addWidget(model_row)
@@ -462,21 +806,21 @@ class SettingsDialog(QDialog):
             self._populate_model_combo(category, current_provider)
             model_row.setVisible(bool(current_provider.models))
 
-        # Realtime note, shown under the LLM row when the realtime
-        # provider is selected (it collapses STT+TTS; tell the user why).
         if category.category_key == "LLM":
             note = QLabel(
-                "⚡ Realtime handles speech end-to-end (lowest latency). "
-                "STT + TTS aren't used in this mode."
+                "Realtime handles speech end-to-end (lowest latency), "
+                "so listening and voice aren't used."
             )
             note.setWordWrap(True)
-            note.setObjectName("clickyNote")
+            note.setObjectName("rowSub")
             v.addWidget(note)
             self._realtime_note = note
             current_provider = category.providers[selected_index]
             note.setVisible(current_provider.hides_other_categories)
 
         return container
+
+    # ---------- Provider rows: logic ------------------------------------------
 
     def _build_model_row(self, category: _ProviderCategory) -> QWidget:
         """Build the per-provider 'Model:' combobox row. The combo is
@@ -485,7 +829,9 @@ class SettingsDialog(QDialog):
         container = QWidget()
         h = QHBoxLayout(container)
         h.setContentsMargins(0, 4, 0, 0)
-        h.addWidget(QLabel("Model:"))
+        model_label = QLabel("Model")
+        model_label.setObjectName("rowSub")
+        h.addWidget(model_label)
         combo = QComboBox()
         h.addWidget(combo, stretch=1)
         self._model_combos[category.category_key] = combo
@@ -741,6 +1087,14 @@ class SettingsDialog(QDialog):
         self._buttons.button(
             QDialogButtonBox.StandardButton.Save
         ).setEnabled(all_filled)
+        self._save_hint.setText("" if all_filled else "Add the missing key to save.")
+        self._refresh_connection()
+        if hasattr(self, "_voice_hint"):
+            self._sync_voice_switch()
+            tts = self._key_inputs["TTS"]
+            self._voice_hint.setVisible(
+                self._voice.value() == "cloud" and self._selected_requires_key("TTS") and not tts.text().strip()
+            )
 
     def _on_save(self) -> None:
         """Persist provider selection + currently-selected provider's key
@@ -767,11 +1121,7 @@ class SettingsDialog(QDialog):
             provider = category.providers[dropdown.currentIndex()]
 
             # 1. Persist provider selection (e.g. "TTS_PROVIDER" → "elevenlabs")
-            keyring.set_password(
-                KEYRING_SERVICE,
-                f"{category.category_key}_PROVIDER",
-                provider.provider_id,
-            )
+            self._store(f"{category.category_key}_PROVIDER", provider.provider_id, restart=True)
 
             # 2. Persist the API key for the selected provider. A row whose key
             # is covered by another row writes nothing; that row saves it.
@@ -779,9 +1129,7 @@ class SettingsDialog(QDialog):
                 self._key_inputs[category.category_key].text().strip()
             )
             if key_value:
-                keyring.set_password(
-                    KEYRING_SERVICE, provider.api_key_env_var, key_value,
-                )
+                self._store(provider.api_key_env_var, key_value, restart=True)
 
             # 3. Persist the chosen model for providers with a model picker
             # (Ollama→OLLAMA_MODEL_VISION). Only the selected provider's model
@@ -789,92 +1137,34 @@ class SettingsDialog(QDialog):
             if provider.models and provider.model_setting:
                 model_id = self._selected_model_id(category, provider)
                 if model_id:
-                    keyring.set_password(
-                        KEYRING_SERVICE, provider.model_setting, model_id,
-                    )
+                    self._store(provider.model_setting, model_id, restart=True)
 
-        # Persist the draw-on-screen toggle.
+        # The draw-on-screen prompt is chosen at startup; the rest apply live.
         if self._draw_checkbox is not None:
-            keyring.set_password(
-                KEYRING_SERVICE,
-                "ANNOTATION_MODE",
-                "on" if self._draw_checkbox.isChecked() else "off",
-            )
+            self._store("ANNOTATION_MODE", "on" if self._draw_checkbox.isChecked() else "off", restart=True)
+        self._store("HOTKEY", self._hotkey)
+        self._store("EDGE_GLOW", "on" if self._glow.isChecked() else "off")
+        self._store("ISLAND_SIDE", self._side.value() or "right")
+        self._store("KEEP_HISTORY", "on" if self._keep_history.isChecked() else "off")
         theme.set_avatar(theme.current_avatar_id())  # persists the picked avatar
         self._avatar_at_open = theme.current_avatar_id()
         self.accept()
+
+    def _store(self, name: str, value: str, *, restart: bool = False) -> None:
+        """Save one setting; note when the running app can't pick it up live."""
+        if restart and (keyring.get_password(KEYRING_SERVICE, name) or "") != value:
+            self._needs_restart = True
+        keyring.set_password(KEYRING_SERVICE, name, value)
+
+    def needs_restart(self) -> bool:
+        """True after Save changed a provider, key, model or drawing mode."""
+        return self._needs_restart
 
     def reject(self) -> None:
         """Cancel also undoes an avatar previewed in this dialog."""
         if theme.current_avatar_id() != self._avatar_at_open:
             theme.set_avatar(self._avatar_at_open, persist=False)
         super().reject()
-
-    # ---------- Header + avatar picker ------------------------------------
-
-    def _build_header(self) -> QHBoxLayout:
-        row = QHBoxLayout()
-        row.setSpacing(14)
-        self._header_avatar = QLabel()
-        self._header_avatar.setFixedSize(64, 64)
-        self._refresh_header_avatar()
-        row.addWidget(self._header_avatar)
-        text = QVBoxLayout()
-        text.setSpacing(2)
-        title = QLabel("CLICKY")
-        title.setObjectName("clickyTitle")
-        text.addWidget(title)
-        subtitle = QLabel("Hold Ctrl+Alt+Space, ask out loud, let go. I'll point and tell you.")
-        subtitle.setObjectName("clickySubtitle")
-        subtitle.setWordWrap(True)
-        text.addWidget(subtitle)
-        row.addLayout(text, stretch=1)
-        return row
-
-    def _refresh_header_avatar(self) -> None:
-        if self._header_avatar is None:
-            return
-        dpr = self.devicePixelRatioF() or 1.0
-        image = theme.avatar_image(theme.current_avatar_id(), round(64 * dpr))
-        pixmap = QPixmap.fromImage(image)
-        pixmap.setDevicePixelRatio(dpr)
-        self._header_avatar.setPixmap(pixmap)
-
-    def _build_avatar_picker(self) -> QWidget:
-        container = QWidget()
-        v = QVBoxLayout(container)
-        v.setContentsMargins(0, 6, 0, 2)
-        label = QLabel("Your buddy")
-        label.setObjectName("clickySection")
-        v.addWidget(label)
-        row = QHBoxLayout()
-        row.setSpacing(8)
-        group = QButtonGroup(container)
-        group.setExclusive(True)
-        for av in theme.AVATARS:
-            button = QToolButton()
-            button.setObjectName("clickyAvatar")
-            button.setCheckable(True)
-            button.setChecked(av.id == theme.current_avatar_id())
-            button.setIcon(theme.avatar_icon(av.id))
-            button.setIconSize(QSize(40, 40))
-            button.setText(av.name)
-            button.setToolTip(f"{av.name}: {av.tagline} · {av.palette.name} theme")
-            button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
-            button.setFixedHeight(92)
-            button.setMinimumWidth(92)
-            button.clicked.connect(lambda _checked=False, avatar_id=av.id: self._on_avatar_picked(avatar_id))
-            group.addButton(button)
-            row.addWidget(button)
-            self._avatar_buttons[av.id] = button
-        v.addLayout(row)
-        v.addSpacing(6)
-        return container
-
-    def _on_avatar_picked(self, avatar_id: str) -> None:
-        """Preview the avatar and its theme right away; Save keeps it."""
-        theme.set_avatar(avatar_id, persist=False)
-        self._refresh_header_avatar()
 
     def _confirm_ollama_compat(self, model: str) -> bool:
         """Pre-save Ollama compatibility check (Issue #1).

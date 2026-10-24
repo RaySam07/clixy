@@ -5,8 +5,9 @@ Mirrors the DI-mock pattern from tests/test_overlay.py: PushToTalkHotkey
 accepts a `listener_class` parameter so tests inject a MagicMock factory
 instead of pynput.keyboard.Listener.
 
-The hotkey is Ctrl+Alt+Space (all 3 must be held for RECORDING; any
-release of any of the 3 ends it). suppress=False means the listener
+The state-machine tests use the old Ctrl+Alt+Space combo (all 3 must be
+held for RECORDING; any release ends it); TestCombos covers the default
+Ctrl+Win, the Start-menu mask key and other combos. suppress=False means the listener
 observes but never consumes keys, so global typing still works.
 
 Not Ctrl+Shift+Space: Excel + Google Sheets bind it to "Select entire
@@ -50,6 +51,7 @@ class TestStateMachine:
             on_press=on_press,
             on_release=on_release,
             listener_class=MagicMock(),
+            combo="ctrl+alt+space",
         )
         return hk, on_press, on_release
 
@@ -236,3 +238,75 @@ class TestStartLifecycle:
         assert fake_listener_class.call_count == 1
         assert fake_listener_instance.start.call_count == 1
 
+
+
+class TestCombos:
+    """Configurable combos: the default Ctrl+Win, parsing, letters."""
+
+    def _make(self, combo="ctrl+win"):
+        from hotkey import PushToTalkHotkey
+        on_press, on_release, injector = MagicMock(), MagicMock(), MagicMock()
+        hk = PushToTalkHotkey(on_press=on_press, on_release=on_release,
+                              listener_class=MagicMock(), combo=combo, injector=injector)
+        return hk, on_press, on_release, injector
+
+    def test_default_is_ctrl_win(self):
+        from hotkey import DEFAULT_COMBO, PushToTalkHotkey
+        assert DEFAULT_COMBO == "ctrl+win"
+        hk = PushToTalkHotkey(on_press=MagicMock(), on_release=MagicMock(), listener_class=MagicMock())
+        assert hk.tokens == ("ctrl", "win")
+
+    def test_ctrl_win_in_either_order(self):
+        from hotkey import HotkeyState
+        for first, second in ((Key.ctrl_l, Key.cmd), (Key.cmd_r, Key.ctrl_r)):
+            hk, on_press, on_release, _ = self._make()
+            hk._handle_press(first)
+            assert on_press.call_count == 0
+            hk._handle_press(second)
+            assert on_press.call_count == 1 and hk.state == HotkeyState.RECORDING
+            hk._handle_release(Key.cmd)
+            assert on_release.call_count == 1 and hk.state == HotkeyState.IDLE
+
+    def test_win_combo_taps_the_mask_key_so_start_stays_shut(self):
+        from hotkey import MASK_VK
+        hk, _, _, injector = self._make()
+        hk._handle_press(Key.ctrl)
+        hk._handle_press(Key.cmd)
+        pressed = injector.press.call_args.args[0]
+        assert pressed.vk == MASK_VK
+        injector.release.assert_called_once()
+
+    def test_combos_without_win_never_inject(self):
+        hk, _, _, injector = self._make("ctrl+alt+space")
+        for key in (Key.ctrl, Key.alt, Key.space):
+            hk._handle_press(key)
+        injector.press.assert_not_called()
+
+    def test_space_alone_does_not_fire_ctrl_win(self):
+        hk, on_press, _, _ = self._make()
+        hk._handle_press(Key.space)
+        hk._handle_press(Key.ctrl)
+        assert on_press.call_count == 0
+
+    def test_letter_combo_matches_by_virtual_key(self):
+        from pynput.keyboard import KeyCode
+        hk, on_press, _, _ = self._make("ctrl+shift+k")
+        hk._handle_press(Key.ctrl)
+        hk._handle_press(Key.shift)
+        hk._handle_press(KeyCode.from_vk(ord("K")))
+        assert on_press.call_count == 1
+
+    def test_parse_normalizes_names_and_order(self):
+        from hotkey import parse_combo, describe
+        assert parse_combo("Win + Control") == ("ctrl", "win")
+        assert parse_combo("ctrl+alt+space") == ("ctrl", "alt", "space")
+        assert describe("win+ctrl") == "Ctrl + Win"
+        assert describe("ctrl+f9") == "Ctrl + F9"
+
+    def test_parse_rejects_unknown_keys(self):
+        import pytest
+        from hotkey import parse_combo
+        with pytest.raises(ValueError):
+            parse_combo("ctrl+banana")
+        with pytest.raises(ValueError):
+            parse_combo("")

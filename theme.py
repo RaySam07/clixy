@@ -1,16 +1,19 @@
-"""Cozy look for Clicky Windows: pixel avatars, color themes, fonts, styles.
+"""Look of Clicky Windows: brand, fonts, the pixel buddies and app styles.
 
-Five pixel-art avatars, each with its own color theme. The theme colors the
-screen-edge glow, the side island, the settings window and the tray menu, so
-picking an avatar re-skins the whole app.
+Brand: ink, butter and warm paper, with coral only for "live". Type is
+Manrope (light for display, regular for text) with JetBrains Mono for small
+numbers. The mark is a circle with a pill bitten out of its side: a C, and
+the side notch growing out of the screen edge.
 
-Every avatar is drawn on a grid of square cells with its pointing tip at cell
-(0, 0): the tip's top-left corner is the pixel the model asked for, so the
-avatar lands exactly where the old arrow cursor did. Sprites step at 10 fps
-like real pixel art, and each frame is cached.
+Buddies: five pixel-art pointers (Ember, Splash, Sprout, Mochi, Twinkle).
+Each is drawn on a grid of square cells with its pointing tip at cell
+(0, 0): the tip's top-left corner is the pixel the model asked for. Sprites
+step at 10 fps like real pixel art, and each frame is cached. Each buddy
+brings its own colors for its glow, its landing burst and the screen-edge
+glow; the app's chrome stays in the brand colors.
 
-Nothing here keeps app state except which avatar is current; callers pass the
-time and mood, the helpers draw.
+Nothing here keeps app state except which buddy is current; callers pass
+the time and mood, the helpers draw.
 """
 from __future__ import annotations
 
@@ -29,7 +32,6 @@ from PyQt6.QtGui import (
     QFontDatabase,
     QIcon,
     QImage,
-    QLinearGradient,
     QPainter,
     QPainterPath,
     QPen,
@@ -42,26 +44,82 @@ def _c(r: int, g: int, b: int, a: int = 255) -> QColor:
     return QColor(r, g, b, a)
 
 
-# --- Palettes ------------------------------------------------------------------
+# --- Brand -----------------------------------------------------------------------
+
+INK = _c(10, 10, 18)
+PAPER = _c(245, 242, 234)
+CARD = _c(255, 255, 255)
+BUTTER = _c(255, 241, 161)
+CORAL = _c(255, 90, 61)
+LINE = _c(226, 221, 208)
+MIST = _c(241, 237, 226)
+MUTED = _c(106, 106, 119)
+
+NOTCH = _c(0, 0, 0)
+NOTCH_TEXT = _c(255, 255, 255)
+NOTCH_MUTED = _c(141, 141, 153)
+NOTCH_DIM = _c(104, 104, 117)
+NOTCH_CHIP_DIM = _c(52, 52, 62)
+NOTCH_CHIP_DIM_TEXT = _c(182, 182, 194)
+
+
+def mark_path(size: float) -> QPainterPath:
+    """The mark in a size x size box: a circle with a pill bitten out of its
+    right side."""
+    s = size / 48.0
+    circle = QPainterPath()
+    circle.addEllipse(QPointF(24 * s, 24 * s), 22 * s, 22 * s)
+    notch = QPainterPath()
+    notch.addRoundedRect(QRectF(29 * s, 14.5 * s, 30 * s, 19 * s), 9.5 * s, 9.5 * s)
+    return circle.subtracted(notch)
+
+
+def paint_mark(painter: QPainter, x: float, y: float, size: float, color: QColor) -> None:
+    painter.save()
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    painter.translate(x, y)
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(color)
+    painter.drawPath(mark_path(size))
+    painter.restore()
+
+
+def app_icon_image(size: int) -> QImage:
+    """App and tray icon: the butter mark on an ink tile, readable on light
+    and dark taskbars alike."""
+    image = QImage(size, size, QImage.Format.Format_ARGB32_Premultiplied)
+    image.fill(Qt.GlobalColor.transparent)
+    p = QPainter(image)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(INK)
+    radius = size * 0.24
+    p.drawRoundedRect(QRectF(0, 0, size, size), radius, radius)
+    inset = size * 0.17
+    paint_mark(p, inset, inset, size - 2 * inset, BUTTER)
+    p.end()
+    return image
+
+
+def app_icon() -> QIcon:
+    icon = QIcon()
+    for size in (16, 20, 24, 32, 40, 48, 64, 128, 256):
+        icon.addPixmap(QPixmap.fromImage(app_icon_image(size)))
+    return icon
+
+
+# --- Buddy palettes ----------------------------------------------------------------
 
 @dataclass(frozen=True)
 class Palette:
-    """One cozy color theme. ``glow`` stops run around the screen edge."""
+    """A buddy's own colors: its glow, its landing burst and the screen-edge
+    glow while you talk. ``glow`` stops run around the screen edge."""
 
     name: str
     glow: tuple[tuple[float, QColor], ...]
-    accent: QColor           # annotations, highlights, primary button
-    accent_text: QColor      # text on an accent-colored button
-    chip: QColor             # text color of small pixel-font chips
-    surface_top: QColor      # island / dialog background, top of gradient
-    surface_bottom: QColor
-    raised: QColor           # input fields, cards
-    line: QColor             # borders
-    text: QColor
-    muted: QColor
-    bars: tuple[QColor, QColor]
+    accent: QColor
+    halo: QColor
     dots: tuple[QColor, QColor, QColor]
-    halo: QColor             # soft light around the avatar
 
 
 CAMPFIRE = Palette(
@@ -69,13 +127,8 @@ CAMPFIRE = Palette(
     glow=((0.00, _c(255, 70, 30)), (0.18, _c(255, 140, 30)), (0.33, _c(255, 214, 90)),
           (0.50, _c(255, 110, 40)), (0.68, _c(230, 40, 50)), (0.84, _c(255, 160, 50)),
           (1.00, _c(255, 70, 30))),
-    accent=_c(255, 122, 36), accent_text=_c(255, 255, 255), chip=_c(255, 178, 122),
-    surface_top=_c(32, 20, 17), surface_bottom=_c(21, 13, 11),
-    raised=_c(46, 30, 25), line=_c(92, 54, 40),
-    text=_c(255, 238, 220), muted=_c(190, 150, 128),
-    bars=(_c(255, 90, 30), _c(255, 210, 80)),
+    accent=_c(255, 122, 36), halo=_c(255, 120, 30),
     dots=(_c(255, 104, 30), _c(255, 166, 30), _c(255, 218, 80)),
-    halo=_c(255, 120, 30),
 )
 
 LAGOON = Palette(
@@ -83,13 +136,8 @@ LAGOON = Palette(
     glow=((0.00, _c(40, 110, 255)), (0.20, _c(40, 200, 255)), (0.36, _c(130, 255, 225)),
           (0.52, _c(60, 150, 255)), (0.70, _c(90, 90, 255)), (0.86, _c(60, 220, 240)),
           (1.00, _c(40, 110, 255))),
-    accent=_c(62, 190, 255), accent_text=_c(8, 24, 40), chip=_c(140, 220, 255),
-    surface_top=_c(14, 24, 38), surface_bottom=_c(9, 15, 26),
-    raised=_c(22, 36, 56), line=_c(44, 74, 110),
-    text=_c(228, 244, 255), muted=_c(130, 165, 195),
-    bars=(_c(50, 130, 255), _c(120, 250, 220)),
+    accent=_c(62, 190, 255), halo=_c(60, 170, 255),
     dots=(_c(60, 140, 255), _c(60, 200, 255), _c(130, 250, 220)),
-    halo=_c(60, 170, 255),
 )
 
 MATCHA = Palette(
@@ -97,13 +145,8 @@ MATCHA = Palette(
     glow=((0.00, _c(60, 170, 90)), (0.20, _c(150, 220, 90)), (0.36, _c(240, 236, 160)),
           (0.52, _c(90, 200, 120)), (0.70, _c(40, 140, 110)), (0.86, _c(170, 230, 110)),
           (1.00, _c(60, 170, 90))),
-    accent=_c(132, 210, 104), accent_text=_c(14, 34, 18), chip=_c(186, 232, 150),
-    surface_top=_c(20, 30, 22), surface_bottom=_c(13, 20, 15),
-    raised=_c(30, 44, 33), line=_c(58, 86, 60),
-    text=_c(236, 246, 226), muted=_c(150, 178, 145),
-    bars=(_c(70, 180, 90), _c(230, 236, 150)),
+    accent=_c(132, 210, 104), halo=_c(110, 210, 110),
     dots=(_c(80, 180, 90), _c(150, 220, 100), _c(230, 236, 150)),
-    halo=_c(110, 210, 110),
 )
 
 MIDNIGHT = Palette(
@@ -111,13 +154,8 @@ MIDNIGHT = Palette(
     glow=((0.00, _c(90, 80, 230)), (0.20, _c(160, 100, 255)), (0.36, _c(255, 212, 100)),
           (0.52, _c(140, 90, 250)), (0.70, _c(70, 70, 200)), (0.86, _c(200, 150, 255)),
           (1.00, _c(90, 80, 230))),
-    accent=_c(178, 140, 255), accent_text=_c(20, 14, 36), chip=_c(255, 214, 110),
-    surface_top=_c(24, 19, 38), surface_bottom=_c(15, 12, 26),
-    raised=_c(36, 29, 56), line=_c(70, 58, 108),
-    text=_c(240, 234, 255), muted=_c(160, 148, 196),
-    bars=(_c(140, 100, 255), _c(255, 212, 100)),
+    accent=_c(178, 140, 255), halo=_c(150, 110, 255),
     dots=(_c(150, 110, 255), _c(200, 160, 255), _c(255, 212, 100)),
-    halo=_c(150, 110, 255),
 )
 
 DREAMY = Palette(
@@ -125,13 +163,8 @@ DREAMY = Palette(
     glow=((0.00, _c(170, 150, 255)), (0.20, _c(120, 165, 255)), (0.36, _c(120, 225, 255)),
           (0.52, _c(255, 226, 140)), (0.70, _c(160, 140, 255)), (0.86, _c(110, 200, 255)),
           (1.00, _c(170, 150, 255))),
-    accent=_c(255, 210, 90), accent_text=_c(40, 30, 10), chip=_c(255, 222, 140),
-    surface_top=_c(26, 23, 42), surface_bottom=_c(17, 15, 30),
-    raised=_c(38, 34, 60), line=_c(76, 70, 116),
-    text=_c(244, 240, 255), muted=_c(168, 160, 200),
-    bars=(_c(150, 140, 255), _c(255, 222, 140)),
+    accent=_c(255, 210, 90), halo=_c(255, 220, 120),
     dots=(_c(160, 150, 255), _c(120, 210, 255), _c(255, 222, 140)),
-    halo=_c(255, 220, 120),
 )
 
 
@@ -571,6 +604,20 @@ def paint_avatar(
     painter.restore()
 
 
+def paint_avatar_in(painter: QPainter, rect: QRectF, *, t: float, mood: str = "idle",
+                    avatar_id: str | None = None, scale: float = 1.0,
+                    device_pixel_ratio: float = 1.0, glow: bool = False) -> None:
+    """Draw an avatar centered in ``rect`` using its framing box, so every
+    buddy sits in the same spot however its tip is placed."""
+    av = avatar(avatar_id or current_avatar_id())
+    min_x, min_y, max_x, max_y = av.extent
+    cell = snapped_cell(scale, device_pixel_ratio)
+    w, h = (max_x - min_x + 1) * cell, (max_y - min_y + 1) * cell
+    paint_avatar(painter, rect.center().x() - w / 2 - min_x * cell, rect.center().y() - h / 2 - min_y * cell,
+                 t=t, mood=mood, avatar_id=av.id, scale=scale,
+                 device_pixel_ratio=device_pixel_ratio, glow=glow)
+
+
 def paint_burst(painter: QPainter, x: float, y: float, progress: float, *, avatar_id: str | None = None,
                 cell: float = CELL) -> None:
     """Pixel confetti popping out of the tip when the avatar lands. progress 0..1."""
@@ -663,65 +710,6 @@ def paint_edge_glow(painter: QPainter, rect: QRectF, *, t: float, level: float, 
     painter.restore()
 
 
-# --- Island bits --------------------------------------------------------------------
-
-def island_path(rect: QRectF, radius: float) -> QPainterPath:
-    """Rounded on the left, flush with the screen edge on the right."""
-    path = QPainterPath()
-    path.addRoundedRect(QRectF(rect.x(), rect.y(), rect.width() + radius * 2, rect.height()), radius, radius)
-    return path
-
-
-def paint_island_shell(painter: QPainter, rect: QRectF, radius: float, palette: Palette | None = None) -> None:
-    pal = palette or current_palette()
-    painter.save()
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-    painter.setPen(Qt.PenStyle.NoPen)
-    for i, alpha in enumerate((30, 18, 10)):
-        painter.setBrush(QColor(0, 0, 0, alpha))
-        painter.drawPath(island_path(rect.adjusted(-3 - 3 * i, -1 - 2 * i, 0, 4 + 3 * i), radius + 3 * i))
-    gradient = QLinearGradient(rect.topLeft(), rect.bottomLeft())
-    top, bottom = QColor(pal.surface_top), QColor(pal.surface_bottom)
-    top.setAlpha(246)
-    bottom.setAlpha(246)
-    gradient.setColorAt(0.0, top)
-    gradient.setColorAt(1.0, bottom)
-    painter.setBrush(gradient)
-    edge = QColor(pal.accent)
-    edge.setAlpha(80)
-    painter.setPen(QPen(edge, 1.0))
-    painter.drawPath(island_path(rect, radius))
-    painter.restore()
-
-
-def paint_bars(painter: QPainter, x: float, y: float, heights: list[float], palette: Palette | None = None) -> None:
-    """Rounded level bars, ``heights`` in px, centered on y."""
-    pal = palette or current_palette()
-    painter.save()
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-    gradient = QLinearGradient(QPointF(x, 0), QPointF(x + 6 * len(heights), 0))
-    gradient.setColorAt(0.0, pal.bars[0])
-    gradient.setColorAt(1.0, pal.bars[1])
-    painter.setPen(Qt.PenStyle.NoPen)
-    painter.setBrush(gradient)
-    for i, h in enumerate(heights):
-        painter.drawRoundedRect(QRectF(x + i * 6, y - h / 2.0, 3.2, h), 1.6, 1.6)
-    painter.restore()
-
-
-def paint_dots(painter: QPainter, x: float, y: float, phase: float, palette: Palette | None = None) -> None:
-    """Three dots bobbing in turn. ``phase`` in radians."""
-    pal = palette or current_palette()
-    painter.save()
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-    painter.setPen(Qt.PenStyle.NoPen)
-    for i, color in enumerate(pal.dots):
-        bob = max(0.0, math.sin(phase - i * 0.9)) * 3.5
-        painter.setBrush(color)
-        painter.drawEllipse(QPointF(x + i * 11, y - bob), 3.4, 3.4)
-    painter.restore()
-
-
 # --- Icons ---------------------------------------------------------------------------
 
 def avatar_image(avatar_id: str, size: int, *, mood: str = "happy", frame: int = 3) -> QImage:
@@ -805,60 +793,71 @@ def on_avatar_changed(listener: Callable[[str], None]) -> None:
 
 _FONT_DIR = Path(__file__).parent / "assets" / "fonts"
 _FALLBACK_FAMILY = "Segoe UI"
-_families: dict[int, str] = {}
-"""Loaded Nunito family per weight. Static files can register under their own
-legacy family name ("Nunito ExtraBold"), so each weight keeps the family its
-file actually got."""
-_pixel_family: str | None = None
-
 _FONT_FILES = {
-    QFont.Weight.Medium.value: "Nunito-Medium.ttf",
-    QFont.Weight.Bold.value: "Nunito-Bold.ttf",
-    QFont.Weight.ExtraBold.value: "Nunito-ExtraBold.ttf",
+    QFont.Weight.ExtraLight.value: "Manrope-ExtraLight.ttf",
+    QFont.Weight.Light.value: "Manrope-Light.ttf",
+    QFont.Weight.Normal.value: "Manrope-Regular.ttf",
+    QFont.Weight.Medium.value: "Manrope-Medium.ttf",
+    QFont.Weight.DemiBold.value: "Manrope-SemiBold.ttf",
 }
+_MONO_FILES = {
+    QFont.Weight.Normal.value: "JetBrainsMono-Regular.ttf",
+    QFont.Weight.Medium.value: "JetBrainsMono-Medium.ttf",
+}
+_families: dict[int, str] = {}
+"""Loaded Manrope family per weight. Each static file can register under its
+own legacy family name ("Manrope Light"), so a weight keeps the family its
+file actually got."""
+_mono_families: dict[int, str] = {}
+
+
+def _load(files: dict[int, str], into: dict[int, str]) -> None:
+    for weight, filename in files.items():
+        if weight in into:
+            continue
+        font_id = QFontDatabase.addApplicationFont(str(_FONT_DIR / filename))
+        families = QFontDatabase.applicationFontFamilies(font_id) if font_id >= 0 else []
+        if families:
+            into[weight] = families[0]
 
 
 def load_fonts() -> None:
     """Register the bundled fonts. Needs a QGuiApplication; safe to call more
     than once. A missing file just falls back to Segoe UI."""
-    global _pixel_family
-    for weight, filename in _FONT_FILES.items():
-        if weight in _families:
-            continue
-        font_id = QFontDatabase.addApplicationFont(str(_FONT_DIR / filename))
-        families = QFontDatabase.applicationFontFamilies(font_id) if font_id >= 0 else []
-        if families:
-            _families[weight] = families[0]
-    if _pixel_family is None:
-        font_id = QFontDatabase.addApplicationFont(str(_FONT_DIR / "Silkscreen-Regular.ttf"))
-        families = QFontDatabase.applicationFontFamilies(font_id) if font_id >= 0 else []
-        _pixel_family = families[0] if families else ""
+    _load(_FONT_FILES, _families)
+    _load(_MONO_FILES, _mono_families)
 
 
-def ui_font(point_size: float, weight: QFont.Weight = QFont.Weight.Medium) -> QFont:
-    """Nunito at the closest bundled weight, or Segoe UI if none loaded."""
-    if _families:
-        nearest = min(_families, key=lambda w: abs(w - weight.value))
-        font = QFont(_families[nearest])
+def _pick(families: dict[int, str], fallback: str, point_size: float, weight: QFont.Weight) -> QFont:
+    if families:
+        nearest = min(families, key=lambda w: abs(w - weight.value))
+        font = QFont(families[nearest])
     else:
-        font = QFont(_FALLBACK_FAMILY)
+        font = QFont(fallback)
     font.setPointSizeF(point_size)
     font.setWeight(weight)
+    font.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
     return font
 
 
-def pixel_font(point_size: float) -> QFont:
-    """Silkscreen for titles and chips, or a bold UI font if it didn't load."""
-    if _pixel_family:
-        font = QFont(_pixel_family)
-        font.setPointSizeF(point_size)
-        font.setStyleStrategy(QFont.StyleStrategy.NoAntialias)
-        return font
-    return ui_font(point_size, QFont.Weight.ExtraBold)
+def ui_font(point_size: float, weight: QFont.Weight = QFont.Weight.Normal) -> QFont:
+    """Manrope at the closest bundled weight, or Segoe UI if none loaded."""
+    return _pick(_families, _FALLBACK_FAMILY, point_size, weight)
 
 
-def pixel_family() -> str:
-    return _pixel_family or ui_font(10).family()
+def display_font(point_size: float) -> QFont:
+    """Manrope Light with tight tracking, for headings and the answer."""
+    font = ui_font(point_size, QFont.Weight.Light)
+    font.setLetterSpacing(QFont.SpacingType.PercentageSpacing, 97)
+    return font
+
+
+def mono_font(point_size: float, weight: QFont.Weight = QFont.Weight.Normal) -> QFont:
+    return _pick(_mono_families, "Cascadia Mono", point_size, weight)
+
+
+def family(weight: QFont.Weight = QFont.Weight.Normal) -> str:
+    return ui_font(10, weight).family()
 
 
 # --- App-wide styles -----------------------------------------------------------------------
@@ -867,70 +866,83 @@ def _hex(color: QColor) -> str:
     return color.name(QColor.NameFormat.HexRgb)
 
 
-def _rgba(color: QColor, alpha: int) -> str:
-    return f"rgba({color.red()}, {color.green()}, {color.blue()}, {alpha})"
-
-
-def app_stylesheet(palette: Palette | None = None) -> str:
-    pal = palette or current_palette()
-    bg, raised, line = _hex(pal.surface_bottom), _hex(pal.raised), _hex(pal.line)
-    text, muted, accent, on_accent = _hex(pal.text), _hex(pal.muted), _hex(pal.accent), _hex(pal.accent_text)
+def app_stylesheet() -> str:
+    ink, paper, card, butter, coral = _hex(INK), _hex(PAPER), _hex(CARD), _hex(BUTTER), _hex(CORAL)
+    line, mist, muted = _hex(LINE), _hex(MIST), _hex(MUTED)
+    light, regular, medium, semi = (family(w) for w in (QFont.Weight.Light, QFont.Weight.Normal,
+                                                       QFont.Weight.Medium, QFont.Weight.DemiBold))
     return f"""
-QDialog, QMessageBox {{ background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-    stop:0 {_hex(pal.surface_top)}, stop:1 {bg}); }}
-QDialog QLabel, QMessageBox QLabel, QDialog QCheckBox {{ color: {text}; }}
-QLabel#clickyTitle {{ font-family: "{pixel_family()}"; font-size: 22px; color: {_hex(pal.chip)}; }}
-QLabel#clickySubtitle, QLabel#clickyMuted {{ color: {muted}; }}
-QLabel#clickyNote {{ color: {accent}; }}
-QLabel#clickySection {{ font-weight: 800; color: {text}; padding-top: 4px; }}
-QMessageBox QLabel#qt_msgbox_label {{ font-size: 16px; font-weight: 800; }}
+QDialog, QMessageBox {{ background: {paper}; color: {ink}; }}
+QDialog QLabel, QMessageBox QLabel, QDialog QCheckBox {{ color: {ink}; }}
+QMessageBox QLabel#qt_msgbox_label {{ font-family: "{light}"; font-size: 20px; }}
 QMessageBox QLabel#qt_msgbox_informativelabel {{ color: {muted}; }}
+
+QLabel#h1 {{ font-family: "{light}"; font-size: 34px; color: {ink}; }}
+QLabel#h2 {{ font-family: "{light}"; font-size: 24px; color: {ink}; }}
+QLabel#lead {{ color: #4a4a57; font-size: 14px; }}
+QLabel#muted {{ color: {muted}; font-size: 13px; }}
+QLabel#rowTitle {{ font-family: "{medium}"; font-size: 14px; color: {ink}; }}
+QLabel#rowSub {{ color: {muted}; font-size: 12.5px; }}
+QLabel#good {{ color: #157f3b; }}
+QLabel#bad {{ color: {coral}; }}
+
+QWidget#rail {{ background: {ink}; }}
+QLabel#railWordmark {{ font-family: "{light}"; font-size: 22px; color: #ffffff; }}
+QPushButton#nav {{ text-align: left; background: transparent; border: none; border-radius: 12px;
+    padding: 9px 12px; font-family: "{light}"; font-size: 16px; color: #9c9cab; }}
+QPushButton#nav:hover {{ color: #ffffff; }}
+QPushButton#nav:checked {{ background: {butter}; color: {ink}; }}
+QLabel#railBuddy {{ font-family: "{regular}"; font-size: 12px; color: #9c9cab; padding-bottom: 4px; }}
+QWidget#pane {{ background: {paper}; }}
+QScrollArea#pageScroll, QWidget#page {{ background: transparent; border: none; }}
+QScrollBar:vertical {{ background: transparent; width: 10px; margin: 6px 2px; }}
+QScrollBar::handle:vertical {{ background: #d9d4c6; border-radius: 3px; min-height: 40px; }}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical, QScrollBar::add-page:vertical,
+QScrollBar::sub-page:vertical {{ height: 0; background: transparent; }}
+QFrame#rows {{ background: {card}; border: 1px solid #e8e2d3; border-radius: 18px; }}
+QFrame#rows QLabel {{ background: transparent; }}
+QFrame#rowSep {{ background: #f1ede2; max-height: 1px; min-height: 1px; border: none; margin: 0 18px; }}
+QFrame#conn {{ background: {butter}; border-radius: 20px; }}
+QLabel#connModel {{ font-family: "{light}"; font-size: 26px; color: {ink}; }}
+QLabel#connChip {{ background: rgba(10, 10, 18, 0.08); border-radius: 10px; padding: 3px 9px; color: {ink}; font-size: 11.5px; }}
+QLabel#liveChip {{ background: {ink}; border-radius: 10px; padding: 3px 9px; color: {butter}; font-size: 11.5px; }}
+
 QLineEdit, QComboBox {{
-    background: {raised}; color: {text}; min-height: 22px;
-    border: 1.5px solid {line}; border-radius: 10px; padding: 6px 10px;
-    selection-background-color: {_rgba(pal.accent, 120)}; selection-color: {text};
+    background: {card}; color: {ink}; min-height: 22px;
+    border: 1.5px solid {line}; border-radius: 12px; padding: 7px 12px;
+    selection-background-color: {butter}; selection-color: {ink};
 }}
-QLineEdit:focus, QComboBox:focus, QComboBox:on {{ border-color: {accent}; }}
-QLineEdit::placeholder {{ color: {muted}; }}
+QLineEdit:focus, QComboBox:focus, QComboBox:on {{ border-color: {ink}; }}
 QComboBox::drop-down {{ border: none; width: 26px; }}
-QComboBox QAbstractItemView {{
-    background: {raised}; color: {text}; border: 1px solid {line};
-    selection-background-color: {_rgba(pal.accent, 70)}; selection-color: {text};
-    outline: none; padding: 4px;
-}}
-QPushButton {{
-    background: {raised}; color: {text};
-    border: 1.5px solid {line}; border-radius: 12px;
-    padding: 6px 16px; font-weight: 700;
-}}
-QPushButton:hover {{ border-color: {accent}; }}
-QPushButton:pressed {{ background: {_rgba(pal.accent, 50)}; }}
-QPushButton:disabled {{ color: {_rgba(pal.muted, 140)}; border-color: {_rgba(pal.line, 120)}; }}
-QPushButton#clickyPrimary {{ background: {accent}; border-color: {accent}; color: {on_accent}; }}
-QPushButton#clickyPrimary:hover {{ background: {_rgba(pal.accent, 220)}; }}
-QPushButton#clickyPrimary:disabled {{ background: {_rgba(pal.accent, 70)}; border-color: transparent; color: {_rgba(pal.accent_text, 150)}; }}
-QToolButton#clickyAvatar {{
-    background: {raised}; color: {muted}; border: 1.5px solid {line};
-    border-radius: 14px; padding: 6px 4px 4px 4px; font-weight: 700;
-}}
-QToolButton#clickyAvatar:hover {{ border-color: {_rgba(pal.accent, 160)}; color: {text}; }}
-QToolButton#clickyAvatar:checked {{ border: 2px solid {accent}; color: {text}; background: {_rgba(pal.accent, 34)}; }}
-QCheckBox {{ spacing: 8px; }}
-QCheckBox::indicator {{ width: 16px; height: 16px; border-radius: 5px; border: 1.5px solid {line}; background: {raised}; }}
-QCheckBox::indicator:checked {{ background: {accent}; border-color: {accent}; }}
-QMenu {{ background: {bg}; color: {text}; border: 1px solid {line}; border-radius: 12px; padding: 6px; }}
-QMenu::item {{ padding: 7px 22px 7px 12px; border-radius: 8px; }}
-QMenu::item:selected {{ background: {_rgba(pal.accent, 60)}; color: {text}; }}
-QMenu::item:checked {{ color: {accent}; }}
-QMenu::separator {{ height: 1px; background: {line}; margin: 5px 10px; }}
-QToolTip {{ background: {bg}; color: {text}; border: 1px solid {line}; border-radius: 8px; padding: 6px; }}
+QComboBox QAbstractItemView {{ background: {card}; color: {ink}; border: 1px solid {line};
+    selection-background-color: {butter}; selection-color: {ink}; outline: none; padding: 4px; }}
+
+QPushButton {{ background: {card}; color: {ink}; border: 1.5px solid {ink}; border-radius: 19px;
+    padding: 8px 18px; font-family: "{semi}"; font-size: 13.5px; }}
+QPushButton:hover {{ background: {mist}; }}
+QPushButton:disabled {{ color: #a39d8f; border-color: #d9d4c6; background: transparent; }}
+QPushButton#primary {{ background: {ink}; color: #ffffff; border-color: {ink}; }}
+QPushButton#primary:hover {{ background: #24242e; }}
+QPushButton#primary:disabled {{ background: #d9d4c6; border-color: #d9d4c6; color: #8f887a; }}
+QPushButton#quiet {{ border: none; background: transparent; color: {ink}; text-decoration: underline; padding: 6px 4px; }}
+QPushButton#danger {{ color: {coral}; border-color: {coral}; background: transparent; }}
+QPushButton#seg {{ border: none; background: transparent; border-radius: 15px; padding: 6px 14px;
+    font-family: "{medium}"; font-size: 13px; color: {muted}; }}
+QPushButton#seg:checked {{ background: {ink}; color: #ffffff; }}
+QFrame#segTrack {{ background: {mist}; border-radius: 19px; }}
+
+QMenu {{ background: {ink}; color: #ffffff; border: 1px solid #23232e; border-radius: 14px; padding: 6px;
+    font-family: "{regular}"; font-size: 13px; }}
+QMenu::item {{ padding: 8px 22px 8px 12px; border-radius: 9px; }}
+QMenu::item:selected {{ background: {butter}; color: {ink}; }}
+QMenu::item:checked {{ color: {butter}; }}
+QMenu::separator {{ height: 1px; background: #23232e; margin: 5px 10px; }}
+QToolTip {{ background: {ink}; color: #ffffff; border: none; border-radius: 8px; padding: 6px 9px; }}
 """
 
 
 def apply(app) -> None:
-    """Load the fonts, set the app font and stylesheet, and keep the
-    stylesheet in step when the avatar (and so the theme) changes."""
+    """Load the fonts and set the app font and stylesheet."""
     load_fonts()
     app.setFont(ui_font(10))
     app.setStyleSheet(app_stylesheet())
-    on_avatar_changed(lambda _id: app.setStyleSheet(app_stylesheet()))

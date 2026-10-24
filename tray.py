@@ -80,7 +80,9 @@ class ClickyTray(QObject):
         self._on_settings = on_settings
 
         self._icon = QSystemTrayIcon(parent=self)
-        self._icon.setToolTip("Clicky: hold Ctrl+Alt+Space and ask")
+        from hotkey import DEFAULT_COMBO, describe
+        from config import resolve_setting
+        self._icon.setToolTip(f"Clicky: hold {describe(resolve_setting('HOTKEY', DEFAULT_COMBO))} and ask")
         self._icon.setIcon(theme.avatar_icon(theme.current_avatar_id()))
 
         self._menu = QMenu()
@@ -191,7 +193,7 @@ def forget_dialog() -> QMessageBox:
     box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel)
     forget = box.button(QMessageBox.StandardButton.Yes)
     forget.setText("Forget")
-    forget.setObjectName("clickyPrimary")
+    forget.setObjectName("primary")
     forget.style().unpolish(forget)  # restyle now that it has the accent's name
     forget.style().polish(forget)
     box.setDefaultButton(QMessageBox.StandardButton.Cancel)

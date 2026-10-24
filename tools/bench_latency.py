@@ -160,7 +160,7 @@ def record_cmd(label: str, n: int) -> None:
     """Prompt the user to run N real PTT interactions, then scrape ~/.clicky-windows/debug/."""
     print(f"Recording {n} PTT interactions labeled {label!r}.")
     print("  1. In another terminal, run: py -3.13 -m app")
-    print(f"  2. Do {n} PTT presses (Ctrl+Alt+Space). Aim for the same question")
+    print(f"  2. Do {n} PTT presses (your Clicky hotkey). Aim for the same question")
     print("     in the same app so interactions are comparable.")
     print("  3. Return here and press Enter.")
     input(f"Press Enter after completing {n} interactions... ")
