@@ -268,16 +268,14 @@ directly. That takes precedence over LLM_PROVIDER because the create_ai_client
 factory dispatches on MODEL_ID prefix first. LLM_PROVIDER is the
 GUI-friendly way for users who don't edit .env."""
 
-ANNOTATION_MODE: str = resolve_setting("ANNOTATION_MODE", default="off")
-"""Draw-on-screen teaching mode. When 'on', the vision
-model is given the annotation system prompt and emits
-[ARROW]/[CIRCLE]/[UNDERLINE]/[LABEL] tags that the overlay renders as shapes
-(in ADDITION to the [POINT] cursor). When 'off' (default) nothing is
-overridden. Accuracy comes from the vision model. Resolved ONCE here at
-import (env→keyring→default); app.py reads this cached constant per interaction
-rather than calling resolve_setting on the hot path, so there is no
-per-interaction keyring read/write latency. Set it in .env and restart to
-toggle."""
+ANNOTATION_MODE: str = resolve_setting("ANNOTATION_MODE", default="on")
+"""Draw-on-screen teaching mode. When 'on', the vision model is given the
+annotation system prompt and emits shape tags (annotations.py) that the
+buddy draws on screen. On by default; when 'off', a question that asks to
+be shown (draw, mark, the radius, the angles...) still gets drawing
+(annotations.wants_drawing). Resolved once here at import
+(env→keyring→default) and refreshed when Settings are saved, so there is
+no per-interaction keyring read."""
 
 HOTKEY: str = resolve_setting("HOTKEY", default="ctrl+win")
 """Push-to-talk combo, e.g. "ctrl+win" (see hotkey.parse_combo). Settings

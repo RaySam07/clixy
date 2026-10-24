@@ -15,6 +15,13 @@ Grammar (coords are integer screenshot pixels, origin top-left):
     [ARROW:x1,y1->x2,y2]    arrow from (x1,y1) to (x2,y2)
     [LABEL:x,y:text]        floating text at (x,y)
 
+Geometry, drawn exactly on a figure rather than around it:
+    [RING:cx,cy,r:label]    trace a circle's outline (circumference)
+    [LINE:x1,y1->x2,y2:label]  a straight segment (radius, side, height)
+    [ANGLE:vx,vy,ax,ay,bx,by:label]  the angle at vertex v between the
+                            sides toward a and b, e.g. "60°"
+    [DOT:x,y:label]         a point, e.g. the centre O
+
 The same `[SHAPE:coords]` text-tag + regex pattern the `[POINT:x,y]` cursor
 already uses (ai.parse_point_tag): extending the cursor to shapes is just
 more tag types.
@@ -67,6 +74,49 @@ class Box:
 
 
 @dataclass(frozen=True)
+class Ring:
+    """A circle in a figure, traced exactly on its outline."""
+    x: int
+    y: int
+    r: int
+    label: str = ""
+
+
+@dataclass(frozen=True)
+class Line:
+    """A straight segment between two exact points."""
+    x1: int
+    y1: int
+    x2: int
+    y2: int
+    label: str = ""
+
+
+@dataclass(frozen=True)
+class Angle:
+    """The angle at vertex (vx, vy) between the sides toward a and b."""
+    vx: int
+    vy: int
+    ax: int
+    ay: int
+    bx: int
+    by: int
+    label: str = ""
+
+
+@dataclass(frozen=True)
+class Dot:
+    """A point in a figure."""
+    x: int
+    y: int
+    label: str = ""
+
+
+GEOMETRY = (Ring, Line, Angle, Dot)
+"""Marks drawn exactly on a figure (aimed and fitted, never clamped)."""
+
+
+@dataclass(frozen=True)
 class Highlight:
     """Text to mark like a highlighter, (x1, y1) top-left to (x2, y2)."""
     x1: int
@@ -96,7 +146,14 @@ _HIGHLIGHT_RE = re.compile(
 
 # Strips any COMPLETE shape tag from the spoken text. Narrow to the shape
 # keywords so we never eat unrelated bracketed text.
-_KEYWORDS = r"(?:ARROW|CIRCLE|UNDERLINE|LABEL|BOX|HIGHLIGHT)"
+_N = r"\s*(-?\d+)\s*"
+_LABEL_TAIL = r"(?::([^\]]*))?\]"
+_RING_RE = re.compile(r"\[\s*RING\s*:" + _N + "," + _N + "," + _N + _LABEL_TAIL, re.IGNORECASE)
+_LINE_RE = re.compile(r"\[\s*LINE\s*:" + _N + "," + _N + "->" + _N + "," + _N + _LABEL_TAIL, re.IGNORECASE)
+_ANGLE_RE = re.compile(r"\[\s*ANGLE\s*:" + ",".join([_N] * 6) + _LABEL_TAIL, re.IGNORECASE)
+_DOT_RE = re.compile(r"\[\s*DOT\s*:" + _N + "," + _N + _LABEL_TAIL, re.IGNORECASE)
+
+_KEYWORDS = r"(?:ARROW|CIRCLE|UNDERLINE|LABEL|BOX|HIGHLIGHT|RING|LINE|ANGLE|DOT)"
 _ANY_TAG_RE = re.compile(r"\[\s*" + _KEYWORDS + r"\s*:[^\]]*\]", re.IGNORECASE)
 
 # Fail-closed strip: removes an UNTERMINATED shape tag (and everything after
@@ -106,6 +163,20 @@ _ANY_TAG_RE = re.compile(r"\[\s*" + _KEYWORDS + r"\s*:[^\]]*\]", re.IGNORECASE)
 # coordinates are never spoken. Matches the pipeline's "stop at the first '['"
 # streaming guard. DOTALL so it eats across newlines to end-of-string.
 _UNTERMINATED_TAG_RE = re.compile(r"\[\s*" + _KEYWORDS + r"\s*:.*$", re.IGNORECASE | re.DOTALL)
+
+
+_DRAW_WORDS = re.compile(
+    r"\b(draw|drawing|annotate|annotation|mark|label|highlight|underline|circle|sketch|trace|"
+    r"point out|show me|radius|radii|diameter|circumference|angles?|triangle|geometry|perimeter|"
+    r"tangent|chord|arc|vertex|vertices|hypotenuse|diagram|graph)\b",
+    re.IGNORECASE,
+)
+
+
+def wants_drawing(question: str) -> bool:
+    """Does the question ask to be shown on screen (draw, mark, the radius,
+    the angles...)? Then Clicky draws even with drawing switched off."""
+    return bool(_DRAW_WORDS.search(question or ""))
 
 
 def parse_annotations(text: str) -> tuple[str, list]:
@@ -145,6 +216,16 @@ def parse_annotations(text: str) -> tuple[str, list]:
         found.append((m.start(), Highlight(
             min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2), (m.group(5) or "").strip(),
         )))
+
+    for m in _RING_RE.finditer(text):
+        found.append((m.start(), Ring(int(m.group(1)), int(m.group(2)), abs(int(m.group(3))),
+                                      (m.group(4) or "").strip())))
+    for m in _LINE_RE.finditer(text):
+        found.append((m.start(), Line(*(int(m.group(i)) for i in range(1, 5)), (m.group(5) or "").strip())))
+    for m in _ANGLE_RE.finditer(text):
+        found.append((m.start(), Angle(*(int(m.group(i)) for i in range(1, 7)), (m.group(7) or "").strip())))
+    for m in _DOT_RE.finditer(text):
+        found.append((m.start(), Dot(int(m.group(1)), int(m.group(2)), (m.group(3) or "").strip())))
 
     found.sort(key=lambda pair: pair[0])
     annotations = [ann for _, ann in found]

@@ -569,7 +569,7 @@ class SettingsDialog(QDialog):
         self._sync_voice_switch()
 
         self._draw_checkbox = Toggle()
-        self._draw_checkbox.setChecked(resolve_setting("ANNOTATION_MODE", "off") == "on")
+        self._draw_checkbox.setChecked(resolve_setting("ANNOTATION_MODE", "on") == "on")
 
         # Microphone: which one, a live meter, and what's wrong if it's silent.
         self._mic_box = QComboBox()
@@ -601,7 +601,8 @@ class SettingsDialog(QDialog):
             _row("Shortcut", "Hold to talk, let go to ask.", self._caps, change),
             _row("Voice", "Hearing you and talking back.", self._voice),
             self._mic_row,
-            _row("Draw on screen", "Your buddy draws on the screen to show you.", self._draw_checkbox),
+            _row("Draw on screen", "Your buddy draws to show you. Off, it still draws when you ask it to.",
+                 self._draw_checkbox),
         ))
         hints = QHBoxLayout()
         self._voice_hint = QLabel("Cloud voice uses one Cartesia key for both. Add it in Advanced.")

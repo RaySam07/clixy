@@ -36,7 +36,7 @@ from ai import (
     OllamaClient,
     create_ai_client,
 )
-from annotations import parse_annotations
+from annotations import parse_annotations, wants_drawing
 from debug_log import DebugSession
 from locator import locate_via_grid
 from capture import (
@@ -147,9 +147,18 @@ def _drawing_anchor(annotations: list) -> tuple[int, int] | None:
     """Where the cursor lands when a draw-mode answer has shapes but no
     [POINT]: the first shape, in screenshot coords, placed so the cursor does
     not cover what the shape marks. A text label alone is not a target."""
-    from annotations import Arrow, Box, Circle, Highlight, Underline
+    from annotations import Angle, Arrow, Box, Circle, Dot, Highlight, Line, Ring, Underline
 
     for ann in annotations:
+        if isinstance(ann, Ring):
+            edge = math.ceil(ann.r * 0.7071)
+            return (ann.x + edge, ann.y + edge)
+        if isinstance(ann, Line):
+            return (ann.x2, ann.y2)
+        if isinstance(ann, Angle):
+            return (ann.vx, ann.vy)
+        if isinstance(ann, Dot):
+            return (ann.x, ann.y)
         if isinstance(ann, Circle):
             edge = math.ceil(ann.r * 0.7071)  # 45 degrees: on the circle's lower-right edge
             return (ann.x + edge, ann.y + edge)
@@ -172,7 +181,7 @@ def _annotations_to_physical(annotations: list, cursor_capture) -> list:
     Lengths (circle radius, underline width) only scale by scale_x (they're
     sizes, not positions: no origin, no clamp). Returns NEW annotation objects.
     """
-    from annotations import Arrow, Box, Circle, Highlight, Underline, Label
+    from annotations import Angle, Arrow, Box, Circle, Dot, Highlight, Label, Line, Ring, Underline
 
     if not annotations:
         return []
@@ -210,6 +219,21 @@ def _annotations_to_physical(annotations: list, cursor_capture) -> list:
             x1, y1 = pt(a.x1, a.y1)
             x2, y2 = pt(a.x2, a.y2)
             out.append((Box if isinstance(a, Box) else Highlight)(x1, y1, x2, y2, a.label))
+        elif isinstance(a, Ring):
+            x, y = pt(a.x, a.y)
+            out.append(Ring(x, y, int(a.r * cap.scale_x), a.label))
+        elif isinstance(a, Line):
+            x1, y1 = pt(a.x1, a.y1)
+            x2, y2 = pt(a.x2, a.y2)
+            out.append(Line(x1, y1, x2, y2, a.label))
+        elif isinstance(a, Angle):
+            vx, vy = pt(a.vx, a.vy)
+            ax, ay = pt(a.ax, a.ay)
+            bx, by = pt(a.bx, a.by)
+            out.append(Angle(vx, vy, ax, ay, bx, by, a.label))
+        elif isinstance(a, Dot):
+            x, y = pt(a.x, a.y)
+            out.append(Dot(x, y, a.label))
     return out
 
 
@@ -581,7 +605,7 @@ class ClickyApp(QObject):
         drawing on screen, the edge glow and the island's side. (The buddy
         switches by itself.)"""
         global ANNOTATION_MODE
-        ANNOTATION_MODE = resolve_setting("ANNOTATION_MODE", default="off").lower()
+        ANNOTATION_MODE = resolve_setting("ANNOTATION_MODE", default="on").lower()
         device = resolve_setting("MIC_DEVICE", default="")
         if device != self._mic_device:
             self._stt.set_mic_device(device)
@@ -1188,7 +1212,8 @@ class ClickyApp(QObject):
             # app restart. When on, swap in the annotation system prompt so the
             # model emits shape tags. Off (the default) keeps the [POINT] cursor
             # prompt.
-            annotation_mode = ANNOTATION_MODE == "on"
+            # Drawing is on in Settings, or this question asks to be shown.
+            annotation_mode = ANNOTATION_MODE == "on" or wants_drawing(transcript)
             _ask_kwargs = dict(
                 images=images,
                 transcript=user_text,

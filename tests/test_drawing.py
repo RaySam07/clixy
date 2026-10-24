@@ -588,3 +588,151 @@ def test_speech_never_waits_for_aiming(qapp, mocker):
     mocker.patch("snap.refine", side_effect=lambda shapes, monitor, dbg=None: shapes)
     run()
     assert order.index("speak") < order.index("aim")
+
+
+# --- Geometry: drawn exactly on a figure ----------------------------------------------------
+
+def test_geometry_tags_parse_and_stay_silent():
+    from annotations import Angle, Dot, Line, Ring, parse_annotations
+    spoken, shapes = parse_annotations(
+        "the radius runs from the centre to the edge. [DOT:420,310:O][LINE:420,310->540,310:r]"
+        "[RING:420,310,120:circumference][ANGLE:200,420,260,250,380,420:50°]"
+    )
+    assert spoken == "the radius runs from the centre to the edge."
+    assert shapes == [Dot(420, 310, "O"), Line(420, 310, 540, 310, "r"), Ring(420, 310, 120, "circumference"),
+                      Angle(200, 420, 260, 250, 380, 420, "50°")]
+
+
+def test_asking_to_be_shown_turns_drawing_on():
+    from annotations import wants_drawing
+    for q in ("show me the radius", "can you find the angles of this triangle", "draw the height",
+              "annotate this graph", "what's the circumference"):
+        assert wants_drawing(q), q
+    assert not wants_drawing("what's the weather like")
+
+
+def test_a_ring_traces_exactly_on_its_circle_and_is_never_shrunk(qapp):
+    from annotations import Ring
+    (mark,) = _marks([Ring(400, 300, 150, "circumference")])
+    assert mark.kind == "ring" and mark.exact
+    for p in mark.points:
+        assert abs(math.hypot(p.x() - 400, p.y() - 300) - 150) < 0.6
+    assert abs(mark.length - 2 * math.pi * 150) < 3
+
+
+def test_a_radius_line_is_straight_and_labelled_beside_its_middle(qapp):
+    from annotations import Line
+    (mark,) = _marks([Line(400, 300, 550, 300, "r = 5 cm")])
+    assert all(abs(p.y() - 300) < 1e-6 for p in mark.points)
+    assert mark.pill.bottom() <= 300 - 2 and abs(mark.pill.center().x() - 475) < 6
+
+
+def test_an_angle_gets_an_arc_and_its_label_inside_it(qapp):
+    from PyQt6.QtGui import QPolygonF
+    from annotations import Angle
+    a, c, b = (700, 560), (820, 290), (1060, 560)
+    (mark,) = _marks([Angle(*a, *c, *b, "66°")])
+    assert mark.kind == "angle" and mark.wedge
+    r = math.hypot(mark.points[0].x() - 700, mark.points[0].y() - 560)
+    assert all(abs(math.hypot(p.x() - 700, p.y() - 560) - r) < 0.6 for p in mark.points)
+    from PyQt6.QtCore import QPointF, Qt
+    triangle = QPolygonF([QPointF(*a), QPointF(*b), QPointF(*c)])
+    assert triangle.containsPoint(mark.pill.center(), Qt.FillRule.OddEvenFill)
+
+
+def test_a_right_angle_gets_the_little_square(qapp):
+    from annotations import Angle
+    (mark,) = _marks([Angle(300, 300, 300, 100, 500, 300, "90°")])
+    xs = sorted({round(p.x()) for p in mark.points})
+    ys = sorted({round(p.y()) for p in mark.points})
+    assert len(mark.points) < 40 and min(xs) == 300 and max(ys) == 300  # two straight sides, no arc
+
+
+def test_geometry_allows_four_marks_and_overlapping_lines(qapp):
+    from annotations import Angle, Line
+    marks = _marks([Line(100, 300, 400, 300, "d"), Line(250, 300, 400, 300, "r")] +
+                   [Angle(500 + 60 * i, 500, 600, 300, 800, 500, f"{i}") for i in range(4)])
+    assert [m.label for m in marks] == ["d", "r", "0", "1"]
+
+
+def test_fit_ring_finds_the_drawn_circle_from_a_rough_guess():
+    from PIL import Image, ImageDraw
+    import aim
+    img = Image.new("RGB", (900, 700), "white")
+    d = ImageDraw.Draw(img)
+    for x in range(0, 900, 40):
+        d.line((x, 0, x, 700), fill=(225, 230, 240))
+    d.ellipse((300, 200, 600, 500), outline="black", width=3)
+    fit = aim.fit_ring(img, 465, 338, 168)
+    assert fit is not None
+    cx, cy, r = fit
+    assert abs(cx - 450) < 2 and abs(cy - 350) < 2 and abs(r - 150) < 3
+    assert aim.fit_ring(img, 750, 600, 60) is None
+
+
+def test_lines_corners_and_points_are_pinned_to_their_circle():
+    import aim
+    from annotations import Angle, Dot, Line
+    rings = [(450.0, 350.0, 150.0)]
+    line = aim.snap_to_rings(Line(455, 346, 596, 357, "r"), rings)
+    assert (line.x1, line.y1) == (450.0, 350.0)
+    assert abs(math.hypot(line.x2 - 450, line.y2 - 350) - 150) < 1e-6
+    assert aim.snap_to_rings(Dot(452, 353, "O"), rings) == Dot(450.0, 350.0, "O")
+    corner = aim.snap_to_rings(Angle(447, 348, 300, 350, 450, 200, "x"), rings)
+    assert (corner.vx, corner.vy) == (450.0, 350.0)
+    far = aim.snap_to_rings(Dot(100, 100, "P"), rings)
+    assert far == Dot(100, 100, "P")
+
+
+def test_aim_geometry_takes_the_close_up_correction_then_fits_the_circle():
+    from PIL import Image, ImageDraw
+    import aim
+    from annotations import Line, Ring
+    img = Image.new("RGB", (1280, 720), "white")
+    ImageDraw.Draw(img).ellipse((300, 200, 600, 500), outline="black", width=3)
+    cap = _Cap()
+    cap.image = img
+    shapes = [Ring(470, 330, 170, "circumference"), Line(470, 330, 640, 330, "r")]
+    left, top, right, bottom = aim.figure_window(shapes, 1280, 720)
+    k = min(1024 / (right - left), 768 / (bottom - top), 1.0)
+    # The close-up answers in its own pixels: centre (450, 350), radius 150.
+    to = lambda x, y: (round((x - left) * k), round((y - top) * k))  # noqa: E731
+    cx, cy = to(450, 350)
+    ex, ey = to(600, 350)
+    reply = f"[RING:{cx},{cy},{round(150 * k)}:circumference][LINE:{cx},{cy}->{ex},{ey}:r]"
+    out = aim.aim_geometry(_FakeClient(reply), cap, shapes)
+    ring, line = out
+    assert abs(ring.x - 450) < 2 and abs(ring.y - 350) < 2 and abs(ring.r - 150) < 3
+    assert (line.x1, line.y1) == (ring.x, ring.y)
+    assert ring.label == "circumference" and line.label == "r"
+
+
+def test_geometry_doesnt_fade_when_the_mouse_crosses_the_figure(overlay_window, monkeypatch):
+    import time as _time
+    from PyQt6.QtCore import QPoint
+    from annotations import Ring
+    import overlay
+    clock = [100.0]
+    monkeypatch.setattr(_time, "monotonic", lambda: clock[0])
+    mouse = [QPoint(5, 5)]
+    monkeypatch.setattr(overlay.QCursor, "pos", staticmethod(lambda: overlay_window.mapToGlobal(mouse[0])))
+    overlay_window.start_drawing([Ring(640, 360, 100, "c")])
+    clock[0] += overlay_window._tour.total + 0.1
+    overlay_window._step_marks(clock[0])
+    mouse[0] = QPoint(640, 360)
+    clock[0] += 0.2
+    overlay_window._step_marks(clock[0])
+    clock[0] += 2
+    overlay_window._step_marks(clock[0])
+    assert overlay_window._marks and overlay_window._marks[0].acked_at is None
+
+
+def test_written_labels_alone_dont_vanish_at_once(overlay_window, monkeypatch):
+    import time as _time
+    from annotations import Label
+    clock = [100.0]
+    monkeypatch.setattr(_time, "monotonic", lambda: clock[0])
+    overlay_window.start_drawing([Label(400, 300, "carry the one")])
+    clock[0] += overlay_window._tour.total + 1
+    overlay_window._step_marks(clock[0])
+    assert overlay_window._marks

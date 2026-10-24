@@ -25,7 +25,7 @@ import random
 from dataclasses import dataclass, field
 
 from PyQt6.QtCore import QPointF, QRectF, Qt
-from PyQt6.QtGui import QColor, QFont, QFontMetricsF, QPainter, QPainterPath, QPen
+from PyQt6.QtGui import QColor, QFont, QFontMetricsF, QPainter, QPainterPath, QPen, QPolygonF
 
 import theme
 
@@ -57,6 +57,9 @@ class Mark:
     pill: QRectF | None = None   # where the label goes
     start: float = 0.0           # seconds into the tour when drawing starts
     duration: float = 0.0
+    exact: bool = False              # geometry on a figure: precise, never wobbly
+    anchors: list[QPointF] = field(default_factory=list)  # best label spots, best first
+    wedge: list[QPointF] = field(default_factory=list)    # an angle's sector, filled once drawn
     dark: bool = False               # drawn over a dark screen: a dark halo, not white
     acked_at: float | None = None   # when you hovered what it marks
     armed: bool = False              # the mouse has been outside it
@@ -92,6 +95,16 @@ class Mark:
         ys = [p.y() for p in self.points + self.head]
         pad = self.width / 2 + 3
         return QRectF(min(xs) - pad, min(ys) - pad, max(xs) - min(xs) + 2 * pad, max(ys) - min(ys) + 2 * pad)
+
+    def solid(self) -> list[QRectF]:
+        """What a label must not cover. A UI mark's whole box (it frames
+        something); for geometry only the stroke itself, so labels can sit
+        inside a figure, the way a teacher writes them."""
+        if not self.exact:
+            return [self.ink()]
+        pad = self.width / 2 + 4
+        pts = self.points[::4] + self.points[-1:] + self.head
+        return [QRectF(p.x() - pad, p.y() - pad, 2 * pad, 2 * pad) for p in pts]
 
     def badge_rect(self) -> QRectF | None:
         if not self.badge:
@@ -297,8 +310,10 @@ def place_label(mark: "Mark", area: QRectF, obstacles: list[QRectF], avoid: list
     out; one further out gets a thin line back to its mark."""
     w, h = _pill_size(mark.label)
     core = mark.ink()
+    solid = mark.solid()
     cx, cy = core.center().x(), core.center().y()
     best = None
+    preferred = [(a.x() - w / 2, a.y() - h / 2, 2.5 * i) for i, a in enumerate(mark.anchors)]
     for step, far_cost in ((8.0, 0.0), (30.0, 9.0)):
         spots = (
             (cx - w / 2, core.top() - step - h, 0.0),            # above
@@ -310,6 +325,11 @@ def place_label(mark: "Mark", area: QRectF, obstacles: list[QRectF], avoid: list
             (core.left() - w * 0.25, core.bottom() + step, 7.0),
             (core.right() - w * 0.75, core.bottom() + step, 12.0),   # where the buddy rests
         )
+        if mark.anchors:
+            # A figure's own spots first (beside a line, inside an angle);
+            # the generic ones only if those are taken.
+            extra = 16.0 if mark.exact else 6.0
+            spots = tuple(preferred) + tuple((x, y, pref + extra) for x, y, pref in spots) if step == 8.0 else spots
         for x, y, pref in spots:
             rect = QRectF(x, y, w, h)
             off = 0.0
@@ -320,12 +340,13 @@ def place_label(mark: "Mark", area: QRectF, obstacles: list[QRectF], avoid: list
                 ny = max(inside.top(), min(rect.top(), inside.bottom() - h))
                 off = abs(nx - rect.left()) + abs(ny - rect.top())
                 rect = QRectF(nx, ny, w, h)
-            cost = pref + far_cost + 0.6 * off
-            cost += 500 * _cover(rect, [core])
+            cost = pref + far_cost * (2.5 if mark.exact else 1.0) + 0.6 * off
+            cost += 500 * min(1.0, _cover(rect, solid))
             cost += 400 * _cover(rect, obstacles)
             cost += 300 * _cover(rect, avoid)
             if busy is not None and area.width() > 0 and area.height() > 0:
-                cost += 60 * busy.score((rect.left() - area.left()) / area.width(),
+                # A figure is busy with its own lines; a label still belongs in it.
+                cost += (15 if mark.exact else 60) * busy.score((rect.left() - area.left()) / area.width(),
                                         (rect.top() - area.top()) / area.height(),
                                         (rect.right() - area.left()) / area.width(),
                                         (rect.bottom() - area.top()) / area.height())
@@ -333,7 +354,7 @@ def place_label(mark: "Mark", area: QRectF, obstacles: list[QRectF], avoid: list
                 best = (cost, rect)
     rect = best[1]
     leader = None
-    gap = _distance(rect, core)
+    gap = min(_distance(rect, r) for r in solid)
     if gap > 12:
         near = QPointF(max(rect.left(), min(cx, rect.right())), max(rect.top(), min(cy, rect.bottom())))
         on_mark = min(mark.points, key=lambda p: (p.x() - near.x()) ** 2 + (p.y() - near.y()) ** 2)
@@ -357,6 +378,49 @@ def _iou(a: QRectF, b: QRectF) -> float:
 MAX_MARKS = 3
 """Marks per answer, at most; labels written on their own, at most one."""
 
+MAX_GEOMETRY = 4
+"""Geometry marks per answer, at most (a quadrilateral's four angles)."""
+
+
+def ring_path(cx: float, cy: float, r: float) -> list[tuple[float, float]]:
+    """Exactly on a circle, from the top, clockwise, once round."""
+    n = max(72, int(2 * math.pi * r / 2))
+    return [(cx + r * math.cos(-math.pi / 2 + 2 * math.pi * i / n),
+             cy + r * math.sin(-math.pi / 2 + 2 * math.pi * i / n)) for i in range(n + 1)]
+
+
+def _unit(dx: float, dy: float) -> tuple[float, float]:
+    n = math.hypot(dx, dy) or 1.0
+    return dx / n, dy / n
+
+
+def _side_offset(nx: float, ny: float, w: float, h: float, gap: float) -> float:
+    """How far a pill's centre must sit along (nx, ny) to clear a line by ``gap``."""
+    return gap + abs(nx) * w / 2 + abs(ny) * h / 2
+
+
+def angle_parts(vx: float, vy: float, ax: float, ay: float, bx: float, by: float, label: str = ""):
+    """An angle mark: (arc points, wedge polygon, label anchor direction,
+    arc radius). A right angle (90° labelled, or square on screen) gets the
+    little square instead of an arc."""
+    ua, ub = _unit(ax - vx, ay - vy), _unit(bx - vx, by - vy)
+    ta, tb = math.atan2(ua[1], ua[0]), math.atan2(ub[1], ub[0])
+    d = (tb - ta + math.pi) % (2 * math.pi) - math.pi        # the smaller turn from a to b
+    shortest = min(math.hypot(ax - vx, ay - vy), math.hypot(bx - vx, by - vy))
+    ra = max(16.0, min(40.0, 0.3 * shortest))
+    bis = _unit(ua[0] + ub[0], ua[1] + ub[1]) if abs(abs(d) - math.pi) > 0.05 else (-ua[1], ua[0])
+    text = label.replace(" ", "").lower()
+    right = text.startswith("90") or "right" in text or abs(abs(d) - math.pi / 2) < math.radians(2.5)
+    if right:
+        s = max(10.0, min(20.0, 0.6 * ra))
+        pts = [(vx + ua[0] * s, vy + ua[1] * s), (vx + (ua[0] + ub[0]) * s, vy + (ua[1] + ub[1]) * s),
+               (vx + ub[0] * s, vy + ub[1] * s)]
+        wedge = [(vx, vy)] + pts
+        return pts, wedge, bis, s * 1.4
+    n = max(12, int(abs(d) * ra / 2))
+    pts = [(vx + ra * math.cos(ta + d * i / n), vy + ra * math.sin(ta + d * i / n)) for i in range(n + 1)]
+    return pts, [(vx, vy)] + pts, bis, ra
+
 
 def build_marks(annotations: list, area: QRectF, *, avoid: list[QRectF] | None = None,
                 busy: BusyMap | None = None) -> list[Mark]:
@@ -364,11 +428,61 @@ def build_marks(annotations: list, area: QRectF, *, avoid: list[QRectF] | None =
     them concise: at most MAX_MARKS, none that repeat another, none that
     swallow half the screen, none that make no sense (an arrow 5 px long).
     Labels go where they read best (see place_label)."""
-    from annotations import Arrow, Box, Circle, Highlight, Label, Underline
+    from annotations import Angle, Arrow, Box, Circle, Dot, Highlight, Label, Line, Ring, Underline
 
     marks: list[Mark] = []
     for a in annotations:
-        if isinstance(a, Circle):
+        if isinstance(a, Ring):
+            if a.r < 4:
+                continue
+            target = QRectF(a.x - a.r, a.y - a.r, 2 * a.r, 2 * a.r)
+            mark = Mark("ring", *_resample(ring_path(a.x, a.y, a.r)), target=target, label=a.label, exact=True)
+            if a.label:
+                w, h = _pill_size(a.label)
+                for deg in (-45, -135, 45, 135, -90):            # outside the circle, top-right first
+                    nx, ny = math.cos(math.radians(deg)), math.sin(math.radians(deg))
+                    d = a.r + _side_offset(nx, ny, w, h, 8)
+                    mark.anchors.append(QPointF(a.x + nx * d, a.y + ny * d))
+            marks.append(mark)
+        elif isinstance(a, Line):
+            if math.hypot(a.x2 - a.x1, a.y2 - a.y1) < 6:
+                continue
+            target = QRectF(min(a.x1, a.x2), min(a.y1, a.y2), abs(a.x2 - a.x1), abs(a.y2 - a.y1)).adjusted(-4, -4, 4, 4)
+            mark = Mark("line", *_resample([(a.x1, a.y1), (a.x2, a.y2)]), target=target, label=a.label, exact=True)
+            if a.label:
+                w, h = _pill_size(a.label)
+                ux, uy = _unit(a.x2 - a.x1, a.y2 - a.y1)
+                mx, my = (a.x1 + a.x2) / 2, (a.y1 + a.y2) / 2
+                for nx, ny in ((uy, -ux), (-uy, ux)):            # beside the middle, either side
+                    if ny > 0 and abs(ny) > 0.3 and (nx, ny) == (uy, -ux):
+                        nx, ny = -nx, -ny                          # prefer above first
+                    d = _side_offset(nx, ny, w, h, 7)
+                    mark.anchors.append(QPointF(mx + nx * d, my + ny * d))
+            marks.append(mark)
+        elif isinstance(a, Angle):
+            pts, wedge, bis, ra = angle_parts(a.vx, a.vy, a.ax, a.ay, a.bx, a.by, a.label)
+            target = QRectF(a.vx - ra, a.vy - ra, 2 * ra, 2 * ra)
+            mark = Mark("angle", *_resample(pts, 2.0), target=target, label=a.label, exact=True,
+                        wedge=[QPointF(*p) for p in wedge])
+            if a.label:
+                w, h = _pill_size(a.label)
+                # Inside the angle just past the arc, then deeper in where it
+                # widens, and only then across the corner.
+                for k, far in ((1.0, 0.0), (1.0, 0.9 * ra), (-1.0, 0.0)):
+                    d = ra + far + _side_offset(bis[0], bis[1], w, h, 6)
+                    mark.anchors.append(QPointF(a.vx + k * bis[0] * d, a.vy + k * bis[1] * d))
+            marks.append(mark)
+        elif isinstance(a, Dot):
+            target = QRectF(a.x - 6, a.y - 6, 12, 12)
+            raw = [(a.x + 4 * math.cos(2 * math.pi * i / 16), a.y + 4 * math.sin(2 * math.pi * i / 16)) for i in range(17)]
+            mark = Mark("dot", *_resample(raw, 1.0), target=target, label=a.label, exact=True)
+            if a.label:
+                w, h = _pill_size(a.label)
+                for nx, ny in ((0.7, -0.7), (-0.7, -0.7), (0.7, 0.7), (-0.7, 0.7)):
+                    d = _side_offset(nx, ny, w, h, 7)
+                    mark.anchors.append(QPointF(a.x + nx * d, a.y + ny * d))
+            marks.append(mark)
+        elif isinstance(a, Circle):
             r = max(CIRCLE_R[0], min(CIRCLE_R[1], float(a.r)))
             rng = _rng(a.x, a.y, r)
             target = QRectF(a.x - r, a.y - r, 2 * r, 2 * r)
@@ -432,13 +546,14 @@ def build_marks(annotations: list, area: QRectF, *, avoid: list[QRectF] | None =
     for n, m in enumerate(steps, 1):
         if len(steps) > 1:
             m.badge = n
-    taken: list[QRectF] = [m.ink() for m in marks] + [m.badge_rect() for m in marks if m.badge]
-    taken += [m.pill for m in marks if m.kind == "label" and m.pill is not None]
+    taken: list[tuple[Mark | None, QRectF]] = [(m, r) for m in marks for r in m.solid()]
+    taken += [(None, m.badge_rect()) for m in marks if m.badge]
+    taken += [(None, m.pill) for m in marks if m.kind == "label" and m.pill is not None]
     for m in marks:
         if m.label and m.kind not in ("label", "highlight", "underline"):
-            others = [r for r in taken if r is not None and r != m.ink()]
+            others = [r for owner, r in taken if r is not None and owner is not m]
             m.pill, m.leader = place_label(m, area, others, list(avoid or []), busy)
-            taken.append(m.pill)
+            taken.append((None, m.pill))
     return marks
 
 
@@ -448,14 +563,20 @@ def _constrain(marks: list[Mark], area: QRectF) -> list[Mark]:
     screen = area.width() * area.height() or 1.0
     kept: list[Mark] = []
     for m in marks:
-        if m.kind != "label" and m.target.width() * m.target.height() > 0.5 * screen:
+        if m.kind != "label" and not m.exact and m.target.width() * m.target.height() > 0.5 * screen:
             continue
-        if any(_iou(m.target, k.target) > 0.5 for k in kept):
+        if m.exact:
+            # Geometry repeats only when it's the same kind in the same place
+            # (a radius inside a diameter is two marks, not one).
+            if any(k.kind == m.kind and _iou(m.target, k.target) > 0.9 for k in kept):
+                continue
+        elif any(not k.exact and _iou(m.target, k.target) > 0.5 for k in kept):
             continue
         kept.append(m)
-    shapes = [m for m in kept if m.kind != "label"][:MAX_MARKS]
+    geometry = [m for m in kept if m.exact][:MAX_GEOMETRY]
+    shapes = [m for m in kept if m.kind != "label" and not m.exact][:MAX_MARKS]
     labels = [m for m in kept if m.kind == "label"][:1]
-    return [m for m in kept if m in shapes or m in labels]
+    return [m for m in kept if m in geometry or m in shapes or m in labels]
 
 
 # --- The tour: the buddy's route --------------------------------------------------
@@ -474,6 +595,12 @@ def _smoothstep(u: float) -> float:
 def draw_time(mark: Mark) -> float:
     if mark.kind == "label":
         return 0.34
+    if mark.kind == "dot":
+        return 0.18
+    if mark.kind == "angle":
+        return 0.38
+    if mark.kind == "ring":
+        return max(0.55, min(1.2, 0.3 + mark.length / 1100))
     if mark.kind == "arrow":
         return max(0.32, min(0.72, 0.2 + mark.length / 900)) + _HEAD_S
     return max(0.36, min(0.95, 0.24 + mark.length / 850))
@@ -542,7 +669,7 @@ def rest_point(mark: Mark) -> QPointF:
     if mark.kind == "label" and mark.pill is not None:
         return QPointF(mark.pill.right() + 6, mark.pill.center().y())
     corner = QPointF(mark.target.right() + 6, mark.target.bottom() + 4)
-    if mark.kind in ("loop", "rect"):
+    if mark.kind in ("loop", "rect", "ring"):
         # The point on the loop closest to the lower-right corner.
         return min(mark.points, key=lambda p: (p.x() - corner.x() - 30) ** 2 + (p.y() - corner.y() - 30) ** 2)
     return QPointF(mark.points[-1].x() + 8, mark.points[-1].y() + mark.width / 2 + 6)
@@ -634,7 +761,8 @@ def paint_marks(painter: QPainter, marks: list[Mark], t: float, *, now: float = 
     painter.save()
     painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
     painter.setBrush(Qt.BrushStyle.NoBrush)
-    for m in marks:
+    # Dots last, so a point sits on top of the lines that meet at it.
+    for m in sorted(marks, key=lambda mk: mk.kind == "dot"):
         u = progress(m, t)
         if u <= 0:
             continue
@@ -654,7 +782,23 @@ def paint_marks(painter: QPainter, marks: list[Mark], t: float, *, now: float = 
             painter.translate(-c)
         painter.setOpacity(alpha)
         shown = m.partial(u * m.length)
-        if m.kind == "highlight":
+        if m.wedge and u >= 1.0:
+            # The angle's sector, softly filled once its arc is drawn.
+            o, _s = _pop(t - (m.start + m.duration), 0.35)
+            fill = QColor(theme.CORAL)
+            fill.setAlpha(round(60 * o))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(fill)
+            painter.drawPolygon(QPolygonF(m.wedge))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+        if m.kind == "dot":
+            o, s = _pop(t - m.start, 0.25)
+            c = m.target.center()
+            painter.setPen(QPen(_HALO_DARK if m.dark else _HALO, 2.5))
+            painter.setBrush(theme.CORAL)
+            painter.drawEllipse(c, 5.0 * s, 5.0 * s)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+        elif m.kind == "highlight":
             # Over the text, so a light tint keeps it readable, like ink.
             painter.setPen(_pen(_HIGHLIGHTER, m.width, Qt.PenCapStyle.FlatCap))
             painter.drawPath(_path(shown))

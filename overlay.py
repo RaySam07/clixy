@@ -321,7 +321,7 @@ def annotations_to_local(annotations: list, screen) -> list:
     QApplication. The per-screen ratio is never cached globally: mixed-DPI
     setups have a different ratio per screen.
     """
-    from annotations import Arrow, Box, Circle, Highlight, Underline, Label
+    from annotations import Angle, Arrow, Box, Circle, Dot, Highlight, Label, Line, Ring, Underline
 
     ratio = screen.devicePixelRatio() or 1.0
     out: list = []
@@ -343,6 +343,21 @@ def annotations_to_local(annotations: list, screen) -> list:
             x1, y1 = physical_to_local_logical(a.x1, a.y1, screen)
             x2, y2 = physical_to_local_logical(a.x2, a.y2, screen)
             out.append((Box if isinstance(a, Box) else Highlight)(x1, y1, x2, y2, a.label))
+        elif isinstance(a, Ring):
+            lx, ly = physical_to_local_logical(a.x, a.y, screen)
+            out.append(Ring(lx, ly, int(a.r / ratio), a.label))
+        elif isinstance(a, Line):
+            x1, y1 = physical_to_local_logical(a.x1, a.y1, screen)
+            x2, y2 = physical_to_local_logical(a.x2, a.y2, screen)
+            out.append(Line(x1, y1, x2, y2, a.label))
+        elif isinstance(a, Angle):
+            vx, vy = physical_to_local_logical(a.vx, a.vy, screen)
+            ax, ay = physical_to_local_logical(a.ax, a.ay, screen)
+            bx, by = physical_to_local_logical(a.bx, a.by, screen)
+            out.append(Angle(vx, vy, ax, ay, bx, by, a.label))
+        elif isinstance(a, Dot):
+            lx, ly = physical_to_local_logical(a.x, a.y, screen)
+            out.append(Dot(lx, ly, a.label))
     return out
 
 
@@ -557,8 +572,9 @@ class OverlayWindow(QWidget):
                 self._drop_marks()
                 return False
             moving = True
-        if self._marks and all(m.acked_at is not None and now - m.acked_at >= drawing.ACK_S for m in self._marks
-                               if m.kind != "label"):
+        found = [m for m in self._marks if _hoverable(m)]
+        if found and all(m.acked_at is not None and now - m.acked_at >= drawing.ACK_S for m in found) \
+                and len(found) == len(self._marks):
             self._drop_marks()  # every mark found: nothing left to show
             return False
         if moving:
@@ -583,7 +599,7 @@ class OverlayWindow(QWidget):
         mouse doesn't vanish at once."""
         local = QPointF(self.mapFromGlobal(QCursor.pos()))
         for mark in self._marks:
-            if mark.kind == "label" or mark.acked_at is not None:
+            if not _hoverable(mark) or mark.acked_at is not None:
                 continue
             inside = mark.target.adjusted(-6, -6, 6, 6).contains(local)
             if not inside:
@@ -832,6 +848,12 @@ _MARKS_FADE_S = 0.45
 """Seconds the marks take to fade out once the answer is over."""
 
 
+def _hoverable(mark) -> bool:
+    """Marks that fade when you move onto what they mark. Not written
+    labels, and not geometry: you study a figure, you don't click it."""
+    return mark.kind != "label" and not mark.exact
+
+
 # --- Thinking phase ------------------------------------------------------------
 
 _SPINNER_PERIOD_S = 0.8
@@ -872,6 +894,7 @@ class OverlayController:
     _FOLLOW_OFFSET_Y = 25
     _DWELL_MS = 3000
     _MARKS_LINGER_MS = 5000
+    _FIGURE_LINGER_MS = 20000
     _FOLLOW_INTERVAL_MS = 16
 
     def __init__(
@@ -1233,8 +1256,11 @@ class OverlayController:
         the marks fade a few seconds later."""
         if self.island is not None:
             self.island.done()
-        if any(overlay._marks for overlay in self.overlays):
-            self._marks_fade_timer.start(self._MARKS_LINGER_MS)
+        marks = [m for overlay in self.overlays for m in overlay._marks]
+        if marks:
+            # A figure gets longer to study than a pointed-at button.
+            figure = any(m.exact for m in marks)
+            self._marks_fade_timer.start(self._FIGURE_LINGER_MS if figure else self._MARKS_LINGER_MS)
 
     def apply_look(self, *, glow_enabled: bool, island_side: str) -> None:
         """Settings that change without a restart: the edge glow and which
