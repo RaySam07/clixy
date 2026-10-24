@@ -7,7 +7,7 @@ must reach for Task Manager (Ctrl+Shift+Esc) to kill ``Clicky.exe``.
 Menu structure (right-click the tray icon):
     - Settings...                   ← reopen the BYOK keyring dialog
     - Avatar >                      ← switch buddy (and theme) instantly
-    - Open Knowledge Folder         ← jump to ~/Documents/Clicky Wiki/
+    - Open Knowledge Folder         ← jump to ~/Documents/Clixy Wiki/
     - Open Memory Folder            ← jump to ~/.clixy/memory/
     - Forget My History...          ← delete memory notes, index and debug logs
     - --------

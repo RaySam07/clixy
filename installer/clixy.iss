@@ -13,7 +13,7 @@
 
 #define AppName "Clixy"
 #ifndef AppVersion
-  #define AppVersion "1.0.0"
+  #define AppVersion "1.0.1"
 #endif
 #define AppPublisher "Rayan Sameer"
 #define AppURL "https://github.com/RaySam07/clixy"
@@ -43,8 +43,6 @@ DisableProgramGroupPage=yes
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 LicenseFile=..\LICENSE
-; Asks to close a running Clixy before updating it.
-AppMutex=Local\Clixy-SingleInstance-v1,Local\ClickyWindows-SingleInstance-v1
 CloseApplications=yes
 SetupLogging=yes
 UninstallDisplayName={#AppName}
@@ -56,14 +54,6 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Tasks]
 Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Shortcuts:"
 Name: "startup"; Description: "Start Clixy when I sign in"; GroupDescription: "Shortcuts:"
-
-[InstallDelete]
-; Earlier builds of this app were called Clicky: remove that copy and its
-; shortcuts so only Clixy is left.
-Type: filesandordirs; Name: "{userpf}\Clicky"
-Type: files; Name: "{userprograms}\Clicky.lnk"
-Type: files; Name: "{userdesktop}\Clicky.lnk"
-Type: files; Name: "{userstartup}\Clicky.lnk"
 
 [Files]
 Source: "..\dist\Clixy\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -81,3 +71,26 @@ Filename: "{app}\{#AppExeName}"; Description: "Launch {#AppName}"; Flags: nowait
 ; Uninstall keeps your notes and Knowledge Folder. For a clean wipe, delete
 ; ~/.clixy/ and ~/Documents/Clixy Wiki/ by hand.
 Type: filesandordirs; Name: "{app}\_internal\__pycache__"
+
+[Code]
+// A running Clixy holds its files open. Close it before installing or
+// uninstalling, so an update just works; it keeps nothing unsaved.
+procedure CloseClixy();
+var
+  ResultCode: Integer;
+begin
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM {#AppExeName}', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Sleep(300);
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  CloseClixy();
+  Result := '';
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  if CurUninstallStep = usUninstall then
+    CloseClixy();
+end;

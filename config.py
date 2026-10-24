@@ -25,47 +25,8 @@ and macOS Keychain treat this as the namespace key. All Clixy API
 keys live under this single service name; the ``name`` parameter is
 the env-var name (ANTHROPIC_API_KEY, etc.)."""
 
-LEGACY_KEYRING_SERVICE: str = "clicky-windows"
-"""Where keys and settings lived before the project was renamed Clixy.
-Read when the new name has nothing yet, and copied over (never deleted)."""
-
 APP_HOME: Path = Path.home() / ".clixy"
 """Clixy's own folder: memory, its index, debug logs, the voice model."""
-
-_LEGACY_HOME = Path.home() / ".clicky-windows"
-_LEGACY_KB = Path.home() / "Documents" / "Clicky Wiki"
-
-
-def _stored(name: str) -> str | None:
-    """A keyring value, moved over from the old service name the first
-    time it's read, so a rename never loses a saved key."""
-    value = keyring.get_password(KEYRING_SERVICE, name)
-    if value is None:
-        old = keyring.get_password(LEGACY_KEYRING_SERVICE, name)
-        if old:
-            try:
-                keyring.set_password(KEYRING_SERVICE, name, old)
-            except Exception:
-                pass
-            return old
-    return value
-
-
-def migrate_legacy(names: tuple[str, ...] = ()) -> None:
-    """Carry an install from before the rename over to Clixy's names: the
-    data folder and Knowledge Folder move (when the new ones don't exist
-    yet), and the given keyring entries are copied. Never raises."""
-    for old, new in ((_LEGACY_HOME, APP_HOME), (_LEGACY_KB, Path(KB_DIR))):
-        try:
-            if old.is_dir() and not new.exists():
-                old.rename(new)
-        except Exception:
-            pass
-    for name in names:
-        try:
-            _stored(name)
-        except Exception:
-            pass
 
 
 def resolve_api_key(name: str) -> str | None:
@@ -93,7 +54,7 @@ def resolve_api_key(name: str) -> str | None:
             pass
         return env_value
     try:
-        return _stored(name)
+        return keyring.get_password(KEYRING_SERVICE, name)
     except Exception:
         return None
 
@@ -123,7 +84,7 @@ def resolve_setting(name: str, default: str) -> str:
             pass
         return env_value
     try:
-        stored = _stored(name)
+        stored = keyring.get_password(KEYRING_SERVICE, name)
     except Exception:
         stored = None
     return stored if stored else default

@@ -155,35 +155,3 @@ class TestResolveSetting:
         monkeypatch.setattr(config.keyring, "set_password", boom)
         from config import resolve_setting
         assert resolve_setting("TTS_PROVIDER", default="cartesia") == "elevenlabs"
-
-
-def test_keys_saved_under_the_old_name_carry_over(monkeypatch):
-    """An install from before the rename keeps its keys: read from the old
-    service name once, copied to the new one, the old one left alone."""
-    import config
-    store = {("clicky-windows", "ANTHROPIC_API_KEY"): "sk-ant-old"}
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    monkeypatch.setattr(config.keyring, "get_password", lambda s, n: store.get((s, n)))
-    monkeypatch.setattr(config.keyring, "set_password", lambda s, n, v: store.__setitem__((s, n), v))
-    assert config.resolve_api_key("ANTHROPIC_API_KEY") == "sk-ant-old"
-    assert store[("clixy", "ANTHROPIC_API_KEY")] == "sk-ant-old"
-    assert store[("clicky-windows", "ANTHROPIC_API_KEY")] == "sk-ant-old"
-    store[("clixy", "HOTKEY")] = "ctrl+win"
-    store[("clicky-windows", "HOTKEY")] = "ctrl+alt+space"
-    assert config.resolve_setting("HOTKEY", "x") == "ctrl+win"   # the new name wins
-
-
-def test_the_old_data_folder_moves_once(tmp_path, monkeypatch):
-    import config
-    old, new = tmp_path / ".clicky-windows", tmp_path / ".clixy"
-    (old / "memory").mkdir(parents=True)
-    (old / "memory" / "EXCEL.EXE.md").write_text("notes")
-    monkeypatch.setattr(config, "_LEGACY_HOME", old)
-    monkeypatch.setattr(config, "APP_HOME", new)
-    monkeypatch.setattr(config, "_LEGACY_KB", tmp_path / "Clicky Wiki")
-    monkeypatch.setattr(config, "KB_DIR", tmp_path / "Clixy Wiki")
-    config.migrate_legacy()
-    assert (new / "memory" / "EXCEL.EXE.md").read_text() == "notes" and not old.exists()
-    (old / "memory").mkdir(parents=True)        # an old folder appearing later is left alone
-    config.migrate_legacy()
-    assert old.exists() and (new / "memory" / "EXCEL.EXE.md").exists()

@@ -420,17 +420,6 @@ _PRICES_PER_MTOK = {
 }
 
 
-_SAVED_NAMES: tuple[str, ...] = (
-    "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "ASSEMBLYAI_API_KEY", "CARTESIA_API_KEY",
-    "ELEVENLABS_API_KEY", "OLLAMA_HOST", "LLM_PROVIDER", "STT_PROVIDER", "TTS_PROVIDER", "ANTHROPIC_MODEL",
-    "OPENAI_MODEL_VISION", "GEMINI_MODEL_VISION", "OLLAMA_MODEL_VISION", "OPENAI_REALTIME_MODEL",
-    "ANNOTATION_MODE", "HOTKEY", "EDGE_GLOW", "ISLAND_SIDE", "KEEP_HISTORY", "AVATAR", "MIC_DEVICE",
-    "DEBUG_LOG", "DEBUG_SCREENSHOTS", "KOKORO_VOICE", "FASTER_WHISPER_MODEL", "FASTER_WHISPER_DEVICE",
-    "FASTER_WHISPER_COMPUTE",
-)
-"""Everything Clixy keeps in Credential Manager, for carrying an old install over."""
-
-
 def _hotkey_combo() -> str:
     """The saved push-to-talk combo, or the default if it's missing or broken."""
     combo = resolve_setting("HOTKEY", default=DEFAULT_COMBO)
@@ -1929,11 +1918,6 @@ if __name__ == "__main__":
     print("=" * 70)
     print(f"Clixy: hold {describe_hotkey(_hotkey_combo())} and ask")
     print("=" * 70)
-
-    # An install from before the rename keeps its keys, notes and Knowledge
-    # Folder: carry them over to Clixy's names before anything reads them.
-    from config import migrate_legacy
-    migrate_legacy(_SAVED_NAMES)
 
     set_dpi_awareness()
     qt_app = QApplication(sys.argv)

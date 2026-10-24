@@ -47,7 +47,7 @@ echo         Don't click inside this window: that pauses it ^(press Esc if the t
 if errorlevel 1 goto :fail
 
 rem --- 3. Build ----------------------------------------------------------------------
-for %%E in (Clixy.exe Clicky.exe) do (
+for %%E in (Clixy.exe) do (
   tasklist /fi "imagename eq %%E" 2>nul | find /i "%%E" >nul
   if not errorlevel 1 (
     echo   Closing the %%E that's running...
@@ -64,11 +64,6 @@ set "DEST=%LOCALAPPDATA%\Programs\Clixy"
 echo   [4/4] Installing to %DEST% ...
 robocopy "dist\Clixy" "%DEST%" /MIR /NFL /NDL /NJH /NJS /NP >nul
 if errorlevel 8 goto :fail
-rem An earlier build of this app was called Clicky: tidy its folder and shortcuts.
-if exist "%LOCALAPPDATA%\Programs\Clicky\Clicky.exe" rmdir /s /q "%LOCALAPPDATA%\Programs\Clicky" >nul 2>&1
-del "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Clicky.lnk" >nul 2>&1
-del "%USERPROFILE%\Desktop\Clicky.lnk" >nul 2>&1
-del "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\Clicky.lnk" >nul 2>&1
 call :shortcut Programs
 call :shortcut Desktop
 

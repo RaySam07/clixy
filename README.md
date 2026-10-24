@@ -34,7 +34,7 @@ Stuck in an app, a spreadsheet, a maths problem or a video? Ask your buddy.</p>
 ## Get started in a minute
 
 1. **Download** [`Clixy-Setup.exe`](https://github.com/RaySam07/clixy/releases/latest/download/Clixy-Setup.exe) and run it. No admin rights needed.
-   Windows may say *"Windows protected your PC"* because Clixy isn't code-signed yet: click **More info → Run anyway**.
+   Clixy is new and isn't code-signed yet, so you may see two warnings. If your browser asks whether to keep the download, choose **Keep** (in Edge: **⋯ → Keep → Show more → Keep anyway**). If Windows says *"Windows protected your PC"*, click **More info → Run anyway**. The installer is built in the open by [GitHub Actions](https://github.com/RaySam07/clixy/actions/workflows/release.yml) from this repo's code.
 2. **Drop in your API key.** Clixy asks for it on first launch: paste it into the box and it checks itself.
    - **Recommended: Claude Haiku 5.5.** Get a key at [console.anthropic.com](https://console.anthropic.com/settings/keys). It's fast, points accurately and costs about **$0.0003 a question**, roughly 250,000 questions per $100.
    - Also works: an OpenRouter key (`sk-or-…`), OpenAI, Google Gemini, or a local model through Ollama (Settings › Advanced).
@@ -137,7 +137,8 @@ Built with Python and PyQt6. Voice on your PC with faster-whisper and Kokoro. Sc
 ## Troubleshooting
 
 - **Your buddy can't hear you.** Open Settings › General and talk: the **Microphone** row has a live meter and says what's wrong. *Silent* usually means Windows is blocking the mic: click **Open Windows microphone settings** and turn on *Let desktop apps access your microphone*.
-- **"Windows protected your PC".** Click **More info → Run anyway**. Code signing is on the roadmap.
+- **"Windows protected your PC", or the browser asks to keep the download.** Clixy isn't code-signed yet, so new downloads get a warning. Choose **Keep**, then **More info → Run anyway**. Code signing is on the roadmap.
+- **"Clixy is already running".** An older Clixy is still in your system tray: right-click your buddy there, choose **Quit Clixy**, then open Clixy again. Installers from 1.0.1 on close it for you.
 - **The shortcut clashes with another app.** Settings › General › Shortcut › **Change**, then hold the keys you want.
 - **The first question is slow.** On-device listening downloads its model once (about 150 MB). The notch tells you while it does.
 
