@@ -34,6 +34,7 @@ jobs:
         if: failure()
         shell: bash
         run: |
+          set +e +o pipefail
           grep -E "^(FAILED|ERROR) " pytest.txt | head -40 | while IFS= read -r line; do
             echo "::error title=pytest::${line}"
           done
