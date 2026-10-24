@@ -10,7 +10,7 @@ import math
 import time
 
 from PyQt6.QtCore import QEasingCurve, QPointF, QRectF, QSize, Qt, QTimer, QVariantAnimation, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QFontMetricsF, QGuiApplication, QKeyEvent, QPainter, QPainterPath, QPen
+from PyQt6.QtGui import QBrush, QColor, QFont, QFontMetricsF, QGuiApplication, QKeyEvent, QPainter, QPainterPath, QPen
 from PyQt6.QtWidgets import (
     QAbstractButton,
     QButtonGroup,
@@ -312,6 +312,9 @@ def classify_key(text: str) -> tuple[str | None, str]:
     return None, "That doesn't look like a Claude key. It starts with sk-ant-."
 
 
+_PASTE_HINT = "Ctrl + V works too · encrypted in Windows Credential Manager"
+
+
 class PasteZone(QFrame):
     """A big drop-in field for the Claude key. Paste reads the clipboard; the
     field can also be typed into. Turns butter with a check when the key looks
@@ -343,7 +346,7 @@ class PasteZone(QFrame):
         self.paste_button.clicked.connect(self.paste)
         row.addWidget(self.paste_button)
         layout.addLayout(row)
-        self.hint = QLabel("Ctrl + V works too · stays on this PC, encrypted by Windows")
+        self.hint = QLabel(_PASTE_HINT)
         self.hint.setFont(theme.mono_font(8.5))
         self.hint.setStyleSheet(f"color: {theme.MUTED.name()};")
         layout.addWidget(self.hint)
@@ -372,8 +375,7 @@ class PasteZone(QFrame):
         kind, message = classify_key(text)
         was_ok = self._kind is not None
         self._kind = kind
-        default = "Ctrl + V works too · stays on this PC, encrypted by Windows"
-        self.hint.setText(message or default)
+        self.hint.setText(message or _PASTE_HINT)
         color = theme.INK if kind else (theme.CORAL if text.strip() else theme.MUTED)
         self.hint.setStyleSheet(f"color: {color.name()};")
         if kind and not was_ok:
@@ -402,7 +404,7 @@ class PasteZone(QFrame):
         p.drawRoundedRect(rect, 20, 20)
         if self._check > 0.01:
             r = 15 * self._check
-            c = QPointF(rect.right() - 26, rect.top() + 24)
+            c = QPointF(rect.right() - 32, rect.bottom() - 28)
             p.setPen(Qt.PenStyle.NoPen)
             p.setBrush(theme.INK)
             p.drawEllipse(c, r, r)
@@ -461,6 +463,105 @@ class ConnectionCard(QFrame):
         self.key.setVisible(bool(key) and not local)
         self.cost.setText(cost)
         self.cost.setVisible(bool(cost))
+
+
+# --- Look preview --------------------------------------------------------------------
+
+class LookPreview(QWidget):
+    """A small live screen showing the edge glow and the notch on the chosen
+    side, with your buddy listening in it. Slides when the side changes."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setMinimumHeight(210)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self._glow = True
+        self._side = 1.0          # 0 = left edge, 1 = right edge
+        self._side_target = 1.0
+        self._t0 = time.monotonic()
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._tick)
+
+    def set_glow(self, on: bool) -> None:
+        self._glow = on
+        self.update()
+
+    def set_side(self, side: str) -> None:
+        self._side_target = 0.0 if side == "left" else 1.0
+
+    def showEvent(self, event) -> None:  # noqa: N802
+        self._timer.start(33)
+        super().showEvent(event)
+
+    def hideEvent(self, event) -> None:  # noqa: N802
+        self._timer.stop()
+        super().hideEvent(event)
+
+    def _tick(self) -> None:
+        self._side += (self._side_target - self._side) * 0.18
+        if abs(self._side_target - self._side) < 0.002:
+            self._side = self._side_target
+        self.update()
+
+    def paintEvent(self, _event) -> None:
+        from PyQt6.QtGui import QConicalGradient, QLinearGradient
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        t = time.monotonic() - self._t0
+        screen = QRectF(self.rect()).adjusted(1, 1, -1, -1)
+        clip = QPainterPath()
+        clip.addRoundedRect(screen, 18, 18)
+        p.setClipPath(clip)
+
+        # A calm desktop with two windows on it.
+        bg = QLinearGradient(screen.topLeft(), screen.bottomRight())
+        bg.setColorAt(0, QColor(233, 235, 246))
+        bg.setColorAt(1, QColor(207, 211, 234))
+        p.fillRect(screen, bg)
+        p.setPen(Qt.PenStyle.NoPen)
+        for i, (fx, fy, fw, fh) in enumerate(((0.16, 0.2, 0.42, 0.62), (0.47, 0.34, 0.34, 0.5))):
+            win = QRectF(screen.x() + screen.width() * fx, screen.y() + screen.height() * fy,
+                         screen.width() * fw, screen.height() * fh)
+            p.setBrush(QColor(255, 255, 255, 235 if i else 200))
+            p.drawRoundedRect(win, 10, 10)
+            p.setBrush(QColor(10, 10, 18, 18))
+            for line in range(3):
+                p.drawRoundedRect(QRectF(win.x() + 14, win.y() + 18 + line * 14, win.width() * (0.7 - 0.15 * line), 6), 3, 3)
+
+        # The glow, flowing around the edges in the buddy's colors.
+        if self._glow:
+            gradient = QConicalGradient(screen.center(), (t * 70.0) % 360.0)
+            for pos, color in theme.current_palette().glow:
+                gradient.setColorAt(pos, color)
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            swell = 1.0 + 0.35 * (0.5 + 0.5 * math.sin(t * 3.1))
+            for i in range(8):
+                p.setOpacity(0.5 if i == 0 else 0.2 * (1 - i / 8))
+                p.setPen(QPen(QBrush(gradient), (2.0 + i * 2.2) * swell))
+                p.drawRoundedRect(screen, 18, 18)
+            p.setOpacity(1.0)
+
+        # The notch, grown into its listening capsule.
+        # It runs 20 px past the screen edge, so only its inner corners show
+        # rounded; sliding sides, it crosses the screen as a free capsule.
+        w, h, past = 40.0, 132.0, 20.0
+        cy = screen.y() + screen.height() * 0.46
+        left_x, right_x = screen.left() - past, screen.right() - w
+        x = left_x + (right_x - left_x) * self._side
+        notch = QRectF(x, cy - h / 2, w + past, h)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor(0, 0, 0))
+        p.drawRoundedRect(notch, 20, 20)
+        cx = x + past * (1 - self._side) + w / 2
+        p.setBrush(theme.CORAL)
+        p.drawEllipse(QPointF(cx, notch.top() + 14), 3, 3)
+        for i in range(7):
+            weight = 1 - abs(i - 3) / 3
+            bar_w = 4 + 16 * (0.35 + 0.65 * weight) * (0.55 + 0.45 * math.sin(t * 8 + i * 1.3))
+            p.setBrush(theme.BUTTER)
+            p.drawRoundedRect(QRectF(cx - bar_w / 2, notch.top() + 28 + i * 7, bar_w, 3), 1.5, 1.5)
+        theme.paint_avatar_in(p, QRectF(cx - 20, notch.bottom() - 48, 40, 40), t=t, mood="listening",
+                              scale=0.8, device_pixel_ratio=self.devicePixelRatioF())
 
 
 # --- Buddy cards ---------------------------------------------------------------------
@@ -525,11 +626,11 @@ class AvatarCard(QAbstractButton):
         mood = "happy" if checked else ("listening" if hover else "idle")
         theme.paint_avatar_in(p, QRectF(rect.left(), rect.top() + 6, rect.width(), top_h),
                               t=time.monotonic() - self._t0, mood=mood, avatar_id=self.avatar_id,
-                              scale=1.6 if self._compact else 2.0, device_pixel_ratio=self.devicePixelRatioF())
+                              scale=1.8 if self._compact else 2.4, device_pixel_ratio=self.devicePixelRatioF())
 
         p.setPen(theme.INK)
         p.setFont(theme.ui_font(11 if self._compact else 12, QFont.Weight.DemiBold))
-        name_y = rect.bottom() - (34 if self._compact else 42)
+        name_y = rect.bottom() - (34 if self._compact else 47)
         p.drawText(QRectF(rect.left(), name_y, rect.width(), 20), Qt.AlignmentFlag.AlignHCenter, av.name)
         if not self._compact:
             p.setPen(theme.MUTED)

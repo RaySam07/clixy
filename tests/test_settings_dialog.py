@@ -642,6 +642,7 @@ class TestTwoKeySetup:
         from settings_dialog import SettingsDialog
         dlg = SettingsDialog()
         dlg.show()
+        dlg.show_page("advanced")
         assert not dlg._key_inputs["STT"].isVisible()
         assert dlg._share_notes["STT"].isVisible()
         dlg._key_inputs["LLM"].setText("sk-ant-x")
@@ -652,6 +653,7 @@ class TestTwoKeySetup:
         from settings_dialog import SettingsDialog
         dlg = SettingsDialog()
         dlg.show()
+        dlg.show_page("advanced")
         dlg._dropdowns["TTS"].setCurrentIndex(_dropdown_index(dlg._dropdowns["TTS"], "elevenlabs"))
         assert dlg._key_inputs["STT"].isVisible()
         assert not dlg._share_notes["STT"].isVisible()
@@ -662,6 +664,7 @@ class TestTwoKeySetup:
                       ANTHROPIC_API_KEY="sk-ant-x", CARTESIA_API_KEY="old-cartesia")
         dlg = SettingsDialog()
         dlg.show()
+        dlg.show_page("advanced")
         dlg._key_inputs["STT"].setText("new-cartesia")  # typed under Listening
         dlg._dropdowns["TTS"].setCurrentIndex(_dropdown_index(dlg._dropdowns["TTS"], "cartesia"))
         assert dlg._key_inputs["TTS"].text() == "new-cartesia"
@@ -702,6 +705,7 @@ class TestOpenAIFirst:
         key = "sk-ant-api03-" + "x" * 40
         dlg = SettingsDialog()
         dlg.show()
+        dlg.show_page("advanced")
         dlg._key_inputs["LLM"].setText(key)
         assert dlg._dropdowns["LLM"].currentData() == "anthropic"
         assert dlg._key_inputs["LLM"].text() == key
@@ -715,6 +719,7 @@ class TestOpenAIFirst:
         from settings_dialog import SettingsDialog
         dlg = SettingsDialog()
         dlg.show()
+        dlg.show_page("advanced")
         dlg._key_inputs["LLM"].setText("AIza" + "y" * 35)
         assert dlg._dropdowns["LLM"].currentData() == "gemini"
 
@@ -723,6 +728,7 @@ class TestOpenAIFirst:
         from settings_dialog import SettingsDialog
         dlg = SettingsDialog()
         dlg.show()
+        dlg.show_page("advanced")
         dlg._key_inputs["LLM"].setText("sk-or-v1-" + "z" * 40)
         assert dlg._dropdowns["LLM"].currentData() == "anthropic"
 
@@ -730,6 +736,7 @@ class TestOpenAIFirst:
         from settings_dialog import SettingsDialog
         dlg = SettingsDialog()
         dlg.show()
+        dlg.show_page("advanced")
         dropdown = dlg._dropdowns["LLM"]
         dropdown.setCurrentIndex(_dropdown_index(dropdown, "gemini"))
         dropdown.activated.emit(dropdown.currentIndex())  # what a user's click sends
@@ -741,6 +748,7 @@ class TestOpenAIFirst:
         stored.update(LLM_PROVIDER="openai")
         dlg = SettingsDialog()
         dlg.show()
+        dlg.show_page("advanced")
         dlg._key_inputs["LLM"].setText("sk-or-v1-" + "z" * 40)
         assert dlg._dropdowns["LLM"].currentData() == "openai"
 
@@ -756,6 +764,7 @@ class TestSharedKeyEdits:
         from settings_dialog import SettingsDialog
         dlg = SettingsDialog()
         dlg.show()
+        dlg.show_page("advanced")
         dlg._key_inputs["TTS"].setText("new-cartesia")          # edited in the Voice row
         dlg._dropdowns["TTS"].setCurrentIndex(_dropdown_index(dlg._dropdowns["TTS"], "elevenlabs"))
         assert dlg._key_inputs["STT"].text() == "new-cartesia"   # Listening now shows its own field

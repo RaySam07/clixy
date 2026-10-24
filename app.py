@@ -1856,8 +1856,16 @@ if __name__ == "__main__":
     # is synchronous from main()'s perspective.
     from settings_dialog import SettingsDialog, required_keys_present
     if not required_keys_present():
-        print("First-launch setup: showing the API key dialog...")
-        dlg = SettingsDialog()
+        # A new install gets the three-step welcome; a setup missing some
+        # other key (a cloud voice, say) goes straight to Settings.
+        from onboarding import Onboarding, needs_onboarding
+        if needs_onboarding():
+            print("First launch: showing the welcome...")
+            dlg = Onboarding()
+        else:
+            print("A key is missing: showing Settings...")
+            dlg = SettingsDialog()
+            dlg.show_page("advanced")
         if dlg.exec() != dlg.DialogCode.Accepted:
             print("Setup cancelled by user. Exiting.")
             sys.exit(1)

@@ -53,10 +53,43 @@ def test_set_avatar_switches_live_and_persists(monkeypatch):
         theme.set_avatar(theme.DEFAULT_AVATAR, persist=False)
 
 
-def test_stylesheet_follows_the_theme():
+def test_stylesheet_uses_the_brand(qapp):
+    import theme
+    theme.load_fonts()
+    css = theme.app_stylesheet()
+    for color in (theme.INK, theme.BUTTER, theme.PAPER, theme.CORAL):
+        assert color.name() in css
+    assert "QPushButton#primary" in css and "QWidget#rail" in css
+
+
+def test_the_mark_is_a_c_with_a_notch(qapp):
+    """The mark is a circle with a pill cut out of its right side: the
+    centre-right is empty, the left and the right edge above it are ink."""
+    import theme
+    path = theme.mark_path(48)
+    assert path.contains(theme.QPointF(6, 24))
+    assert not path.contains(theme.QPointF(40, 24))
+    assert path.contains(theme.QPointF(24, 6))
+    image = theme.app_icon_image(64)
+    assert image.width() == 64 and not image.isNull()
+
+
+def test_avatar_fits_centered_in_a_rect(qapp):
+    from PyQt6.QtCore import QRectF
+    from PyQt6.QtGui import QImage, QPainter
     import theme
     for av in theme.AVATARS:
-        assert av.palette.accent.name() in theme.app_stylesheet(av.palette)
+        image = QImage(80, 80, QImage.Format.Format_ARGB32_Premultiplied)
+        image.fill(0)
+        p = QPainter(image)
+        theme.paint_avatar_in(p, QRectF(0, 0, 80, 80), t=0.0, avatar_id=av.id, scale=1.5)
+        p.end()
+        lit = [(x, y) for x in range(0, 80, 2) for y in range(0, 80, 2) if image.pixelColor(x, y).alpha()]
+        xs, ys = [x for x, _ in lit], [y for _, y in lit]
+        assert lit, av.id
+        # Centred by its framing box over all frames, so one frame can sit a
+        # little off-centre (a leaf swaying, a tail flicking).
+        assert abs((min(xs) + max(xs)) / 2 - 40) < 10 and abs((min(ys) + max(ys)) / 2 - 40) < 10, av.id
 
 
 def test_avatar_icons_render_for_every_avatar(qapp):

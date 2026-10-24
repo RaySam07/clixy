@@ -52,7 +52,7 @@ from PyQt6.QtWidgets import (
 )
 
 import theme
-from widgets import BuddyView, ConnectionCard, KeyCaps, PasteZone, Segmented, Toggle, buddy_grid, mark_label
+from widgets import BuddyView, ConnectionCard, KeyCaps, LookPreview, PasteZone, Segmented, Toggle, buddy_grid, mark_label
 
 from config import KEYRING_SERVICE, OLLAMA_HOST
 
@@ -477,7 +477,7 @@ class SettingsDialog(QDialog):
             self._nav[key] = button
         v.addStretch(1)
         # Your buddy keeps you company at the bottom of the rail.
-        self._rail_buddy = BuddyView(84, scale=2.0, glow=True)
+        self._rail_buddy = BuddyView(84, scale=2.0)
         v.addWidget(self._rail_buddy, alignment=Qt.AlignmentFlag.AlignHCenter)
         self._rail_name = QLabel()
         self._rail_name.setObjectName("railBuddy")
@@ -663,10 +663,18 @@ class SettingsDialog(QDialog):
 
         page, v = self._page()
         v.addWidget(_heading("Look"))
+        self._look_preview = LookPreview()
+        v.addWidget(self._look_preview)
         self._glow = Toggle()
+        self._glow.toggled.connect(self._look_preview.set_glow)
         self._glow.setChecked(resolve_setting("EDGE_GLOW", default="on").lower() == "on")
+        self._look_preview.set_glow(self._glow.isChecked())
         self._side = Segmented([("left", "Left"), ("right", "Right")])
-        self._side.set_value("left" if resolve_setting("ISLAND_SIDE", default="right").lower() == "left" else "right")
+        self._side.changed.connect(self._look_preview.set_side)
+        side = "left" if resolve_setting("ISLAND_SIDE", default="right").lower() == "left" else "right"
+        self._side.set_value(side)
+        self._look_preview.set_side(side)
+        self._look_preview._side = self._look_preview._side_target  # start there, no slide
         v.addWidget(_rows(
             _row("Edge glow", "Your buddy's colors flow around the screen while you talk.", self._glow),
             _row("Island side", "Which edge of the screen the notch lives on.", self._side),
@@ -691,6 +699,15 @@ class SettingsDialog(QDialog):
         privacy.setObjectName("lead")
         privacy.setWordWrap(True)
         v.addWidget(privacy)
+        # Where each thing goes, at a glance: butter stays here, grey leaves.
+        self._where: dict[str, QLabel] = {}
+        where_rows = []
+        for key, title in (("key", "Your keys"), ("voice", "What you say"), ("ai", "Screenshot + question")):
+            chip = QLabel()
+            chip.setFont(theme.mono_font(8.5))
+            self._where[key] = chip
+            where_rows.append(_row(title, "", chip))
+        v.addWidget(_rows(*where_rows))
         self._keep_history = Toggle()
         self._keep_history.setChecked(resolve_setting("KEEP_HISTORY", default="on").lower() == "on")
         forget = QPushButton("Forget…")
@@ -704,6 +721,28 @@ class SettingsDialog(QDialog):
         ))
         v.addStretch(1)
         return page
+
+    def _refresh_where(self) -> None:
+        if not hasattr(self, "_where"):
+            return
+        stt = self._selected_provider("STT")
+        llm = self._selected_provider("LLM")
+        if self._collapsed_categories():
+            stt = llm  # realtime: the AI hears you itself
+        ai_names = {"anthropic": "Claude", "openai": "OpenAI", "gemini": "Google Gemini"}
+        places = {
+            "key": ("stays on this PC", True),
+            "voice": ("stays on this PC", True) if not stt.requires_key else (f"goes to {ai_names.get(stt.provider_id, stt.display_name)}", False),
+            "ai": ("stays on this PC", True) if llm.provider_id == "ollama" else (f"goes to {ai_names.get(llm.provider_id, llm.display_name)}", False),
+        }
+        for key, (text, here) in places.items():
+            chip = self._where[key]
+            chip.setText(text)
+            name = "whereHere" if here else "whereAway"
+            if chip.objectName() != name:
+                chip.setObjectName(name)
+                chip.style().unpolish(chip)
+                chip.style().polish(chip)
 
     def _on_forget(self) -> None:
         from tray import forget_dialog, forget_history
@@ -1087,8 +1126,12 @@ class SettingsDialog(QDialog):
         self._buttons.button(
             QDialogButtonBox.StandardButton.Save
         ).setEnabled(all_filled)
-        self._save_hint.setText("" if all_filled else "Add the missing key to save.")
+        llm_missing = self._selected_requires_key("LLM") and not self._key_inputs["LLM"].text().strip()
+        self._save_hint.setText(
+            "" if all_filled else "Paste your Claude key to save." if llm_missing else "Add the missing key in Advanced to save."
+        )
         self._refresh_connection()
+        self._refresh_where()
         if hasattr(self, "_voice_hint"):
             self._sync_voice_switch()
             tts = self._key_inputs["TTS"]

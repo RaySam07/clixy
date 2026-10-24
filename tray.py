@@ -106,7 +106,7 @@ class ClickyTray(QObject):
         act_settings.triggered.connect(self._on_settings)
         self._menu.addAction(act_settings)
 
-        avatars = self._menu.addMenu("Avatar")
+        avatars = self._menu.addMenu("Buddy")
         avatars.setWindowFlags(self._menu.windowFlags())
         avatars.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         group = QActionGroup(self)

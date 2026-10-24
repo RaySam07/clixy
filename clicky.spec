@@ -101,6 +101,8 @@ a = Analysis(
         # Look and feel: imported lazily by overlay.py / app.py.
         "theme",
         "island",
+        "widgets",
+        "onboarding",
         # Qt 6 sub-modules: PyInstaller's hook misses some by default.
         "PyQt6.QtCore",
         "PyQt6.QtGui",

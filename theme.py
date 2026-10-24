@@ -866,9 +866,31 @@ def _hex(color: QColor) -> str:
     return color.name(QColor.NameFormat.HexRgb)
 
 
+def _chevron_file() -> str:
+    """A small ink chevron for dropdowns, drawn once into the temp folder
+    (style sheets take images only from files). '' if that fails."""
+    try:
+        import tempfile
+        path = Path(tempfile.gettempdir()) / "clicky-ui" / "chevron-1.png"
+        if not path.exists():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            image = QImage(48, 48, QImage.Format.Format_ARGB32_Premultiplied)
+            image.fill(Qt.GlobalColor.transparent)
+            p = QPainter(image)
+            p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            p.setPen(QPen(INK, 5.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+            p.drawPolyline([QPointF(13, 19), QPointF(24, 30), QPointF(35, 19)])
+            p.end()
+            image.save(str(path))
+        return path.as_posix()
+    except Exception:
+        return ""
+
+
 def app_stylesheet() -> str:
     ink, paper, card, butter, coral = _hex(INK), _hex(PAPER), _hex(CARD), _hex(BUTTER), _hex(CORAL)
     line, mist, muted = _hex(LINE), _hex(MIST), _hex(MUTED)
+    chevron = _chevron_file()
     light, regular, medium, semi = (family(w) for w in (QFont.Weight.Light, QFont.Weight.Normal,
                                                        QFont.Weight.Medium, QFont.Weight.DemiBold))
     return f"""
@@ -900,11 +922,12 @@ QScrollBar::handle:vertical {{ background: #d9d4c6; border-radius: 3px; min-heig
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical, QScrollBar::add-page:vertical,
 QScrollBar::sub-page:vertical {{ height: 0; background: transparent; }}
 QFrame#rows {{ background: {card}; border: 1px solid #e8e2d3; border-radius: 18px; }}
-QFrame#rows QLabel {{ background: transparent; }}
 QFrame#rowSep {{ background: #f1ede2; max-height: 1px; min-height: 1px; border: none; margin: 0 18px; }}
 QFrame#conn {{ background: {butter}; border-radius: 20px; }}
 QLabel#connModel {{ font-family: "{light}"; font-size: 26px; color: {ink}; }}
 QLabel#connChip {{ background: rgba(10, 10, 18, 0.08); border-radius: 10px; padding: 3px 9px; color: {ink}; font-size: 11.5px; }}
+QLabel#whereHere {{ background: {butter}; border-radius: 11px; padding: 4px 11px; color: {ink}; }}
+QLabel#whereAway {{ background: {mist}; border-radius: 11px; padding: 4px 11px; color: {ink}; }}
 QLabel#liveChip {{ background: {ink}; border-radius: 10px; padding: 3px 9px; color: {butter}; font-size: 11.5px; }}
 
 QLineEdit, QComboBox {{
@@ -913,7 +936,8 @@ QLineEdit, QComboBox {{
     selection-background-color: {butter}; selection-color: {ink};
 }}
 QLineEdit:focus, QComboBox:focus, QComboBox:on {{ border-color: {ink}; }}
-QComboBox::drop-down {{ border: none; width: 26px; }}
+QComboBox::drop-down {{ border: none; width: 34px; }}
+QComboBox::down-arrow {{ image: url("{chevron}"); width: 12px; height: 12px; }}
 QComboBox QAbstractItemView {{ background: {card}; color: {ink}; border: 1px solid {line};
     selection-background-color: {butter}; selection-color: {ink}; outline: none; padding: 4px; }}
 

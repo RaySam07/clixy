@@ -42,7 +42,7 @@ class TestClickyTrayMenu:
         labels = [a.text() for a in actions]
         assert labels == [
             "Settings...",
-            "Avatar",
+            "Buddy",
             "Open Knowledge Folder",
             "Open Memory Folder",
             "Forget My History...",
