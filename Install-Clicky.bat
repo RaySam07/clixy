@@ -34,14 +34,16 @@ echo   Using Python: %PYEXE%
 
 rem --- 2. A private environment with Clicky's packages ------------------------
 if not exist ".venv\Scripts\python.exe" (
-  echo   [1/4] Making a private Python environment...
+  echo   [1/4] Making a private Python environment ^(up to a minute^)...
   "%PYEXE%" -m venv .venv
   if errorlevel 1 goto :fail
 )
 set "VPY=%~dp0.venv\Scripts\python.exe"
-echo   [2/4] Installing Clicky's packages (a few minutes the first time)...
+echo   [2/4] Installing Clicky's packages: the long step, 5-10 minutes and about 1 GB
+echo         the first time. Lines scroll by as each package arrives; that's normal.
+echo         Don't click inside this window: that pauses it ^(press Esc if the title says Select^).
 "%VPY%" -m pip install --upgrade pip --quiet --disable-pip-version-check
-"%VPY%" -m pip install -r requirements.txt "pyinstaller>=6.20" --quiet --disable-pip-version-check
+"%VPY%" -m pip install -r requirements.txt "pyinstaller>=6.20" --disable-pip-version-check --progress-bar on
 if errorlevel 1 goto :fail
 
 rem --- 3. Build ----------------------------------------------------------------------
@@ -51,7 +53,7 @@ if not errorlevel 1 (
   taskkill /im Clicky.exe /f >nul 2>&1
   timeout /t 2 /nobreak >nul
 )
-echo   [3/4] Building Clicky.exe...
+echo   [3/4] Building Clicky.exe ^(2-5 minutes, quiet while it works^)...
 "%VPY%" -m PyInstaller clicky.spec --noconfirm --log-level WARN
 if errorlevel 1 goto :fail
 
