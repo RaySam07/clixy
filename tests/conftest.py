@@ -24,3 +24,21 @@ def _no_real_audio(monkeypatch):
         raise OSError("no real audio in tests")
 
     monkeypatch.setattr(mic, "_sounddevice", _no_audio)
+
+
+_QT_APP = []
+
+
+@pytest.fixture(autouse=True)
+def _keep_qt_app_alive():
+    """Tests create the QApplication lazily in their own fixtures. Once one
+    exists, keep it for the rest of the run: if it is garbage-collected
+    while widgets from earlier tests still exist, Qt aborts when the
+    collector later frees those widgets (seen on the Windows runner)."""
+    yield
+    if not _QT_APP:
+        from PyQt6.QtWidgets import QApplication
+
+        app = QApplication.instance()
+        if app is not None:
+            _QT_APP.append(app)
