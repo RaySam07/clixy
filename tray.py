@@ -35,7 +35,7 @@ from pathlib import Path
 from typing import Callable
 
 from PyQt6.QtCore import QObject, Qt
-from PyQt6.QtGui import QAction, QActionGroup
+from PyQt6.QtGui import QAction, QActionGroup, QPixmap
 from PyQt6.QtWidgets import QMenu, QMessageBox, QSystemTrayIcon
 
 import theme
@@ -169,19 +169,33 @@ class ClickyTray(QObject):
         """Ask, then delete what Clicky keeps about past questions: the
         per-app memory notes, their index and any debug logs. Keys, settings
         and the knowledge folder (your own files) are left alone."""
-        answer = QMessageBox.question(
-            None,
-            "Forget my history?",
-            "Clicky will delete its notes about what you asked in each app, "
-            "and any debug logs.\n\nYour keys, settings and Knowledge Folder stay.",
-        )
-        if answer != QMessageBox.StandardButton.Yes:
+        if forget_dialog().exec() != QMessageBox.StandardButton.Yes:
             return
         failed = forget_history()
         if failed:
             self.notify("Some files were in use and stayed. Quit Clicky and try again to remove them.")
         else:
             self._icon.showMessage("Clicky", "Done. Your history is gone.", QSystemTrayIcon.MessageIcon.Information, 4000)
+
+
+def forget_dialog() -> QMessageBox:
+    """The confirmation for Forget My History, with the buddy as its icon."""
+    box = QMessageBox()
+    box.setWindowTitle("Clicky")
+    box.setText("Forget my history?")
+    box.setInformativeText(
+        "Clicky will delete its notes about what you asked in each app, and any "
+        "debug logs. Your keys, settings and Knowledge Folder stay."
+    )
+    box.setIconPixmap(QPixmap.fromImage(theme.avatar_image(theme.current_avatar_id(), 56, mood="thinking")))
+    box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel)
+    forget = box.button(QMessageBox.StandardButton.Yes)
+    forget.setText("Forget")
+    forget.setObjectName("clickyPrimary")
+    forget.style().unpolish(forget)  # restyle now that it has the accent's name
+    forget.style().polish(forget)
+    box.setDefaultButton(QMessageBox.StandardButton.Cancel)
+    return box
 
 
 def forget_history() -> list[Path]:

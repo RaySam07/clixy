@@ -883,6 +883,8 @@ QLabel#clickyTitle {{ font-family: "{pixel_family()}"; font-size: 22px; color: {
 QLabel#clickySubtitle, QLabel#clickyMuted {{ color: {muted}; }}
 QLabel#clickyNote {{ color: {accent}; }}
 QLabel#clickySection {{ font-weight: 800; color: {text}; padding-top: 4px; }}
+QMessageBox QLabel#qt_msgbox_label {{ font-size: 16px; font-weight: 800; }}
+QMessageBox QLabel#qt_msgbox_informativelabel {{ color: {muted}; }}
 QLineEdit, QComboBox {{
     background: {raised}; color: {text}; min-height: 22px;
     border: 1.5px solid {line}; border-radius: 10px; padding: 6px 10px;
