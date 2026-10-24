@@ -54,7 +54,7 @@ jobs:
         run: Compress-Archive -Path dist\Clixy -DestinationPath Clixy-portable.zip
 
       - name: Keep the build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: clixy-windows
           path: |
