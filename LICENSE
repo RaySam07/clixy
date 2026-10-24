@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) 2026 Abhishek Vulla
+Copyright (c) 2026 Rayan Sameer
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -19,3 +19,6 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+Portions of Clixy come from other open-source projects and remain under their
+own copyright and licenses; see THIRD_PARTY_NOTICES.md.

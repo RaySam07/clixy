@@ -1,4 +1,4 @@
-# Clicky Windows dependencies
+# Clixy dependencies
 
 # Core
 anthropic>=0.40.0          # Claude SDK: plain vision messages.stream()

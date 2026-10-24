@@ -1,225 +1,166 @@
-> **Clixy, my private build.** New look, side notch, pixel buddies, Ctrl + Win.
-> To install on Windows, double-click `Install-Clicky.bat`. See [CLIXY.md](CLIXY.md).
-
 <p align="center">
-  <img src="assets/clicky-logo.png" alt="Clicky Windows" width="180" />
-</p>
-
-<h1 align="center">Clicky Windows</h1>
-
-<p align="center">
-  An AI that lives next to your cursor on Windows. Hold a hotkey, ask about whatever app you're in, and Clicky answers out loud and points at the spot on your screen. It points, you click.
+  <img src="docs/media/banner.png" alt="Clixy: a pixel buddy that lives on your Windows screen" width="100%" />
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/platform-Windows%2010%2F11-0078d4" alt="Windows 10/11" />
-  <a href="https://github.com/AbhishekVulla/clicky-windows/releases"><img src="https://img.shields.io/github/downloads/AbhishekVulla/clicky-windows/total?label=installs&color=ed8936" alt="installs" /></a>
+  <a href="https://github.com/RaySam07/clixy/releases/latest/download/Clixy-Setup.exe"><img src="https://img.shields.io/badge/Download%20for%20Windows-Clixy--Setup.exe-ff5a3d?style=for-the-badge&logo=windows&logoColor=white" alt="Download Clixy for Windows" /></a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/AbhishekVulla/clicky-windows/releases/latest">Download</a> &middot;
-  <a href="#quick-install">Install</a> &middot;
-  <a href="#how-it-works">How it works</a> &middot;
-  <a href="#engineering">Engineering</a> &middot;
-  <a href="#faq">FAQ</a> &middot;
-  <a href="#privacy">Privacy</a>
+  <a href="https://github.com/RaySam07/clixy/releases/latest"><img src="https://img.shields.io/github/v/release/RaySam07/clixy?label=release&color=0a0a12" alt="Latest release" /></a>
+  <img src="https://img.shields.io/badge/Windows-10%20%7C%2011-0a0a12?logo=windows" alt="Windows 10 and 11" />
+  <img src="https://img.shields.io/badge/voice-runs%20on%20your%20PC-0a0a12" alt="Voice runs on your PC" />
+  <img src="https://img.shields.io/badge/license-MIT-0a0a12" alt="MIT license" />
+  <a href="https://github.com/RaySam07/clixy/stargazers"><img src="https://img.shields.io/github/stars/RaySam07/clixy?style=social" alt="GitHub stars" /></a>
 </p>
 
-> *"I just want to learn by doing."*
-> Farza Majeed, on why he built the original Clicky
+<h3 align="center">Hold <kbd>Ctrl</kbd> + <kbd>Win</kbd>, ask out loud, let go.</h3>
+<p align="center">Clixy looks at your screen, talks you through it, and <b>draws</b> exactly where you need to look.<br/>
+Stuck in an app, a spreadsheet, a maths problem or a video? Ask your buddy.</p>
 
-The most requested feature on [Farza's Clicky](https://github.com/farzaa/clicky) was a Windows version. This is it, plus two things the original doesn't have: it remembers what you asked in each app, and each app can have its own knowledge base, so Clicky can help with software the AI has never seen.
+<!--
+  YOUR VIDEO GOES HERE.
+  On github.com, click the pencil to edit this README, then drag your .mp4
+  onto the empty line below. GitHub uploads it and pastes a link that plays
+  right here in the README. Keep it under 100 MB.
+-->
 
 <p align="center">
-  <a href="https://youtu.be/ajIO6p7pR6M">
-    <img src="assets/screenshots/demo-thumbnail.jpg" alt="Watch the 90-second demo on YouTube" width="640" />
-  </a>
-</p>
-<p align="center">
-  <em>90 seconds: Granta EduPack for a class project. Clicky knows the project, sees the screen, points at where to click.</em><br />
-  1st runner-up, <a href="https://pycon.sg/hackathon_entries/results.html">PyCon Singapore 2026 Hackathon</a>.
+  <img src="docs/media/draws-on-screen.gif" width="860" alt="Asked about a Fourier transform video, the fire buddy flies over and draws a box around the frequency graph, with a label placed where it's easy to read" />
 </p>
 
-## What it does
+---
 
-You're in some app and you're stuck. Hold `Ctrl+Alt+Space`, ask out loud, let go. You hear the answer and a blue cursor lands on the button you needed. Clicky never clicks or types for you, so you come out of it knowing the app.
+## Get started in a minute
 
-- **Charts.** *"What's this MACD divergence telling me?"* on TradingView, with Clicky pointing at the peaks it means.
-- **Apps the AI doesn't know.** Your company's internal tools, or niche software from a class. Paste the manual into that app's knowledge base, `~/Documents/Clicky Wiki/<app>.exe.md`, and Clicky reads it before answering. I did this for Granta EduPack, a materials tool I had to use at SUTD, and now Clicky finds things in it like a TA who already read the manual.
-- **A first app on Lovable, Bolt or Replit.** Ask what's broken; Clicky reads your editor and shows you where to click.
-
-Turn on *Draw on screen* in Settings and Clicky also marks up the screen like a tutor: it circles the thing, draws an arrow, underlines a term or writes a short label.
+1. **Download** [`Clixy-Setup.exe`](https://github.com/RaySam07/clixy/releases/latest/download/Clixy-Setup.exe) and run it. No admin rights needed.
+   Windows may say *"Windows protected your PC"* because Clixy isn't code-signed yet: click **More info → Run anyway**.
+2. **Drop in your API key.** Clixy asks for it on first launch: paste it into the box and it checks itself.
+   - **Recommended: Claude Haiku 5.5.** Get a key at [console.anthropic.com](https://console.anthropic.com/settings/keys). It's fast, points accurately and costs about **$0.0003 a question**, roughly 250,000 questions per $100.
+   - Also works: an OpenRouter key (`sk-or-…`), OpenAI, Google Gemini, or a local model through Ollama (Settings › Advanced).
+3. **Say hi to your buddies**, pick one, pick your shortcut, and you're done.
 
 <p align="center">
-  <img src="assets/screenshots/draw-on-screen.jpg" alt="Clicky circling two swapped signs in a handwritten exergy balance, labelled should be minus and should be plus" width="720" />
-  <br />
-  <em>Asked "What is the mistake in this question?" on a thermodynamics worksheet.</em>
+  <img src="docs/media/setup.png" width="640" alt="First launch: paste your Claude key into a box that turns yellow with a check mark when it looks right" />
 </p>
 
-## Quick install
+<details>
+<summary><b>Prefer to build it yourself?</b></summary>
 
-**Video walkthrough:** [How to install Clicky Windows](https://youtu.be/a76r7sTNGH0) (90 seconds).
+Download this repository as a zip, unzip it, and double-click **`Install-Clixy.bat`**. It sets up Python 3.13 (with winget if it's missing), builds `Clixy.exe`, and adds Start menu and desktop shortcuts. Takes about 10 minutes the first time.
 
-1. Download `Clicky-Windows-Setup.exe` from [Releases](https://github.com/AbhishekVulla/clicky-windows/releases/latest).
-2. Run it. The installer isn't code-signed yet, so Windows SmartScreen warns you: click **More info**, then **Run anyway**.
-3. Clicky asks for two keys:
-   - **AI model:** an [OpenAI](https://platform.openai.com/api-keys) key. An [Anthropic](https://console.anthropic.com/settings/keys), Google or [OpenRouter](https://openrouter.ai/keys) key works too: paste it and Clicky picks that provider.
-   - **Cartesia:** one [Cartesia](https://play.cartesia.ai/sign-in) key covers both listening and the voice.
-4. Hold `Ctrl+Alt+Space`, ask, let go.
+Or by hand:
 
-Cartesia has a free tier, and an answer from the AI model costs under a cent. Prefer no keys at all? Every piece has a local option; see the [FAQ](#faq).
+```powershell
+py -3.13 -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+python app.py
+```
+</details>
+
+---
+
+## What Clixy does
+
+### It draws where you need to look
+
+Your buddy flies over and draws with its own tip: a snug loop around a button, a box around a chart, a highlighter over a line of text, an arrow from here to there. Several steps get numbers, and each label finds the calmest spot nearby so it never covers what it explains.
 
 <p align="center">
-  <img src="assets/screenshots/settings-dialog.png" alt="First-launch settings: one AI key and one Cartesia key" width="520" />
+  <img src="docs/media/step-by-step.gif" width="760" alt="Three numbered steps: a loop around a menu, a loop around the Export button, a highlight over a heading. The mouse moves onto Export and that mark fades away" />
 </p>
+
+Move your mouse onto a marked thing and that mark says *got it* and fades. The rest fade a few seconds after Clixy stops talking.
+
+### It teaches maths on the figure itself
+
+Ask for the radius and it draws it from the centre to the edge. Ask for the circumference and it traces the circle. Ask for the angles and it marks each one with its size, inside the angle where a teacher would write it.
+
+<p align="center">
+  <img src="docs/media/geometry.gif" width="760" alt="On a worksheet the buddy marks the centre O, draws the radius r = 5 cm, traces the circumference, then marks the three angles of a triangle: 66°, 48° and 66°" />
+</p>
+
+### It's precise, not a guess
+
+After answering, Clixy takes a second, closer look at each mark and asks for its exact edges. On Windows it snaps buttons and menus to their real outline. It fits circles to the actual circle in the image and pins radii and corners to it. A mark it can't place confidently isn't drawn at all.
+
+### It lives in a notch on the side of your screen
+
+A black island grows out of the screen edge, like the Dynamic Island turned on its side. It shows a waveform and your buddy while you talk, then your answer as captions with the names of things to click.
+
+<p align="center">
+  <img src="docs/media/side-notch.png" width="760" alt="The side notch while listening, while thinking, and showing an answer with Export, PDF and Save as chips" />
+</p>
+
+### Five pixel buddies
+
+Ember, Splash, Sprout, Mochi and Twinkle. Each one blinks, reacts and brings its own colours to the glow around your screen while you talk.
+
+<p align="center">
+  <img src="docs/media/buddies.png" width="860" alt="Ember the campfire, Splash the water drop, Sprout the leaf, Mochi the black cat and Twinkle the star" />
+</p>
+
+### Settings that make sense
+
+<p align="center">
+  <img src="docs/media/settings-general.png" width="420" alt="Settings: your Claude connection as a card with its status and cost, the shortcut as keycaps, voice on this PC or in the cloud, a microphone picker with a live meter, and drawing on screen" />
+  <img src="docs/media/settings-buddies.png" width="420" alt="Settings: say hi to your buddies" />
+</p>
+
+---
+
+## Private and secure by design
+
+| What | Where it goes |
+|---|---|
+| Your API key | Stays on your PC, encrypted by Windows Credential Manager. Only ever sent to the AI you chose. |
+| What you say | Turned into text **on your PC** (faster-whisper). It never leaves the machine unless you choose cloud voice. |
+| Clixy's voice | Generated **on your PC** (Kokoro). |
+| Screenshot + question | Sent to your AI provider only while you hold the shortcut, to answer you. |
+| History | Short notes per app in `~/.clixy/`. Turn it off or wipe it in Settings › Privacy. |
+| Telemetry | None. No accounts, no server of ours. |
+
+Found a security issue? See [SECURITY.md](SECURITY.md).
+
+---
 
 ## How it works
 
-```mermaid
-graph TD
-    USER[Hold Ctrl Alt Space]
+1. You hold the shortcut. Clixy listens on your PC and captures the screen you're on.
+2. Your question and the screenshot go to Claude, which answers out loud and plans marks: a box, a highlight, a radius, an angle.
+3. While the answer is spoken, Clixy aims each mark with a zoomed-in second look, fits circles to the image and snaps controls to their real edges.
+4. Your buddy flies over and draws them, then waits beside them while you look.
 
-    subgraph Press [While the key is held]
-        MIC[Mic streams to Cartesia speech to text]
-        CAP[Screenshot of the screen under the cursor<br/>overlay hidden first]
-        WARM[API connections opened early]
-        MEM[Per-app memory and knowledge base read]
-    end
+Built with Python and PyQt6. Voice on your PC with faster-whisper and Kokoro. Screen understanding with Claude.
 
-    subgraph Release [On release]
-        LLM[Vision model of your choice<br/>Claude, GPT, Gemini or Ollama]
-        TTS[Cartesia voice<br/>sentence by sentence]
-        OVERLAY[Click-through cursor overlay<br/>one window per monitor]
-        REC[Memory note appended]
-    end
+## Troubleshooting
 
-    USER --> MIC
-    USER --> CAP
-    USER --> WARM
-    USER --> MEM
-    MIC --> LLM
-    CAP --> LLM
-    MEM --> LLM
-    LLM -->|streaming text| TTS
-    LLM -->|POINT x y tag| OVERLAY
-    LLM --> REC
-```
+- **Your buddy can't hear you.** Open Settings › General and talk: the **Microphone** row has a live meter and says what's wrong. *Silent* usually means Windows is blocking the mic: click **Open Windows microphone settings** and turn on *Let desktop apps access your microphone*.
+- **"Windows protected your PC".** Click **More info → Run anyway**. Code signing is on the roadmap.
+- **The shortcut clashes with another app.** Settings › General › Shortcut › **Change**, then hold the keys you want.
+- **The first question is slow.** On-device listening downloads its model once (about 150 MB). The notch tells you while it does.
 
-While you talk, the mic streams to speech-to-text, the screen is captured, the per-app memory and knowledge base are read, and the connections to the AI and voice providers open. When you let go, the model gets the screenshot, your words, the memory and the knowledge base, and streams its answer. Each finished sentence goes straight to the voice, so you hear the start of the answer while the rest is still being written. A `[POINT:x,y:label]` tag at the end moves the cursor.
+## Roadmap
 
-## Engineering
+- [ ] Code-signed installer, so there's no SmartScreen warning
+- [ ] More buddies, and a way to draw your own
+- [ ] Graphs and charts: mark a point, read a slope
+- [ ] Languages beyond English
+- [ ] macOS
 
-<details>
-<summary><strong>Pointing that lands, measured.</strong> Every default was picked on real screenshots, and one model's misses turned out to be a coordinate bug.</summary>
+Ideas and pull requests welcome: see [CONTRIBUTING.md](CONTRIBUTING.md).
 
-Seven "where is X" questions on real screenshots (Granta EduPack, Fusion 360, GitHub), with Clicky's own prompt, October 2026. A hit means the cursor tip landed inside the target button.
-
-| Provider | Old default | Hits | New default | Hits | Cost per question |
-|---|---|---|---|---|---|
-| Anthropic | Claude Sonnet 4.6 | 6/7 | Claude Haiku 5.5 | 7/7 | $0.0004 (was $0.008) |
-| OpenAI | GPT-5.4 | 2/7 | GPT-6.1 Sol | 7/7 | $0.006 |
-| Google | Gemini 3.1 Pro | 0/7 | Gemini 4 Argon | 7/7 | $0.006 |
-
-Seven questions is a small sample. The point is the gap, not the decimals.
-
-Gemini missed all seven by about 90 px, always in the same direction. That's not a weak model: Gemini grounds on a 0 to 1000 grid on each axis, even when the prompt says the image is 1280 by 800 pixels. Clicky now converts Gemini's coordinates, and its drawing tags, back to pixels. Same model, 0/7 became 6/7, and Gemini 4 Argon goes 7/7.
-
-</details>
-
-<details>
-<summary><strong>A faster voice.</strong> It starts 190 ms after each sentence is ready, down from 620 ms.</summary>
-
-From letting go of the key to the first word takes 2.5 to 3.5 seconds on my laptop, and most of that is the AI model writing its first sentence. The parts Clicky controls, measured from Singapore in October 2026:
-
-| Stage | Before | Now |
-|---|---|---|
-| Speech to text, release to transcript | ~420 ms (AssemblyAI, US servers) | ~160 ms (Cartesia, nearby servers) |
-| Voice, sentence to first sound | ~620 ms (waited for the whole sentence) | ~190 ms (plays as audio arrives) |
-| Connecting to the AI and voice providers | a fresh handshake every question | opened while you hold the key, 0.2 to 0.35 s saved |
-| Hidden model "thinking" | on | off where the model allows it |
-
-- **The voice now streams.** It used to download each sentence's whole audio before playing a sample, over a new connection per sentence. Now one connection and one audio stream stay open, and audio plays as it arrives.
-- **The speech session is managed.** It opens in the background, reconnects after a dropped network, and closes after five quiet minutes.
-- **Sentence streaming.** The answer is read sentence by sentence while the model is still writing the rest.
-
-</details>
-
-<details>
-<summary><strong>One key, any model.</strong> Switching between Claude, GPT and Gemini is a dropdown, with one OpenRouter key or each provider's own.</summary>
-
-Each provider takes either its own key or an OpenRouter key. The key decides the route: an OpenRouter key goes through OpenRouter with the model's namespaced name (`anthropic/claude-haiku-5-5`), and a direct key goes to the provider with the bare name (`claude-haiku-5-5`). Paste one OpenRouter key once and it's reused for every provider.
-
-Two bugs this used to hide, both fixed: a direct Anthropic key sent the OpenRouter-style model name, which Anthropic's own API doesn't accept, and a key saved in the first-launch window was ignored until a restart.
-
-Older versions saved the default model into your settings. Clicky now tells a saved old default apart from a model you actually picked, so upgrading moves you to the new default without overriding a deliberate choice.
-
-</details>
-
-<details>
-<summary><strong>A click-through overlay that's right on every monitor.</strong> One window per screen, Win32 flags applied after show().</summary>
-
-The cursor has to stay on top, let clicks pass through to the app underneath, never steal focus, and land on the right pixel when a 4K monitor at 200% sits next to a 1080p laptop at 100%. One overlay stretched across the whole desktop renders at the wrong scale on at least one screen, because Qt 6 gives each screen its own logical coordinate space. So Clicky opens one window per monitor and routes the cursor to the right one ([`overlay.py`](overlay.py)).
-
-The click-through comes from Win32 layered-window flags set through `ctypes` (`WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW`). They only stick if they're applied after `show()`, OR'd into the existing style rather than replacing it, and followed by `SetWindowPos(SWP_FRAMECHANGED)`. Miss any of the three and the overlay vanishes or eats your clicks.
-
-</details>
-
-<details>
-<summary><strong>A hotkey that doesn't break your typing, and only one Clicky at a time.</strong></summary>
-
-The hotkey listener is observe-only (`pynput.Listener(suppress=False)`): it sees the keys, and your app still gets them. Setting `suppress=True` would swallow every keystroke system-wide.
-
-`Ctrl+Alt+Space` took three tries. `Alt+Space` clashes with the Windows window menu. `Ctrl+Shift+Space` is Excel's "select the whole sheet", and since Excel still receives the keys, it wiped your selection every time you asked a question. `Ctrl+Alt+Space` only clashes with Claude Desktop, which lets you unbind it.
-
-Observe-only has a catch: two Clicky processes both hear the hotkey and both answer. Clicky takes a Win32 named mutex (`Local\ClickyWindows-SingleInstance-v1`) before anything else starts, so a second copy just points you to the one in the tray and exits. `CreateMutexW` needs `restype = wintypes.HANDLE`, or ctypes truncates the 64-bit handle.
-
-</details>
-
-<details>
-<summary><strong>Memory and a knowledge base, in plain Markdown.</strong> No vector database. You can read and edit everything Clicky knows.</summary>
-
-- **Memory.** Every question appends a short note to `~/.clicky-windows/memory/<app>.exe.md`: what you asked, what Clicky said, where it pointed. The next question in that app gets the last 1,500 characters as context.
-- **Knowledge base.** Anything in `~/Documents/Clicky Wiki/<app>.exe.md`, up to 60,000 characters, is given to the model as the reference for that app. This is how Clicky learns niche or company-internal software.
+---
 
 <p align="center">
-  <img src="assets/screenshots/memory-graph.png" alt="Per-app memory files viewed as an Obsidian graph" width="560" />
-  <br />
-  <em>The memory folder in Obsidian: one file per app.</em>
+  <b>If Clixy helped you, give it a ⭐. It helps more people find their buddy.</b>
 </p>
 
-</details>
+<p align="center">
+  <a href="https://star-history.com/#RaySam07/clixy&Date"><img src="https://api.star-history.com/svg?repos=RaySam07/clixy&type=Date" width="560" alt="Star history" /></a>
+</p>
 
-## FAQ
+## License
 
-<details>
-<summary><strong>Can I run it with no keys at all?</strong> Yes. Everything can run on your own machine, for privacy or to skip API costs.</summary>
-
-- **Listening:** pick **Local (faster-whisper)** in Settings. Whisper on your CPU, about 150 MB downloaded once.
-- **Voice:** pick **Local (Kokoro)**. About 330 MB downloaded once, then it speaks offline.
-- **AI model:** pick **Ollama (local)**. Install [Ollama](https://ollama.com/download) 0.12.7 or newer, then `ollama pull qwen3-vl:4b-instruct`.
-
-Listening and voice run fine on a normal CPU. The AI model wants a strong GPU: without one, an answer can take a few minutes. Local models also point at the right thing less often than the cloud ones, so for everyday use the two keys in Quick install are faster and more accurate.
-
-</details>
-
-<details>
-<summary><strong>Which AI model should I pick?</strong></summary>
-
-All three hit every pointing target in the test above, so the difference is speed and reasoning. GPT-6.1 Sol is the default: with an OpenAI key it usually starts answering in about 2 seconds, and it got 5 of 6 reasoning checks right, like spotting the mistake in a worked solution. Claude Haiku 5.5 is the cheapest, about $0.0004 a question, and the fastest through an OpenRouter key, but got 3 of 6. Gemini 4 Argon got all 6 and is the slowest to start. One OpenRouter key works for all three.
-
-</details>
-
-## Privacy
-
-- Your screen, your voice and Clicky's notes for the current app go straight from your PC to the providers you pick, on your own keys. With an OpenRouter key, the AI call goes through OpenRouter. Pick the local options and none of it leaves your PC.
-- Keys are stored with Windows Credential Manager, encrypted for your Windows account. That protects them at rest, not from malware running as you.
-- Memory and the knowledge base are plain Markdown on your disk. Read them, edit them, delete them.
-- Each question also writes a short text log to `~/.clicky-windows/debug/`: what you asked, what Clicky answered and how long each step took. Screenshots aren't kept there unless you set `DEBUG_SCREENSHOTS=on`.
-
-## Acknowledgments
-
-Built on [Clicky by Farza Majeed](https://github.com/farzaa/clicky), the original for macOS.
-
-## License and support
-
-[MIT](LICENSE). A personal project, PRs welcome. Found a bug? Open an issue and attach `interaction.log` from the newest folder in `~/.clicky-windows/debug/`. It's a text log of timings, what you asked and what Clicky answered.
+[MIT](LICENSE) © 2026 Rayan Sameer. Clixy builds on earlier open-source work, credited in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

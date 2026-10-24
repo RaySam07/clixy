@@ -1,4 +1,4 @@
-"""Clicky Windows orchestrator: wires all 7 building blocks into the PTT loop.
+"""Clixy orchestrator: wires all 7 building blocks into the PTT loop.
 
 One sequential pipeline worker thread per PTT press, cancel-on-re-press.
 Matches Clicky's Swift Task pattern (CompanionManager.swift lines 490-720).
@@ -389,7 +389,7 @@ def _friendly_error(stage: str, exc: BaseException) -> str:
     text = " ".join(str(x) for x in chain).lower()
     names = " ".join(type(x).__name__ for x in chain)
     if status in (401, 403) or any(t in text for t in ("invalid x-api-key", "invalid api key", "incorrect api key", "unauthorized")):
-        return f"Your {stage} key was rejected. Right-click the Clicky tray icon, open Settings, and paste it again."
+        return f"Your {stage} key was rejected. Right-click the Clixy tray icon, open Settings, and paste it again."
     # An empty balance can arrive as 402, 400 or 429 (OpenAI's insufficient_quota),
     # so billing words decide it; a bare "quota" is a temporary per-minute limit.
     if status == 402 or any(t in text for t in (
@@ -418,6 +418,17 @@ _PRICES_PER_MTOK = {
     "claude-sonnet-5-5": (2.00, 10.00),
     "claude-opus-5-5": (4.00, 20.00),
 }
+
+
+_SAVED_NAMES: tuple[str, ...] = (
+    "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "ASSEMBLYAI_API_KEY", "CARTESIA_API_KEY",
+    "ELEVENLABS_API_KEY", "OLLAMA_HOST", "LLM_PROVIDER", "STT_PROVIDER", "TTS_PROVIDER", "ANTHROPIC_MODEL",
+    "OPENAI_MODEL_VISION", "GEMINI_MODEL_VISION", "OLLAMA_MODEL_VISION", "OPENAI_REALTIME_MODEL",
+    "ANNOTATION_MODE", "HOTKEY", "EDGE_GLOW", "ISLAND_SIDE", "KEEP_HISTORY", "AVATAR", "MIC_DEVICE",
+    "DEBUG_LOG", "DEBUG_SCREENSHOTS", "KOKORO_VOICE", "FASTER_WHISPER_MODEL", "FASTER_WHISPER_DEVICE",
+    "FASTER_WHISPER_COMPUTE",
+)
+"""Everything Clixy keeps in Credential Manager, for carrying an old install over."""
 
 
 def _hotkey_combo() -> str:
@@ -832,7 +843,7 @@ class ClickyApp(QObject):
 
         # Open the LLM and TTS connections while the user is still talking, so
         # the requests on release skip the TCP and TLS handshake.
-        threading.Thread(target=self._warm_connections, daemon=True, name="clicky-warm").start()
+        threading.Thread(target=self._warm_connections, daemon=True, name="clixy-warm").start()
 
         # Kick off capture + memory recall in the background so they overlap
         # with the user speaking. Release-time pipeline uses cached result.
@@ -843,7 +854,7 @@ class ClickyApp(QObject):
             target=self._press_time_capture,
             args=(self._current_app,),
             daemon=True,
-            name="clicky-press-capture",
+            name="clixy-press-capture",
         )
         self._capture_thread.start()
 
@@ -1025,7 +1036,7 @@ class ClickyApp(QObject):
             target=self._release_capture_worker,
             args=(release_cursor, self._current_app, release_capture_queue),
             daemon=True,
-            name="clicky-release-capture",
+            name="clixy-release-capture",
         )
         capture_worker_thread.start()
 
@@ -1038,7 +1049,7 @@ class ClickyApp(QObject):
                 release_capture_queue,
             ),
             daemon=True,
-            name="clicky-pipeline",
+            name="clixy-pipeline",
         )
         self._worker_thread.start()
 
@@ -1589,7 +1600,7 @@ _T0 = __import__("time").time()
 # process lifetime; second instance sees ERROR_ALREADY_EXISTS and exits.
 # Same pattern Spotify, Slack, Discord, Raycast all use.
 
-_MUTEX_NAME = "Local\\ClickyWindows-SingleInstance-v1"
+_MUTEX_NAME = "Local\\Clixy-SingleInstance-v1"
 """Per-logon-session namespace (Local\\): admin and non-admin in the same
 session see the same mutex (correct), but different Windows users on the
 same machine each get their own Clicky (also correct). Global\\ would
@@ -1905,25 +1916,30 @@ if __name__ == "__main__":
         # cleanly. MB_ICONINFORMATION = 0x40.
         ctypes.windll.user32.MessageBoxW(
             None,
-            "Clicky Windows is already running.\n\n"
+            "Clixy is already running.\n\n"
             "Look for your buddy's icon in your system tray "
             "(bottom-right corner of your screen). Right-click it "
             "for the Settings and Quit menu.",
-            "Clicky already running",
+            "Clixy already running",
             0x40,
         )
         sys.exit(0)
     # _mutex_handle == "fail-open" or a real handle: proceed with startup.
 
     print("=" * 70)
-    print(f"Clicky Windows: hold {describe_hotkey(_hotkey_combo())} and ask")
+    print(f"Clixy: hold {describe_hotkey(_hotkey_combo())} and ask")
     print("=" * 70)
+
+    # An install from before the rename keeps its keys, notes and Knowledge
+    # Folder: carry them over to Clixy's names before anything reads them.
+    from config import migrate_legacy
+    migrate_legacy(_SAVED_NAMES)
 
     set_dpi_awareness()
     qt_app = QApplication(sys.argv)
     # Fonts, the app-wide stylesheet and the window icon all follow the
-    # chosen avatar's theme, and switch with it. clicky.spec's `icon=` still
-    # embeds assets/clicky_tray.ico as the EXE's own icon.
+    # chosen avatar's theme, and switch with it. clixy.spec's `icon=` embeds
+    # assets/clixy.ico as the EXE's own icon.
     import theme
     theme.apply(qt_app)
     qt_app.setWindowIcon(theme.app_icon())
@@ -1976,7 +1992,7 @@ if __name__ == "__main__":
     if tts_provider != "kokoro" and not tts_api_key:
         ctypes.windll.user32.MessageBoxW(
             None,
-            f"Clicky needs an API key for {tts_provider.title()} TTS.\n\n"
+            f"Clixy needs an API key for {tts_provider.title()} TTS.\n\n"
             "Right-click the tray icon → Settings... to set it.",
             f"{tts_provider.title()} key missing",
             0x40,
@@ -1992,7 +2008,7 @@ if __name__ == "__main__":
         # bundled-EXE void.
         ctypes.windll.user32.MessageBoxW(
             None,
-            f"Clicky's TTS configuration is invalid: {exc}\n\n"
+            f"Clixy's TTS configuration is invalid: {exc}\n\n"
             "Right-click the tray icon → Settings... to choose a "
             "supported provider.",
             "TTS provider not supported",
@@ -2044,11 +2060,11 @@ if __name__ == "__main__":
             try:
                 ctypes.windll.user32.MessageBoxW(
                     None,
-                    "Clicky's speech-to-text provider failed to start:\n\n"
+                    "Clixy's speech-to-text provider failed to start:\n\n"
                     f"{exc}\n\n"
-                    "Right-click the Clicky tray icon and open Settings to switch "
+                    "Right-click the Clixy tray icon and open Settings to switch "
                     "to a different provider (for example AssemblyAI cloud), then "
-                    "restart Clicky.",
+                    "restart Clixy.",
                     "Speech-to-text failed to load",
                     0x10,  # MB_ICONERROR
                 )
@@ -2084,8 +2100,8 @@ if __name__ == "__main__":
         ctypes.windll.user32.MessageBoxW(
             None,
             "Saved. Your new AI or voice provider starts next time.\n\n"
-            "Clicky will close now. Reopen it from the Start menu to continue.",
-            "Clicky",
+            "Clixy will close now. Reopen it from the Start menu to continue.",
+            "Clixy",
             0x40,  # MB_ICONINFORMATION (OK only)
         )
         clicky.stop()
@@ -2103,7 +2119,7 @@ if __name__ == "__main__":
     except RuntimeError as exc:
         from PyQt6.QtWidgets import QMessageBox
         QMessageBox.critical(
-            None, "Clicky Windows -- Tray Error", str(exc)
+            None, "Clixy -- Tray Error", str(exc)
         )
         clicky.stop()
         sys.exit(1)

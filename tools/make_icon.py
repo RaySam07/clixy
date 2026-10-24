@@ -1,11 +1,11 @@
-"""Regenerate assets/clicky_tray.ico (the EXE's icon) and
-assets/clicky-logo.png.
+"""Regenerate assets/clixy.ico (the EXE's icon) and
+assets/clixy-logo.png.
 
 The running app draws its icons live from theme.py: the mark for windows,
 your buddy in the tray. The EXE file itself needs a static .ico. Run from
 the repo root:
 
-    python tools/make_icon.py            # the mark (butter C on ink)
+    python tools/make_icon.py            # the logo: Ember on ink
     python tools/make_icon.py mochi      # a buddy instead
 """
 import io
@@ -35,11 +35,11 @@ def main(avatar_id: str | None = None) -> None:
         image = theme.avatar_image(avatar_id, size) if avatar_id else theme.app_icon_image(size)
         image.save(buffer, "PNG")
         frames.append(Image.open(io.BytesIO(bytes(buffer.data()))).convert("RGBA"))
-    out = ROOT / "assets" / "clicky_tray.ico"
+    out = ROOT / "assets" / "clixy.ico"
     frames[-1].save(out, format="ICO", sizes=[(s, s) for s in SIZES], append_images=frames[:-1])
     print(f"wrote {out}")
     if avatar_id is None:
-        logo = ROOT / "assets" / "clicky-logo.png"
+        logo = ROOT / "assets" / "clixy-logo.png"
         theme.app_icon_image(360).save(str(logo))
         print(f"wrote {logo}")
 

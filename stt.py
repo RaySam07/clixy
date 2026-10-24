@@ -1,4 +1,4 @@
-"""Clicky Windows speech-to-text layer.
+"""Clixy speech-to-text layer.
 
 AssemblyAIStreamingSTT streams to the AssemblyAI Universal-3 realtime-pro
 (``u3-rt-pro``) WebSocket using ``StreamingClient`` from
@@ -1219,7 +1219,7 @@ if __name__ == "__main__":
         )
 
     print("=" * 70)
-    print("Clicky Windows -- stt.py manual verification")
+    print("Clixy -- stt.py manual verification")
     print("=" * 70)
     print(
         "\nOpen your mic, then press Enter. Speak for 5 seconds. "

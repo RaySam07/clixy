@@ -8,7 +8,7 @@ Usage
 
    (Launch ``py -3.13 -m app`` in another terminal, do N real PTT presses
    with roughly the same question + same app, then return to the harness
-   and press Enter. It scrapes ~/.clicky-windows/debug/ for the N most-
+   and press Enter. It scrapes ~/.clixy/debug/ for the N most-
    recent folders.)
 
 2. Check out the change under test and record:
@@ -18,8 +18,8 @@ Usage
 3. Compare the two runs:
 
        py -3.13 -m tools.bench_latency compare \\
-           ~/.clicky-windows/bench/before.json \\
-           ~/.clicky-windows/bench/after.json
+           ~/.clixy/bench/before.json \\
+           ~/.clixy/bench/after.json
 
 The compare output shows per-metric median (P50) before + after, delta in
 milliseconds, Mann-Whitney U one-sided p-value (H1: after is stochastically
@@ -47,8 +47,8 @@ import numpy as np
 from scipy import stats
 
 
-BENCH_DIR = Path.home() / ".clicky-windows" / "bench"
-DEBUG_DIR = Path.home() / ".clicky-windows" / "debug"
+BENCH_DIR = Path.home() / ".clixy" / "bench"
+DEBUG_DIR = Path.home() / ".clixy" / "debug"
 
 
 def mann_whitney_less(before: list[float], after: list[float]) -> tuple[float, float]:
@@ -157,10 +157,10 @@ def _scrape_latest_n(n: int) -> dict:
 # --- CLI subcommands ---------------------------------------------------------
 
 def record_cmd(label: str, n: int) -> None:
-    """Prompt the user to run N real PTT interactions, then scrape ~/.clicky-windows/debug/."""
+    """Prompt the user to run N real PTT interactions, then scrape ~/.clixy/debug/."""
     print(f"Recording {n} PTT interactions labeled {label!r}.")
     print("  1. In another terminal, run: py -3.13 -m app")
-    print(f"  2. Do {n} PTT presses (your Clicky hotkey). Aim for the same question")
+    print(f"  2. Do {n} PTT presses (your Clixy hotkey). Aim for the same question")
     print("     in the same app so interactions are comparable.")
     print("  3. Return here and press Enter.")
     input(f"Press Enter after completing {n} interactions... ")
@@ -205,7 +205,7 @@ def compare_cmd(before_path: str, after_path: str) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="tools.bench_latency",
-        description="Compare Clicky push-to-talk latency before and after a change.",
+        description="Compare Clixy push-to-talk latency before and after a change.",
     )
     sub = parser.add_subparsers(dest="cmd", required=True)
 

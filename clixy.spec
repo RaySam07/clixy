@@ -1,13 +1,13 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec for Clicky Windows: one-folder build of ``app.py``
+"""PyInstaller spec for Clixy: one-folder build of ``app.py``
 (PyQt6), with explicit hidden imports for the provider SDKs.
 
 Build:
-    py -3.13 -m PyInstaller clicky.spec --noconfirm
+    py -3.13 -m PyInstaller clixy.spec --noconfirm
 
-Output: ``dist/Clicky/`` containing ``Clicky.exe`` plus all bundled
+Output: ``dist/Clixy/`` containing ``Clixy.exe`` plus all bundled
 DLLs/Python stdlib/site-packages. Inno Setup wraps this folder into
-``Clicky-Windows-Setup.exe`` (see ``installer/clicky.iss``).
+``Clixy-Setup.exe`` (see ``installer/clixy.iss``).
 
 Build tooling installed via pip:
     pip install pyinstaller>=6.20
@@ -98,7 +98,7 @@ a = Analysis(
         # Tray icon: referenced by tray.py at runtime via Path-relative
         # lookup. Without this entry, the .ico is missing from the
         # bundle and the tray icon shows blank.
-        ("assets/clicky_tray.ico", "assets"),
+        ("assets/clixy.ico", "assets"),
         # Nunito (UI) and Silkscreen (pixel titles), both SIL OFL; theme.py
         # loads them from assets/fonts at startup.
         ("assets/fonts", "assets/fonts"),
@@ -209,13 +209,13 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="Clicky",
+    name="Clixy",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
     console=False,  # windowed app, no console window flash on launch
-    icon="assets/clicky_tray.ico",  # embedded as Windows resource in
+    icon="assets/clixy.ico",  # embedded as Windows resource in
                                     # the EXE, used by taskbar,
                                     # Alt-Tab, Start Menu shortcut,
                                     # Apps & features uninstall list.
@@ -231,5 +231,5 @@ coll = COLLECT(
     strip=False,
     upx=False,
     upx_exclude=[],
-    name="Clicky",
+    name="Clixy",
 )

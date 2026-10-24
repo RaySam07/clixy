@@ -3,7 +3,7 @@ from pathlib import Path
 
 
 def test_debug_sessions_never_write_to_the_real_home_folder(tmp_path, monkeypatch):
-    """The suite must not create folders in the user's real ~/.clicky-windows.
+    """The suite must not create folders in the user's real ~/.clixy.
     Home points at a sandbox, so a session that ignored the redirect would
     write there and fail the check instead of touching the real folder."""
     import debug_log

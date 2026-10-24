@@ -1,4 +1,4 @@
-"""Clicky Windows text-to-speech layer.
+"""Clixy text-to-speech layer.
 
 TTS abstract base + CartesiaSonicTTS concrete implementation using Cartesia's
 `sonic-3` model for ~150-250ms TTFB streaming with an expressive conversational
@@ -1064,13 +1064,13 @@ if __name__ == "__main__":
         )
 
     print("=" * 70)
-    print("Clicky Windows -- tts.py manual verification (Cartesia Sonic-3)")
+    print("Clixy -- tts.py manual verification (Cartesia Sonic-3)")
     print("=" * 70)
 
     tts = CartesiaSonicTTS(api_key=CARTESIA_API_KEY)
 
     test_text = (
-        "Hello, I am Clicky Windows, your voice assistant, built on "
+        "Hello, I am Clixy, your voice assistant, built on "
         "Cartesia Sonic three."
     )
     print(f"\nSpeaking: {test_text!r}")

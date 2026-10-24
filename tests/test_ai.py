@@ -552,7 +552,7 @@ class TestGeminiClient:
         messages = kwargs["messages"]
         # First message: system prompt.
         assert messages[0]["role"] == "system"
-        assert "clicky" in messages[0]["content"].lower()
+        assert "clixy" in messages[0]["content"].lower()
         # Second message: user with image_url + text blocks.
         user_msg = messages[1]
         assert user_msg["role"] == "user"
@@ -636,7 +636,7 @@ class TestGeminiClient:
         # System content must have BOTH the persona prompt AND the KB
         # marker + body concatenated.
         content = system_msg["content"]
-        assert "clicky" in content.lower(), "persona prompt must be preserved"
+        assert "clixy" in content.lower(), "persona prompt must be preserved"
         assert "app knowledge base" in content, "KB marker must be present"
         assert "edupack" in content, (
             "Display name (kb_app_name with .exe stripped) must appear"
@@ -1197,7 +1197,7 @@ class TestOllamaClient:
         messages = payload["messages"]
         # First message: Clicky system prompt
         assert messages[0]["role"] == "system"
-        assert "clicky" in messages[0]["content"].lower()
+        assert "clixy" in messages[0]["content"].lower()
         # Last message: user with content text + images list (base64-encoded JPEGs)
         user_msg = messages[-1]
         assert user_msg["role"] == "user"
@@ -1338,7 +1338,7 @@ class TestOllamaClient:
         system_msg = payload["messages"][0]
         assert system_msg["role"] == "system"
         # System prompt + KB block concatenated
-        assert "clicky" in system_msg["content"].lower()
+        assert "clixy" in system_msg["content"].lower()
         assert "edupack" in system_msg["content"].lower()
         assert "GrantaEduPack docs" in system_msg["content"]
 

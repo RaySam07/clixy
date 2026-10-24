@@ -1,17 +1,17 @@
 @echo off
 setlocal EnableExtensions
-title Clicky installer
+title Clixy installer
 cd /d "%~dp0"
 
 echo.
-echo   Clicky - your private build
-echo   ===========================
-echo   Builds Clicky.exe from this folder and adds it to your Start menu.
-echo   About 5 minutes the first time. The only downloads are Python and
-echo   Clicky's packages; your keys are never part of this.
+echo   Clixy - your pixel buddy for Windows
+echo   ====================================
+echo   Builds Clixy.exe from this folder and adds it to your Start menu.
+echo   About 10 minutes the first time. The only downloads are Python and
+echo   Clixy's packages; your keys are never part of this.
 echo.
-echo   Tip: if Abhishek's "Clicky Windows" is installed, uninstall it first
-echo   (Settings ^> Apps) so two Clickys don't run at once.
+echo   Prefer a ready-made installer? Get Clixy-Setup.exe from
+echo   https://github.com/RaySam07/clixy/releases/latest
 echo.
 
 rem --- 1. Python 3.13 ------------------------------------------------------------
@@ -32,14 +32,14 @@ if not defined PYEXE (
 )
 echo   Using Python: %PYEXE%
 
-rem --- 2. A private environment with Clicky's packages ------------------------
+rem --- 2. A private environment with Clixy's packages -------------------------
 if not exist ".venv\Scripts\python.exe" (
   echo   [1/4] Making a private Python environment ^(up to a minute^)...
   "%PYEXE%" -m venv .venv
   if errorlevel 1 goto :fail
 )
 set "VPY=%~dp0.venv\Scripts\python.exe"
-echo   [2/4] Installing Clicky's packages: the long step, 5-10 minutes and about 1 GB
+echo   [2/4] Installing Clixy's packages: the long step, 5-10 minutes and about 1 GB
 echo         the first time. Lines scroll by as each package arrives; that's normal.
 echo         Don't click inside this window: that pauses it ^(press Esc if the title says Select^).
 "%VPY%" -m pip install --upgrade pip --quiet --disable-pip-version-check
@@ -47,35 +47,42 @@ echo         Don't click inside this window: that pauses it ^(press Esc if the t
 if errorlevel 1 goto :fail
 
 rem --- 3. Build ----------------------------------------------------------------------
-tasklist /fi "imagename eq Clicky.exe" 2>nul | find /i "Clicky.exe" >nul
-if not errorlevel 1 (
-  echo   Closing the Clicky that's running...
-  taskkill /im Clicky.exe /f >nul 2>&1
-  timeout /t 2 /nobreak >nul
+for %%E in (Clixy.exe Clicky.exe) do (
+  tasklist /fi "imagename eq %%E" 2>nul | find /i "%%E" >nul
+  if not errorlevel 1 (
+    echo   Closing the %%E that's running...
+    taskkill /im %%E /f >nul 2>&1
+    timeout /t 2 /nobreak >nul
+  )
 )
-echo   [3/4] Building Clicky.exe ^(2-5 minutes, quiet while it works^)...
-"%VPY%" -m PyInstaller clicky.spec --noconfirm --log-level WARN
+echo   [3/4] Building Clixy.exe ^(2-5 minutes, quiet while it works^)...
+"%VPY%" -m PyInstaller clixy.spec --noconfirm --log-level WARN
 if errorlevel 1 goto :fail
 
 rem --- 4. Install for this Windows user, with shortcuts -------------------------
-set "DEST=%LOCALAPPDATA%\Programs\Clicky"
+set "DEST=%LOCALAPPDATA%\Programs\Clixy"
 echo   [4/4] Installing to %DEST% ...
-robocopy "dist\Clicky" "%DEST%" /MIR /NFL /NDL /NJH /NJS /NP >nul
+robocopy "dist\Clixy" "%DEST%" /MIR /NFL /NDL /NJH /NJS /NP >nul
 if errorlevel 8 goto :fail
+rem An earlier build of this app was called Clicky: tidy its folder and shortcuts.
+if exist "%LOCALAPPDATA%\Programs\Clicky\Clicky.exe" rmdir /s /q "%LOCALAPPDATA%\Programs\Clicky" >nul 2>&1
+del "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Clicky.lnk" >nul 2>&1
+del "%USERPROFILE%\Desktop\Clicky.lnk" >nul 2>&1
+del "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\Clicky.lnk" >nul 2>&1
 call :shortcut Programs
 call :shortcut Desktop
 
 echo.
-choice /c YN /n /m "  Start Clicky when you sign in to Windows? [Y/N] "
+choice /c YN /n /m "  Start Clixy when you sign in to Windows? [Y/N] "
 if errorlevel 2 (
-  del "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\Clicky.lnk" >nul 2>&1
+  del "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\Clixy.lnk" >nul 2>&1
 ) else (
   call :shortcut Startup
 )
 
 echo.
-echo   Done. Starting Clicky...
-start "" "%DEST%\Clicky.exe"
+echo   Done. Starting Clixy...
+start "" "%DEST%\Clixy.exe"
 echo   Hold Ctrl + Win, ask out loud, let go.
 echo.
 pause
@@ -91,13 +98,14 @@ exit /b 0
 
 :shortcut
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$s = (New-Object -ComObject WScript.Shell).CreateShortcut([Environment]::GetFolderPath('%1') + '\Clicky.lnk');" ^
-  "$s.TargetPath = '%DEST%\Clicky.exe'; $s.WorkingDirectory = '%DEST%'; $s.IconLocation = '%DEST%\Clicky.exe,0'; $s.Save()"
+  "$s = (New-Object -ComObject WScript.Shell).CreateShortcut([Environment]::GetFolderPath('%1') + '\Clixy.lnk');" ^
+  "$s.TargetPath = '%DEST%\Clixy.exe'; $s.WorkingDirectory = '%DEST%'; $s.IconLocation = '%DEST%\Clixy.exe,0'; $s.Save()"
 exit /b 0
 
 :fail
 echo.
-echo   Something went wrong (see above). Copy the last few lines and send them to Claude.
+echo   Something went wrong (see above). Copy the last few lines and open an issue:
+echo   https://github.com/RaySam07/clixy/issues
 echo.
 pause
 exit /b 1

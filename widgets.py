@@ -692,18 +692,7 @@ def buddy_grid(on_pick, *, compact: bool = False, columns: int = 3) -> tuple[QWi
     return container, cards
 
 
-def mark_label(size: int, color: QColor) -> QLabel:
-    """The brand mark as a crisp label."""
-    from PyQt6.QtGui import QImage, QPixmap
-    label = QLabel()
-    dpr = 2.0
-    image = QImage(int(size * dpr), int(size * dpr), QImage.Format.Format_ARGB32_Premultiplied)
-    image.fill(Qt.GlobalColor.transparent)
-    p = QPainter(image)
-    theme.paint_mark(p, 0, 0, size * dpr, color)
-    p.end()
-    pixmap = QPixmap.fromImage(image)
-    pixmap.setDevicePixelRatio(dpr)
-    label.setPixmap(pixmap)
-    label.setFixedSize(size, size)
-    return label
+def logo_view(size: int) -> "BuddyView":
+    """Clixy's logo, alive: Ember flickering at its own pace."""
+    scale = size / (18 * theme.CELL)
+    return BuddyView(size, scale=scale, mood="happy", avatar_id=theme.LOGO_BUDDY)

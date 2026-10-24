@@ -64,7 +64,7 @@ from widgets import (
     Segmented,
     Toggle,
     buddy_grid,
-    mark_label,
+    logo_view,
 )
 
 from config import KEYRING_SERVICE, OLLAMA_HOST
@@ -356,11 +356,11 @@ def _heading(text: str, lead: str = "") -> QWidget:
 class SettingsDialog(QDialog):
     """Clicky's Settings. ``exec()`` returns Accepted on Save, Rejected on
     Cancel. Saved values land in Windows Credential Manager under
-    ``KEYRING_SERVICE`` ("clicky-windows"), one entry per setting."""
+    ``KEYRING_SERVICE`` ("clixy"), one entry per setting."""
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Clicky Settings")
+        self.setWindowTitle("Clixy Settings")
         self.setModal(True)
         self.setWindowIcon(theme.app_icon())
         self.resize(900, 660)
@@ -471,8 +471,8 @@ class SettingsDialog(QDialog):
         logo = QHBoxLayout()
         logo.setContentsMargins(8, 0, 0, 0)
         logo.setSpacing(10)
-        logo.addWidget(mark_label(26, theme.BUTTER))
-        wordmark = QLabel("clicky")
+        logo.addWidget(logo_view(30))
+        wordmark = QLabel("clixy")
         wordmark.setObjectName("railWordmark")
         logo.addWidget(wordmark)
         logo.addStretch(1)
@@ -779,7 +779,7 @@ class SettingsDialog(QDialog):
         # your PC"): that would be false, the screenshot goes to the AI.
         privacy = QLabel(
             "Keys stay on this PC, encrypted by Windows Credential Manager. "
-            "Your screenshot, your question and Clicky's notes for that app go to the AI you pick. "
+            "Your screenshot, your question and Clixy's notes for that app go to the AI you pick. "
             "With voice on this PC, what you say stays here too."
         )
         privacy.setObjectName("lead")
@@ -836,8 +836,8 @@ class SettingsDialog(QDialog):
             return
         failed = forget_history()
         QMessageBox.information(
-            self, "Clicky",
-            "Some files were in use and stayed. Quit Clicky and try again." if failed else "Done. Your history is gone.",
+            self, "Clixy",
+            "Some files were in use and stayed. Quit Clixy and try again." if failed else "Done. Your history is gone.",
         )
 
     # ---------- Advanced ----------------------------------------------------------

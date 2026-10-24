@@ -95,7 +95,7 @@ class TestRequiredKeysPresent:
         """Post-migration steady state: env empty, keyring full."""
         for k in ("ANTHROPIC_API_KEY", "ASSEMBLYAI_API_KEY", "CARTESIA_API_KEY"):
             monkeypatch.delenv(k, raising=False)
-            fake_keyring[("clicky-windows", k)] = "stored"
+            fake_keyring[("clixy", k)] = "stored"
         from settings_dialog import required_keys_present
         assert required_keys_present() is True
 
@@ -333,9 +333,9 @@ class TestSettingsDialogDropdownSwap:
     ):
         # Pre-populate keyring with both Cartesia and ElevenLabs keys.
         store = {
-            ("clicky-windows", "TTS_PROVIDER"): "cartesia",
-            ("clicky-windows", "CARTESIA_API_KEY"): "sk_car_existing",
-            ("clicky-windows", "ELEVENLABS_API_KEY"): "eleven_existing",
+            ("clixy", "TTS_PROVIDER"): "cartesia",
+            ("clixy", "CARTESIA_API_KEY"): "sk_car_existing",
+            ("clixy", "ELEVENLABS_API_KEY"): "eleven_existing",
         }
         monkeypatch.setattr(
             "settings_dialog.keyring.get_password",
@@ -359,8 +359,8 @@ class TestSettingsDialogDropdownSwap:
         self, qapp, mocker, monkeypatch
     ):
         store = {
-            ("clicky-windows", "TTS_PROVIDER"): "cartesia",
-            ("clicky-windows", "CARTESIA_API_KEY"): "sk_car_existing",
+            ("clixy", "TTS_PROVIDER"): "cartesia",
+            ("clixy", "CARTESIA_API_KEY"): "sk_car_existing",
             # No ElevenLabs key stored.
         }
         monkeypatch.setattr(
@@ -410,12 +410,12 @@ class TestSettingsDialogSave:
 
         dlg._on_save()
 
-        assert saved[("clicky-windows", "LLM_PROVIDER")] == "openai"
-        assert saved[("clicky-windows", "STT_PROVIDER")] == "assemblyai"
-        assert saved[("clicky-windows", "TTS_PROVIDER")] == "elevenlabs"
-        assert saved[("clicky-windows", "OPENAI_API_KEY")] == "sk-llm-key"
-        assert saved[("clicky-windows", "ASSEMBLYAI_API_KEY")] == "stt-key"
-        assert saved[("clicky-windows", "ELEVENLABS_API_KEY")] == "eleven-key"
+        assert saved[("clixy", "LLM_PROVIDER")] == "openai"
+        assert saved[("clixy", "STT_PROVIDER")] == "assemblyai"
+        assert saved[("clixy", "TTS_PROVIDER")] == "elevenlabs"
+        assert saved[("clixy", "OPENAI_API_KEY")] == "sk-llm-key"
+        assert saved[("clixy", "ASSEMBLYAI_API_KEY")] == "stt-key"
+        assert saved[("clixy", "ELEVENLABS_API_KEY")] == "eleven-key"
 
     def test_save_only_persists_to_currently_selected_providers_slot(
         self, qapp, mocker, monkeypatch
@@ -440,8 +440,8 @@ class TestSettingsDialogSave:
         dlg._key_inputs["TTS"].setText("sk_car_value")
         dlg._on_save()
 
-        assert ("clicky-windows", "CARTESIA_API_KEY") in saved
-        assert ("clicky-windows", "ELEVENLABS_API_KEY") not in saved
+        assert ("clixy", "CARTESIA_API_KEY") in saved
+        assert ("clixy", "ELEVENLABS_API_KEY") not in saved
 
 
 # --- Ollama model dropdown + compat warn (Issue #1) -------------------------
@@ -503,7 +503,7 @@ class TestOllamaModelDropdown:
         dlg._key_inputs["TTS"].setText("tts-key")
         dlg._model_combos["LLM"].setCurrentText("my-vision-model")
         dlg._on_save()
-        assert saved[("clicky-windows", "OLLAMA_MODEL_VISION")] == "my-vision-model"
+        assert saved[("clixy", "OLLAMA_MODEL_VISION")] == "my-vision-model"
 
     def test_save_persists_draw_toggle(self, qapp, mocker, monkeypatch):
         """Ticking the Draw checkbox persists ANNOTATION_MODE=on on Save."""
@@ -520,7 +520,7 @@ class TestOllamaModelDropdown:
         dlg._key_inputs["STT"].setText("b")
         dlg._key_inputs["TTS"].setText("c")
         dlg._on_save()
-        assert saved[("clicky-windows", "ANNOTATION_MODE")] == "on"
+        assert saved[("clixy", "ANNOTATION_MODE")] == "on"
 
     def test_save_aborts_when_user_cancels_compat_warning(
         self, qapp, mocker, monkeypatch

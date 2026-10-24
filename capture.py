@@ -1,4 +1,4 @@
-"""Screen capture + cursor + DPI + resolution picking for Clicky Windows.
+"""Screen capture + cursor + DPI + resolution picking for Clixy.
 
 Produces Claude-ready images (exact target dimensions) with metadata
 for coordinate unscaling.
@@ -369,7 +369,7 @@ def capture_all_screens() -> list[LabeledCapture]:
 
 if __name__ == "__main__":
     print("=" * 70)
-    print("Clicky Windows -- capture.py manual verification")
+    print("Clixy -- capture.py manual verification")
     print("=" * 70)
 
     result = capture_active_screen()

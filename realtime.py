@@ -72,7 +72,7 @@ _POINT_AT_TOOL = {
 REALTIME_VOICE = "alloy"
 
 _REALTIME_INSTRUCTIONS = (
-    "You are Clicky, a friendly screen-aware companion that helps people use "
+    "You are Clixy, a friendly screen-aware companion that helps people use "
     "software by talking to them and pointing at where to click. ALWAYS speak "
     "a short spoken reply out loud, one or two sentences — speak first, every "
     "time. When the user asks where something is or how to do something on "

@@ -1,4 +1,4 @@
-"""System tray icon for Clicky Windows.
+"""System tray icon for Clixy.
 
 Provides the ONLY clean exit path from the running app: without this
 icon, users have no menu/taskbar entry to right-click and quit, and
@@ -8,7 +8,7 @@ Menu structure (right-click the tray icon):
     - Settings...                   ← reopen the BYOK keyring dialog
     - Avatar >                      ← switch buddy (and theme) instantly
     - Open Knowledge Folder         ← jump to ~/Documents/Clicky Wiki/
-    - Open Memory Folder            ← jump to ~/.clicky-windows/memory/
+    - Open Memory Folder            ← jump to ~/.clixy/memory/
     - Forget My History...          ← delete memory notes, index and debug logs
     - --------
     - Quit Clicky                   ← clean shutdown via callback
@@ -69,7 +69,7 @@ class ClickyTray(QObject):
         if not QSystemTrayIcon.isSystemTrayAvailable():
             raise RuntimeError(
                 "System tray is not available on this Windows "
-                "configuration. Clicky needs the system tray to "
+                "configuration. Clixy needs the system tray to "
                 "provide its quit menu and settings access. Check "
                 "Windows taskbar settings (Settings -> "
                 "Personalisation -> Taskbar -> Other system tray "
@@ -135,7 +135,7 @@ class ClickyTray(QObject):
 
         self._menu.addSeparator()
 
-        act_quit = QAction("Quit Clicky", self)
+        act_quit = QAction("Quit Clixy", self)
         act_quit.triggered.connect(self._on_quit)
         self._menu.addAction(act_quit)
 
@@ -154,7 +154,7 @@ class ClickyTray(QObject):
 
     def notify(self, message: str) -> None:
         """Show a short balloon from the tray icon."""
-        self._icon.showMessage("Clicky", message, QSystemTrayIcon.MessageIcon.Warning, 8000)
+        self._icon.showMessage("Clixy", message, QSystemTrayIcon.MessageIcon.Warning, 8000)
 
     def _open_kb_folder(self) -> None:
         self._open_in_explorer(KB_DIR)
@@ -176,18 +176,18 @@ class ClickyTray(QObject):
             return
         failed = forget_history()
         if failed:
-            self.notify("Some files were in use and stayed. Quit Clicky and try again to remove them.")
+            self.notify("Some files were in use and stayed. Quit Clixy and try again to remove them.")
         else:
-            self._icon.showMessage("Clicky", "Done. Your history is gone.", QSystemTrayIcon.MessageIcon.Information, 4000)
+            self._icon.showMessage("Clixy", "Done. Your history is gone.", QSystemTrayIcon.MessageIcon.Information, 4000)
 
 
 def forget_dialog() -> QMessageBox:
     """The confirmation for Forget My History, with the buddy as its icon."""
     box = QMessageBox()
-    box.setWindowTitle("Clicky")
+    box.setWindowTitle("Clixy")
     box.setText("Forget my history?")
     box.setInformativeText(
-        "Clicky will delete its notes about what you asked in each app, and any "
+        "Clixy will delete its notes about what you asked in each app, and any "
         "debug logs. Your keys, settings and Knowledge Folder stay."
     )
     box.setIconPixmap(QPixmap.fromImage(theme.avatar_image(theme.current_avatar_id(), 56, mood="thinking")))

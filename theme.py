@@ -1,4 +1,4 @@
-"""Look of Clicky Windows: brand, fonts, the pixel buddies and app styles.
+"""Look of Clixy: brand, fonts, the pixel buddies and app styles.
 
 Brand: ink, butter and warm paper, with coral only for "live". Type is
 Manrope (light for display, regular for text) with JetBrains Mono for small
@@ -33,7 +33,6 @@ from PyQt6.QtGui import (
     QIcon,
     QImage,
     QPainter,
-    QPainterPath,
     QPen,
     QPixmap,
     QRadialGradient,
@@ -63,30 +62,17 @@ NOTCH_CHIP_DIM = _c(52, 52, 62)
 NOTCH_CHIP_DIM_TEXT = _c(182, 182, 194)
 
 
-def mark_path(size: float) -> QPainterPath:
-    """The mark in a size x size box: a circle with a pill bitten out of its
-    right side."""
-    s = size / 48.0
-    circle = QPainterPath()
-    circle.addEllipse(QPointF(24 * s, 24 * s), 22 * s, 22 * s)
-    notch = QPainterPath()
-    notch.addRoundedRect(QRectF(29 * s, 14.5 * s, 30 * s, 19 * s), 9.5 * s, 9.5 * s)
-    return circle.subtracted(notch)
+LOGO_BUDDY = "ember"
+"""Clixy's logo is Ember, the pixel fire."""
 
 
-def paint_mark(painter: QPainter, x: float, y: float, size: float, color: QColor) -> None:
-    painter.save()
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-    painter.translate(x, y)
-    painter.setPen(Qt.PenStyle.NoPen)
-    painter.setBrush(color)
-    painter.drawPath(mark_path(size))
-    painter.restore()
-
-
-def app_icon_image(size: int) -> QImage:
-    """App and tray icon: the butter mark on an ink tile, readable on light
-    and dark taskbars alike."""
+def logo_image(size: int) -> QImage:
+    """The app icon: Ember on an ink tile with a warm glow, its pixels
+    crisp. Readable on light and dark taskbars alike. Small sizes are drawn
+    big and scaled down smoothly."""
+    if size < 48:
+        return logo_image(96).scaled(size, size, Qt.AspectRatioMode.KeepAspectRatio,
+                                     Qt.TransformationMode.SmoothTransformation)
     image = QImage(size, size, QImage.Format.Format_ARGB32_Premultiplied)
     image.fill(Qt.GlobalColor.transparent)
     p = QPainter(image)
@@ -95,10 +81,27 @@ def app_icon_image(size: int) -> QImage:
     p.setBrush(INK)
     radius = size * 0.24
     p.drawRoundedRect(QRectF(0, 0, size, size), radius, radius)
-    inset = size * 0.17
-    paint_mark(p, inset, inset, size - 2 * inset, BUTTER)
+    glow = QRadialGradient(QPointF(size * 0.5, size * 0.58), size * 0.42)
+    glow.setColorAt(0.0, QColor(255, 120, 30, 120))
+    glow.setColorAt(1.0, QColor(255, 120, 30, 0))
+    p.setBrush(glow)
+    p.drawRoundedRect(QRectF(0, 0, size, size), radius, radius)
+    av = avatar(LOGO_BUDDY)
+    min_x, min_y, max_x, max_y = av.extent
+    span = max(max_x - min_x + 1, max_y - min_y + 1)
+    cell = max(1, int(size * 0.76 // span))
+    w, h = (max_x - min_x + 1) * cell, (max_y - min_y + 1) * cell
+    ox = (size - w) // 2 - min_x * cell
+    oy = (size - h) // 2 - min_y * cell + size // 40
+    for (cx, cy), color in sprite(av.id, 3, "happy"):
+        p.fillRect(QRectF(ox + cx * cell, oy + cy * cell, cell, cell), color)
     p.end()
     return image
+
+
+def app_icon_image(size: int) -> QImage:
+    """App, window and EXE icon: the logo."""
+    return logo_image(size)
 
 
 def app_icon() -> QIcon:
@@ -871,7 +874,7 @@ def _chevron_file() -> str:
     (style sheets take images only from files). '' if that fails."""
     try:
         import tempfile
-        path = Path(tempfile.gettempdir()) / "clicky-ui" / "chevron-1.png"
+        path = Path(tempfile.gettempdir()) / "clixy-ui" / "chevron-1.png"
         if not path.exists():
             path.parent.mkdir(parents=True, exist_ok=True)
             image = QImage(48, 48, QImage.Format.Format_ARGB32_Premultiplied)

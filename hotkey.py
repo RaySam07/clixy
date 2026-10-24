@@ -1,4 +1,4 @@
-"""Clicky Windows global push-to-talk hotkey (default Ctrl+Win, configurable).
+"""Clixy global push-to-talk hotkey (default Ctrl+Win, configurable).
 
 Installs a low-level Windows keyboard hook via pynput in OBSERVE-ONLY mode
 (`suppress=False`) and fires on_press / on_release callbacks when the
@@ -311,7 +311,7 @@ if __name__ == "__main__":
     combo = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_COMBO
 
     print("=" * 70)
-    print(f"Clicky Windows -- hotkey.py manual verification ({describe(combo)})")
+    print(f"Clixy -- hotkey.py manual verification ({describe(combo)})")
     print("=" * 70)
     print("\nInstructions:")
     print(f"  1. Hold {describe(combo)} -- you should see >>> PRESSED within 50ms")

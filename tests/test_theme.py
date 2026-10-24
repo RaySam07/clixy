@@ -62,16 +62,18 @@ def test_stylesheet_uses_the_brand(qapp):
     assert "QPushButton#primary" in css and "QWidget#rail" in css
 
 
-def test_the_mark_is_a_c_with_a_notch(qapp):
-    """The mark is a circle with a pill cut out of its right side: the
-    centre-right is empty, the left and the right edge above it are ink."""
+def test_the_logo_is_ember_on_an_ink_tile(qapp):
+    """The app icon is Ember, the pixel fire, on an ink tile: dark corners,
+    warm fire in the middle, at every icon size."""
     import theme
-    path = theme.mark_path(48)
-    assert path.contains(theme.QPointF(6, 24))
-    assert not path.contains(theme.QPointF(40, 24))
-    assert path.contains(theme.QPointF(24, 6))
-    image = theme.app_icon_image(64)
-    assert image.width() == 64 and not image.isNull()
+    for size in (16, 32, 64, 256):
+        image = theme.app_icon_image(size)
+        assert image.width() == size and not image.isNull()
+    big = theme.app_icon_image(256)
+    corner = big.pixelColor(30, 30)
+    assert corner.red() < 60 and corner.green() < 60
+    warm = [big.pixelColor(x, y) for x in range(80, 180, 6) for y in range(60, 200, 6)]
+    assert any(c.red() > 220 and c.green() > 120 and c.blue() < 120 for c in warm)
 
 
 def test_avatar_fits_centered_in_a_rect(qapp):

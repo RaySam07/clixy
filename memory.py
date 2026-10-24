@@ -1,10 +1,10 @@
-"""Clicky Windows persistent memory: per-app markdown files + SQLite index.
+"""Clixy persistent memory: per-app markdown files + SQLite index.
 
 Gives Claude a human-readable long-term memory per Windows app.
 
 No vector DB, no embeddings, no RAG. Just plain markdown files
-(`~/.clicky-windows/memory/<app>.md`) that the LLM reads directly,
-plus a tiny SQLite index (`~/.clicky-windows/index.db`) for fast
+(`~/.clixy/memory/<app>.md`) that the LLM reads directly,
+plus a tiny SQLite index (`~/.clixy/index.db`) for fast
 "how many times has this user used this app" lookups without re-reading every
 markdown file. The markdown files are the source of truth; SQLite is a
 denormalized cache. Humans can `cat <app>.md` in a terminal and understand
@@ -40,7 +40,7 @@ GetForegroundWindow() process names with weird edge cases."""
 
 _HEADER_TRANSPARENCY_LINE = (
     "_(This file is human-readable. Delete it to reset memory for this app.\n"
-    "  Clicky reads the tail of this file to remember past interactions.)_"
+    "  Clixy reads the tail of this file to remember past interactions.)_"
 )
 """The italic transparency line in every app's memory file header: the
 "human-readable, user can delete to reset" promise that makes
@@ -149,9 +149,9 @@ class MemoryStore:
 
         Args:
             memory_dir: directory where per-app markdown files live.
-                Defaults to ``config.MEMORY_DIR`` = ``~/.clicky-windows/memory``.
+                Defaults to ``config.MEMORY_DIR`` = ``~/.clixy/memory``.
             index_db_path: path to the SQLite index file. Defaults to
-                ``config.INDEX_DB_PATH`` = ``~/.clicky-windows/index.db``.
+                ``config.INDEX_DB_PATH`` = ``~/.clixy/index.db``.
         """
         self.memory_dir = Path(memory_dir)
         self.index_db_path = Path(index_db_path)
@@ -347,7 +347,7 @@ class MemoryStore:
         # KeyError or format-spec crash.
         display_name = _escape_single_line(app_name)
         new_header = (
-            f"# {display_name} — Clicky Memory\n"
+            f"# {display_name} — Clixy Memory\n"
             f"\n"
             f"First seen: {first_seen}\n"
             f"Interactions: {new_count}\n"
@@ -393,7 +393,7 @@ class MemoryStore:
 if __name__ == "__main__":
     # Run: py -3.13 -m memory
     #
-    # Writes to the REAL ~/.clicky-windows/ dir (not a temp dir) so the user
+    # Writes to the REAL ~/.clixy/ dir (not a temp dir) so the user
     # can inspect the files via File Explorer and confirm the "human-readable"
     # claim. Uses a synthetic app name CLICKY_GATE_TEST.EXE so repeated gate
     # runs don't pollute real Excel memory built up during actual usage.
@@ -412,7 +412,7 @@ if __name__ == "__main__":
     _TEST_APP = "CLICKY_GATE_TEST.EXE"
 
     print("=" * 70)
-    print("Clicky Windows -- memory.py manual verification")
+    print("Clixy -- memory.py manual verification")
     print("=" * 70)
 
     store = MemoryStore()

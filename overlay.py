@@ -1,4 +1,4 @@
-"""Clicky Windows transparent click-through pointer overlay.
+"""Clixy transparent click-through pointer overlay.
 
 Per-monitor `OverlayWindow(QWidget)` overlays routed by `OverlayController`.
 Each overlay covers exactly one physical monitor in DIP (logical) coords.
@@ -1307,7 +1307,7 @@ if __name__ == "__main__":
     set_dpi_awareness()  # Idempotent if already set by PyQt6
 
     print("=" * 70)
-    print("Clicky Windows -- overlay.py manual click-through verification")
+    print("Clixy -- overlay.py manual click-through verification")
     print("=" * 70)
 
     app = QApplication(sys.argv)

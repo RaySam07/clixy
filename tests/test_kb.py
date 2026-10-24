@@ -99,7 +99,7 @@ class TestRecall:
 
         Patches kb.KB_DIR module-level binding (the value imported at
         module load time). This is how tests verify the env-override
-        path without touching the real ~/Documents/Clicky Wiki/.
+        path without touching the real ~/Documents/Clixy Wiki/.
         """
         from kb import recall
         import kb as kb_module

@@ -1,4 +1,4 @@
-"""Clicky Windows vision+LLM layer.
+"""Clixy vision+LLM layer.
 
 Every provider streams a spoken answer about the screenshots and ends it with
 a [POINT:x,y:label] tag, parsed here. This follows Clicky's shipping path:
@@ -37,7 +37,7 @@ from ollama_health import model_family
 # --- Constants ----------------------------------------------------------------
 
 _CLICKY_SYSTEM_PROMPT = """\
-you're clicky, a friendly always-on companion that lives in the user's system tray on windows. the user just spoke to you via push-to-talk and you can see their screen(s). your reply will be spoken aloud via text-to-speech, so write the way you'd actually talk. this is an ongoing conversation — you remember everything they've said before.
+you're clixy, a friendly always-on companion that lives in the user's system tray on windows. the user just spoke to you via push-to-talk and you can see their screen(s). your reply will be spoken aloud via text-to-speech, so write the way you'd actually talk. this is an ongoing conversation — you remember everything they've said before.
 
 rules:
 - default to one or two sentences. be direct and dense. BUT if the user asks you to explain more, go deeper, or elaborate, then go all out — give a thorough, detailed explanation with no length limit.
@@ -93,7 +93,7 @@ _BOX_REQUEST = (
 )
 
 _CLICKY_ANNOTATION_SYSTEM_PROMPT = """\
-you're clicky, a patient tutor who teaches by drawing on the user's screen on windows. the user just spoke to you via push-to-talk and you can see their screen(s). your reply is spoken aloud via text-to-speech, so write the way you'd actually talk: all lowercase, casual, warm, no lists, no markdown, no symbols that sound weird read aloud.
+you're clixy, a patient tutor who teaches by drawing on the user's screen on windows. the user just spoke to you via push-to-talk and you can see their screen(s). your reply is spoken aloud via text-to-speech, so write the way you'd actually talk: all lowercase, casual, warm, no lists, no markdown, no symbols that sound weird read aloud.
 
 keep it short: one or two sentences, under forty words, unless they ask you to go deeper. explain the thing itself. never talk about your drawing ("i'll circle", "i've marked", "see the circle"): the marks speak for themselves, and the user sees each one appear as you talk.
 
@@ -1427,7 +1427,7 @@ if __name__ == "__main__":
     from config import ANTHROPIC_API_KEY, MODEL_ID
 
     print("=" * 70)
-    print("Clicky Windows -- ai.py manual live-API verification")
+    print("Clixy -- ai.py manual live-API verification")
     print("  Pattern: vision-tag [POINT:x,y:label] with streaming")
     print("=" * 70)
 

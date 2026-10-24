@@ -1,0 +1,68 @@
+name: release
+
+# Push a tag like v1.0.0 to build Clixy on Windows and publish
+# Clixy-Setup.exe and a portable zip on the Releases page.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt "pyinstaller>=6.20"
+
+      - name: Build Clixy.exe
+        run: pyinstaller clixy.spec --noconfirm
+
+      - name: Version from the tag
+        id: version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "number=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "number=0.0.0-dev" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build Clixy-Setup.exe
+        run: |
+          if (-not (Test-Path "C:\Program Files (x86)\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DAppVersion=${{ steps.version.outputs.number }}" installer\clixy.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Portable zip
+        run: Compress-Archive -Path dist\Clixy -DestinationPath Clixy-portable.zip
+
+      - name: Keep the build
+        uses: actions/upload-artifact@v4
+        with:
+          name: clixy-windows
+          path: |
+            installer/Output/Clixy-Setup.exe
+            Clixy-portable.zip
+
+      - name: Publish the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" installer/Output/Clixy-Setup.exe Clixy-portable.zip \
+            --title "Clixy $GITHUB_REF_NAME" --notes-file .github/release-notes.md

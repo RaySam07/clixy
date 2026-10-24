@@ -2,7 +2,7 @@
 
 One .md file per app at ``KB_DIR/<app_name>.md``. Match by .exe basename
 (sanitized like memory.py, so users see matching filenames in
-`~/.clicky-windows/memory/` and the KB folder).
+`~/.clixy/memory/` and the KB folder).
 No metadata files, no folder hierarchy, no keyword ranking.
 
 If the file is missing → ``recall()`` returns ``('', '')``. The
@@ -29,7 +29,7 @@ def _sanitize_app_name(app_name: str) -> str:
 
     Mirrors ``memory._sanitize_app_name`` exactly so the same
     foreground app yields the same filename in both folders. Users
-    can `ls ~/.clicky-windows/memory/` to learn the canonical name
+    can `ls ~/.clixy/memory/` to learn the canonical name
     for their app, then drop the matching file in KB_DIR.
     """
     sanitized = app_name.lower()
@@ -83,7 +83,7 @@ def recall(
 
 if __name__ == "__main__":
     print("=" * 70)
-    print("Clicky Windows -- kb.py manual verification")
+    print("Clixy -- kb.py manual verification")
     print(f"  KB_DIR: {KB_DIR}")
     print(f"  KB_RECALL_MAX_CHARS: {KB_RECALL_MAX_CHARS}")
     print("=" * 70)

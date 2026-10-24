@@ -1,4 +1,4 @@
-"""Clicky Windows configuration.
+"""Clixy configuration.
 
 Loads environment variables from .env AND from the OS keyring (Windows
 Credential Manager via the keyring package, DPAPI per-user encryption).
@@ -19,11 +19,53 @@ load_dotenv()
 
 # ── Secrets resolution (env → keyring with one-shot migration) ──────────────
 
-KEYRING_SERVICE: str = "clicky-windows"
+KEYRING_SERVICE: str = "clixy"
 """Service name for keyring entries. Both Windows Credential Manager
-and macOS Keychain treat this as the namespace key. All Clicky API
+and macOS Keychain treat this as the namespace key. All Clixy API
 keys live under this single service name; the ``name`` parameter is
 the env-var name (ANTHROPIC_API_KEY, etc.)."""
+
+LEGACY_KEYRING_SERVICE: str = "clicky-windows"
+"""Where keys and settings lived before the project was renamed Clixy.
+Read when the new name has nothing yet, and copied over (never deleted)."""
+
+APP_HOME: Path = Path.home() / ".clixy"
+"""Clixy's own folder: memory, its index, debug logs, the voice model."""
+
+_LEGACY_HOME = Path.home() / ".clicky-windows"
+_LEGACY_KB = Path.home() / "Documents" / "Clicky Wiki"
+
+
+def _stored(name: str) -> str | None:
+    """A keyring value, moved over from the old service name the first
+    time it's read, so a rename never loses a saved key."""
+    value = keyring.get_password(KEYRING_SERVICE, name)
+    if value is None:
+        old = keyring.get_password(LEGACY_KEYRING_SERVICE, name)
+        if old:
+            try:
+                keyring.set_password(KEYRING_SERVICE, name, old)
+            except Exception:
+                pass
+            return old
+    return value
+
+
+def migrate_legacy(names: tuple[str, ...] = ()) -> None:
+    """Carry an install from before the rename over to Clixy's names: the
+    data folder and Knowledge Folder move (when the new ones don't exist
+    yet), and the given keyring entries are copied. Never raises."""
+    for old, new in ((_LEGACY_HOME, APP_HOME), (_LEGACY_KB, Path(KB_DIR))):
+        try:
+            if old.is_dir() and not new.exists():
+                old.rename(new)
+        except Exception:
+            pass
+    for name in names:
+        try:
+            _stored(name)
+        except Exception:
+            pass
 
 
 def resolve_api_key(name: str) -> str | None:
@@ -51,7 +93,7 @@ def resolve_api_key(name: str) -> str | None:
             pass
         return env_value
     try:
-        return keyring.get_password(KEYRING_SERVICE, name)
+        return _stored(name)
     except Exception:
         return None
 
@@ -81,7 +123,7 @@ def resolve_setting(name: str, default: str) -> str:
             pass
         return env_value
     try:
-        stored = keyring.get_password(KEYRING_SERVICE, name)
+        stored = _stored(name)
     except Exception:
         stored = None
     return stored if stored else default
@@ -293,7 +335,7 @@ Off: nothing is written to the memory folder."""
 
 DEBUG_LOG: bool = resolve_setting("DEBUG_LOG", default="off").lower() == "on"
 """Write a per-question log (what you asked, what Clicky answered, timings) to
-~/.clicky-windows/debug/. Off by default so your questions aren't kept on
+~/.clixy/debug/. Off by default so your questions aren't kept on
 disk; set DEBUG_LOG=on when you need it for a bug report."""
 
 DEBUG_SCREENSHOTS: bool = resolve_setting("DEBUG_SCREENSHOTS", default="off").lower() == "on"
@@ -401,7 +443,7 @@ KOKORO_VOICE: str = os.getenv("KOKORO_VOICE", resolve_setting("KOKORO_VOICE", "a
 KOKORO_OUTPUT_SAMPLE_RATE: int = 24_000
 """Kokoro-82M output sample rate (24kHz float32)."""
 
-_DEFAULT_KOKORO_DIR = Path.home() / ".clicky-windows" / "kokoro"
+_DEFAULT_KOKORO_DIR = APP_HOME / "kokoro"
 KOKORO_CACHE_DIR: Path = Path(os.getenv("KOKORO_CACHE_DIR", str(_DEFAULT_KOKORO_DIR)))
 """Where the Kokoro onnx + voices files download on first use (~336MB total)."""
 
@@ -419,13 +461,13 @@ direct Google AI Studio key and converts Gemini's 0-1000 coordinates to pixels."
 
 # ── Memory ───────────────────────────────────────────────────────────────────
 
-_DEFAULT_MEMORY_DIR = Path.home() / ".clicky-windows"
+_DEFAULT_MEMORY_DIR = APP_HOME
 
 MEMORY_DIR: Path = Path(os.getenv("MEMORY_DIR", str(_DEFAULT_MEMORY_DIR / "memory")))
 """Where per-app markdown files live. One .md per Windows app executable."""
 
 INDEX_DB_PATH: Path = Path(os.getenv("INDEX_DB_PATH", str(_DEFAULT_MEMORY_DIR / "index.db")))
-"""SQLite index at ~/.clicky-windows/index.db. Fast lookup for apps + interaction counts."""
+"""SQLite index at ~/.clixy/index.db. Fast lookup for apps + interaction counts."""
 
 MEMORY_RECALL_MAX_CHARS: int = 1500
 """Max characters of recalled memory to inject into the user message per request.
@@ -436,7 +478,7 @@ ours is the differentiator, but too much context slows Claude down."""
 # ── Knowledge base (user-uploadable per-app curated docs) ────────────────────
 
 KB_DIR: Path = Path(
-    os.getenv("KB_DIR", str(Path.home() / "Documents" / "Clicky Wiki"))
+    os.getenv("KB_DIR", str(Path.home() / "Documents" / "Clixy Wiki"))
 )
 """User drops a single .md file here per app, named to match the .exe
 basename (e.g. ``edupack.exe.md`` for EduPack, ``fusion360.exe.md`` for

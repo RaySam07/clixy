@@ -66,10 +66,12 @@ class _ArtPanel(QWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         p.fillRect(self.rect(), theme.INK)
         x = 40.0
-        theme.paint_mark(p, x, 40, 28, theme.BUTTER)
+        theme.paint_avatar_in(p, QRectF(x - 2, 38, 30, 32), t=time.monotonic() - self._t0, mood="happy",
+                              avatar_id=theme.LOGO_BUDDY, scale=30 / (18 * theme.CELL),
+                              device_pixel_ratio=self.devicePixelRatioF())
         p.setPen(theme.NOTCH_TEXT)
         p.setFont(theme.display_font(17))
-        p.drawText(QRectF(x + 40, 36, 200, 36), Qt.AlignmentFlag.AlignVCenter, "clicky")
+        p.drawText(QRectF(x + 40, 36, 200, 36), Qt.AlignmentFlag.AlignVCenter, "clixy")
 
         p.setPen(theme.BUTTER)
         p.setFont(theme.ui_font(96, QFont.Weight.ExtraLight))
@@ -100,7 +102,7 @@ class Onboarding(QDialog):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Welcome to Clicky")
+        self.setWindowTitle("Welcome to Clixy")
         self.setWindowIcon(theme.app_icon())
         self.setModal(True)
         self.setFixedSize(900, 600)
@@ -166,7 +168,7 @@ class Onboarding(QDialog):
     def _step_key(self) -> QWidget:
         page, v = self._step(
             "Paste your Claude key.",
-            "Clicky uses Claude Haiku 5.5 to see your screen and answer. About $0.0003 a question.",
+            "Clixy uses Claude Haiku 5.5 to see your screen and answer. About $0.0003 a question.",
         )
         self.paste = PasteZone()
         self.paste.keyChanged.connect(lambda _text: self._next_key.setEnabled(self.paste.kind is not None))
@@ -181,11 +183,32 @@ class Onboarding(QDialog):
         get_key.clicked.connect(
             lambda: QDesktopServices.openUrl(QUrl("https://console.anthropic.com/settings/keys"))
         )
+        other = QPushButton("Use another AI")
+        other.setObjectName("quiet")
+        other.setCursor(Qt.CursorShape.PointingHandCursor)
+        other.setToolTip("OpenAI, Google Gemini, OpenRouter, or a model on this PC with Ollama")
+        other.clicked.connect(self._use_another_ai)
+        links = QWidget()
+        row = QHBoxLayout(links)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(14)
+        row.addWidget(get_key)
+        row.addWidget(other)
         self._next_key = QPushButton("Continue")
         self._next_key.setEnabled(False)
         self._next_key.clicked.connect(lambda: self.go(1))
-        self._actions(v, back=False, primary=self._next_key, extra=get_key)
+        self._actions(v, back=False, primary=self._next_key, extra=links)
         return page
+
+    def _use_another_ai(self) -> None:
+        """Set up any other provider in Settings > Advanced; once it has
+        what it needs, setup is done."""
+        from settings_dialog import SettingsDialog, required_keys_present
+        dialog = SettingsDialog(self)
+        dialog.show_page("advanced")
+        if dialog.exec() == dialog.DialogCode.Accepted and required_keys_present():
+            theme.set_avatar(self._avatar)
+            self.accept()
 
     def _step_buddy(self) -> QWidget:
         page, v = self._step(
@@ -202,7 +225,7 @@ class Onboarding(QDialog):
     def _step_shortcut(self) -> QWidget:
         page, v = self._step(
             "Hold to talk.",
-            "Hold these keys, ask out loud, let go. Clicky looks at your screen, "
+            "Hold these keys, ask out loud, let go. Clixy looks at your screen, "
             "points and tells you.",
         )
         self.caps = KeyCaps(self._hotkey, big=True)
@@ -225,7 +248,7 @@ class Onboarding(QDialog):
         note.setWordWrap(True)
         v.addSpacing(10)
         v.addWidget(note)
-        finish = QPushButton("Start using Clicky")
+        finish = QPushButton("Start using Clixy")
         finish.clicked.connect(self.finish)
         self._actions(v, back=True, primary=finish)
         return page

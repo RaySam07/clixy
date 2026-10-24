@@ -137,7 +137,7 @@ def element_rect_at(x: int, y: int) -> tuple[Rect, int] | None:
     with _lock:
         if _jobs is None:
             _jobs = queue.Queue()
-            threading.Thread(target=_serve, args=(_jobs,), name="clicky-uia", daemon=True).start()
+            threading.Thread(target=_serve, args=(_jobs,), name="clixy-uia", daemon=True).start()
     reply: queue.Queue = queue.Queue(maxsize=1)
     _jobs.put((x, y, reply))
     try:

@@ -27,7 +27,7 @@ def test_tray_module_importable():
 class TestClickyTrayMenu:
     """The tray menu must have exactly 6 visible items in this order:
     Settings... / Avatar / Open Knowledge Folder / Open Memory Folder /
-    Forget My History... / Quit Clicky. The Quit action's callback must be
+    Forget My History... / Quit Clixy. The Quit action's callback must be
     the on_quit kwarg passed at construction time."""
 
     def test_menu_has_six_items_in_order(self, qapp, mocker):
@@ -46,7 +46,7 @@ class TestClickyTrayMenu:
             "Open Knowledge Folder",
             "Open Memory Folder",
             "Forget My History...",
-            "Quit Clicky",
+            "Quit Clixy",
         ]
 
     def test_quit_action_triggers_on_quit_callback(self, qapp, mocker):
@@ -56,7 +56,7 @@ class TestClickyTrayMenu:
         t = ClickyTray(on_quit=on_quit, on_settings=on_settings)
 
         quit_action = next(
-            a for a in t._menu.actions() if a.text() == "Quit Clicky"
+            a for a in t._menu.actions() if a.text() == "Quit Clixy"
         )
         quit_action.trigger()
         on_quit.assert_called_once()
@@ -138,8 +138,8 @@ class TestClickyTrayMenu:
 
 def test_forget_history_clears_memory_index_and_debug_but_not_the_kb(tmp_path, monkeypatch):
     import tray
-    home = tmp_path / ".clicky-windows"
-    memory, debug, kb = home / "memory", home / "debug", tmp_path / "Clicky Wiki"
+    home = tmp_path / ".clixy"
+    memory, debug, kb = home / "memory", home / "debug", tmp_path / "Clixy Wiki"
     for folder in (memory, debug / "2026-10-24_X", kb):
         folder.mkdir(parents=True)
     (memory / "excel.exe.md").write_text("asked about pivots")

@@ -84,7 +84,7 @@ class TestRecall:
             pointer_targets=[(1245, 82)],
         )
         recalled = store.recall("EXCEL.EXE")
-        assert "# EXCEL.EXE — Clicky Memory" in recalled
+        assert "# EXCEL.EXE — Clixy Memory" in recalled
         assert "freeze panes" in recalled
         assert "(1245, 82)" in recalled
         assert "Interactions: 1" in recalled
@@ -121,7 +121,7 @@ class TestRecall:
         memory_dir = tmp_path / "memory"
         memory_dir.mkdir(parents=True)
         large_file = memory_dir / "bigapp.exe.md"
-        big_content = "# BigApp — Clicky Memory\n\n" + ("# filler line\n" * 1000)
+        big_content = "# BigApp — Clixy Memory\n\n" + ("# filler line\n" * 1000)
         large_file.write_text(big_content, encoding="utf-8")
 
         recalled = store.recall("BIGAPP.EXE", max_chars=500)

@@ -1,7 +1,7 @@
-"""Per-interaction debug logging for Clicky Windows.
+"""Per-interaction debug logging for Clixy.
 
 When DEBUG_LOG is on, each PTT interaction gets its own folder under
-~/.clicky-windows/debug/ containing a timestamped log file, plus the
+~/.clixy/debug/ containing a timestamped log file, plus the
 screenshot the model saw when DEBUG_SCREENSHOTS is on. With DEBUG_LOG off
 (the default) sessions write nothing, so questions and answers aren't kept.
 
