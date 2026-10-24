@@ -13,7 +13,7 @@ cartesia>=4.2,<5            # Voice (Sonic-3, streamed over HTTP) and default li
 elevenlabs>=2.0            # Optional voice: ElevenLabs Flash v2.5
 Pillow>=10.4.0             # Image resize with LANCZOS, base64 encoding
 python-dotenv>=1.0.1       # Optional .env for keys when running from source
-keyring>=25.0              # Keys in Windows Credential Manager (DPAPI, per user); migrates a .env on first launch
+keyring>=25.7.0              # Keys in Windows Credential Manager (DPAPI, per user); migrates a .env on first launch
 comtypes>=1.4; sys_platform == "win32"  # UI Automation: snap drawn marks to the real button's edges (snap.py)
 scipy>=1.11                # Latency statistics for tools/bench_latency.py (script only, not bundled)
 
