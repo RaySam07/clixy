@@ -41,6 +41,12 @@ jobs:
           grep -E "^E  " pytest.txt | head -30 | while IFS= read -r line; do
             echo "::warning title=pytest detail::${line}"
           done
+          grep -n -i -E -A 14 "fatal exception|Fatal Python|INTERNALERROR" pytest.txt | grep -v "site-packages" | head -40 | while IFS= read -r line; do
+            echo "::warning title=pytest crash::${line}"
+          done
+          grep -E "(tests[/\\\\][a-z_]+\.py)" pytest.txt | grep -v "site-packages" | head -15 | while IFS= read -r line; do
+            echo "::warning title=pytest where::${line}"
+          done
           tail -25 pytest.txt | while IFS= read -r line; do
             echo "::warning title=pytest tail::${line}"
           done
