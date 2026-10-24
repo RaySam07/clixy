@@ -37,3 +37,16 @@ def test_screenshots_are_saved_when_turned_on(monkeypatch):
     session.save_screenshot(Image.new("RGB", (8, 8)), "shot.jpg")
     session.close()
     assert (session._folder / "shot.jpg").exists()
+
+
+def test_nothing_is_written_when_the_log_is_off(tmp_path, monkeypatch):
+    """Off by default: no folder, no file, and logging calls are harmless."""
+    from PIL import Image
+    import debug_log
+    monkeypatch.setattr(debug_log, "_ENABLED", False)
+    monkeypatch.setattr(debug_log, "_SAVE_SCREENSHOTS", True)
+    session = debug_log.DebugSession.start("TEST.EXE", "Window")
+    session.log("what the user asked")
+    session.save_screenshot(Image.new("RGB", (8, 8)), "shot.jpg")
+    session.close()
+    assert not any(tmp_path.rglob("*.log")) and not any(tmp_path.rglob("*.jpg"))

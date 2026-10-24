@@ -1,8 +1,9 @@
 """Per-interaction debug logging for Clicky Windows.
 
-Each PTT interaction gets its own folder under ~/.clicky-windows/debug/
-containing a timestamped log file, plus the screenshot the model saw when
-DEBUG_SCREENSHOTS is on.
+When DEBUG_LOG is on, each PTT interaction gets its own folder under
+~/.clicky-windows/debug/ containing a timestamped log file, plus the
+screenshot the model saw when DEBUG_SCREENSHOTS is on. With DEBUG_LOG off
+(the default) sessions write nothing, so questions and answers aren't kept.
 
 Usage:
     session = DebugSession.start("EXCEL.EXE", "Book1 - Excel")
@@ -17,10 +18,11 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-from config import DEBUG_SCREENSHOTS, MEMORY_DIR
+from config import DEBUG_LOG, DEBUG_SCREENSHOTS, MEMORY_DIR
 
 
 _DEBUG_DIR = Path(MEMORY_DIR).parent / "debug"
+_ENABLED = DEBUG_LOG
 _SAVE_SCREENSHOTS = DEBUG_SCREENSHOTS
 
 
@@ -34,6 +36,8 @@ class DebugSession:
 
     @classmethod
     def start(cls, app_name: str, window_title: str) -> DebugSession:
+        if not _ENABLED:
+            return cls(None, None)
         ts = time.strftime("%Y-%m-%d_%H-%M-%S")
         safe_app = app_name.replace("/", "_").replace("\\", "_")
         folder = _DEBUG_DIR / f"{ts}_{safe_app}"
@@ -46,6 +50,8 @@ class DebugSession:
         return session
 
     def log(self, msg: str) -> None:
+        if self._log_file is None:
+            return
         elapsed_ms = (time.time() - self._t0) * 1000
         line = f"[+{elapsed_ms:.0f}ms] {msg}\n"
         try:
@@ -61,8 +67,8 @@ class DebugSession:
         coordinate: tuple[int, int] | None = None,
     ) -> None:
         """Save screenshot, optionally drawing a red marker at the model's
-        coordinate. Does nothing unless DEBUG_SCREENSHOTS is on."""
-        if not _SAVE_SCREENSHOTS:
+        coordinate. Does nothing unless DEBUG_LOG and DEBUG_SCREENSHOTS are on."""
+        if not _SAVE_SCREENSHOTS or self._folder is None:
             return
         try:
             img = pil_image.copy()
@@ -81,6 +87,8 @@ class DebugSession:
             self.log(f"Screenshot save FAILED: {exc}")
 
     def close(self) -> None:
+        if self._log_file is None:
+            return
         try:
             self._log_file.close()
         except Exception:

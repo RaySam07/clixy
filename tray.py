@@ -6,16 +6,18 @@ must reach for Task Manager (Ctrl+Shift+Esc) to kill ``Clicky.exe``.
 
 Menu structure (right-click the tray icon):
     - Settings...                   ← reopen the BYOK keyring dialog
+    - Avatar >                      ← switch buddy (and theme) instantly
     - Open Knowledge Folder         ← jump to ~/Documents/Clicky Wiki/
     - Open Memory Folder            ← jump to ~/.clicky-windows/memory/
+    - Forget My History...          ← delete memory notes, index and debug logs
     - --------
     - Quit Clicky                   ← clean shutdown via callback
 
 Implementation notes:
 - ``QSystemTrayIcon`` is the PyQt6 native widget: no extra deps,
   and it plays nicely with our existing Qt event loop.
-- Tray icon source: ``assets/clicky_tray.ico`` (multi-res 16/32/48/
-  64/128/256, blue cursor polygon).
+- Tray icon: the current avatar, drawn by theme.avatar_icon at every
+  tray size; it changes when the avatar does.
 - "Open Folder" actions use ``os.startfile`` (Windows native, opens
   in File Explorer). Folders are auto-created if missing so the user
   doesn't get an error on first click before they've dropped any
@@ -28,14 +30,16 @@ Implementation notes:
 from __future__ import annotations
 
 import os
+import shutil
 from pathlib import Path
 from typing import Callable
 
-from PyQt6.QtCore import QObject
-from PyQt6.QtGui import QAction, QIcon
-from PyQt6.QtWidgets import QMenu, QSystemTrayIcon
+from PyQt6.QtCore import QObject, Qt
+from PyQt6.QtGui import QAction, QActionGroup
+from PyQt6.QtWidgets import QMenu, QMessageBox, QSystemTrayIcon
 
-from config import KB_DIR, MEMORY_DIR
+import theme
+from config import INDEX_DB_PATH, KB_DIR, MEMORY_DIR
 
 
 class ClickyTray(QObject):
@@ -77,12 +81,19 @@ class ClickyTray(QObject):
 
         self._icon = QSystemTrayIcon(parent=self)
         self._icon.setToolTip("Clicky: hold Ctrl+Alt+Space and ask")
-        icon_path = Path(__file__).parent / "assets" / "clicky_tray.ico"
-        if icon_path.is_file():
-            self._icon.setIcon(QIcon(str(icon_path)))
+        self._icon.setIcon(theme.avatar_icon(theme.current_avatar_id()))
 
         self._menu = QMenu()
+        # Frameless + translucent so the stylesheet's rounded corners show.
+        self._menu.setWindowFlags(
+            self._menu.windowFlags()
+            | Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.NoDropShadowWindowHint
+        )
+        self._menu.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self._avatar_actions: dict[str, QAction] = {}
         self._build_menu()
+        theme.on_avatar_changed(self._on_avatar_changed)
         self._icon.setContextMenu(self._menu)
         self._icon.show()
 
@@ -93,6 +104,20 @@ class ClickyTray(QObject):
         act_settings.triggered.connect(self._on_settings)
         self._menu.addAction(act_settings)
 
+        avatars = self._menu.addMenu("Avatar")
+        avatars.setWindowFlags(self._menu.windowFlags())
+        avatars.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        group = QActionGroup(self)
+        group.setExclusive(True)
+        for av in theme.AVATARS:
+            action = QAction(theme.avatar_icon(av.id), f"{av.name}  ·  {av.palette.name}", self)
+            action.setCheckable(True)
+            action.setChecked(av.id == theme.current_avatar_id())
+            action.triggered.connect(lambda _checked=False, avatar_id=av.id: theme.set_avatar(avatar_id))
+            group.addAction(action)
+            avatars.addAction(action)
+            self._avatar_actions[av.id] = action
+
         act_open_kb = QAction("Open Knowledge Folder", self)
         act_open_kb.triggered.connect(self._open_kb_folder)
         self._menu.addAction(act_open_kb)
@@ -100,6 +125,10 @@ class ClickyTray(QObject):
         act_open_mem = QAction("Open Memory Folder", self)
         act_open_mem.triggered.connect(self._open_memory_folder)
         self._menu.addAction(act_open_mem)
+
+        act_forget = QAction("Forget My History...", self)
+        act_forget.triggered.connect(self._forget_history)
+        self._menu.addAction(act_forget)
 
         self._menu.addSeparator()
 
@@ -129,3 +158,49 @@ class ClickyTray(QObject):
 
     def _open_memory_folder(self) -> None:
         self._open_in_explorer(MEMORY_DIR)
+
+    def _on_avatar_changed(self, avatar_id: str) -> None:
+        self._icon.setIcon(theme.avatar_icon(avatar_id))
+        action = self._avatar_actions.get(avatar_id)
+        if action is not None and not action.isChecked():
+            action.setChecked(True)
+
+    def _forget_history(self) -> None:
+        """Ask, then delete what Clicky keeps about past questions: the
+        per-app memory notes, their index and any debug logs. Keys, settings
+        and the knowledge folder (your own files) are left alone."""
+        answer = QMessageBox.question(
+            None,
+            "Forget my history?",
+            "Clicky will delete its notes about what you asked in each app, "
+            "and any debug logs.\n\nYour keys, settings and Knowledge Folder stay.",
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        failed = forget_history()
+        if failed:
+            self.notify("Some files were in use and stayed. Quit Clicky and try again to remove them.")
+        else:
+            self._icon.showMessage("Clicky", "Done. Your history is gone.", QSystemTrayIcon.MessageIcon.Information, 4000)
+
+
+def forget_history() -> list[Path]:
+    """Delete the memory folder's contents, the memory index and the debug
+    folder. Returns the paths that couldn't be removed."""
+    failed: list[Path] = []
+    debug_dir = Path(MEMORY_DIR).parent / "debug"
+    for folder in (Path(MEMORY_DIR), debug_dir):
+        if not folder.is_dir():
+            continue
+        for child in folder.iterdir():
+            try:
+                shutil.rmtree(child) if child.is_dir() else child.unlink()
+            except OSError:
+                failed.append(child)
+    index = Path(INDEX_DB_PATH)
+    for path in (index, index.with_name(index.name + "-wal"), index.with_name(index.name + "-shm")):
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            failed.append(path)
+    return failed

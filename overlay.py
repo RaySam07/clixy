@@ -2,9 +2,11 @@
 
 Per-monitor `OverlayWindow(QWidget)` overlays routed by `OverlayController`.
 Each overlay covers exactly one physical monitor in DIP (logical) coords.
-A blue animated pointer is drawn via `QPainter.paintEvent` and moved by
-`QPropertyAnimation` on a `pyqtProperty`. Click-through is enforced by
-Win32 extended window styles applied via ctypes AFTER `QWidget.show()`.
+The pixel avatar (theme.py) is drawn via `QPainter.paintEvent` and flown
+by a `QVariantAnimation`; its tip is the pointer. While listening the screen
+edges glow in the avatar's theme colors, and the side island (island.py)
+shows the words. Click-through is enforced by Win32 extended window styles
+applied via ctypes AFTER `QWidget.show()`.
 
 Overlays are per-monitor rather than one window spanning the virtual
 desktop because of Qt 6's "islands of screens" behavior on mixed-DPI
@@ -25,6 +27,7 @@ from __future__ import annotations
 
 import ctypes
 import math
+import time
 from itertools import cycle
 
 from enum import Enum, auto
@@ -32,6 +35,7 @@ from enum import Enum, auto
 from PyQt6.QtCore import (
     QPoint,
     QPointF,
+    QRect,
     QRectF,
     QTimer,
     QVariantAnimation,
@@ -39,6 +43,8 @@ from PyQt6.QtCore import (
 )
 from PyQt6.QtGui import QColor, QCursor, QFont, QGuiApplication, QPainter, QPen, QPolygonF, QScreen
 from PyQt6.QtWidgets import QWidget
+
+import theme
 
 
 class _OverlayState(Enum):
@@ -86,13 +92,12 @@ def _scale_pulse(linear_t: float) -> float:
     return 1.0 + math.sin(linear_t * math.pi) * 0.3
 
 
-# --- Waveform widget (LISTENING state visual) --------------------------------
+# --- Level bars (LISTENING state visual) -------------------------------------
 #
 # Ports farzaa/clicky OverlayWindow.swift:705-743 verbatim.
-# While PTT is held, the cursor polygon hides and this 5-bar waveform renders
-# at the cursor position. Bar heights are driven by mic RMS (from stt.py)
-# × a profile curve + an independent sine idle-pulse so bars are never
-# fully flat. Rendered at ~36 fps via QTimer.
+# While PTT is held, the side island shows these 5 bars. Bar heights are
+# driven by mic RMS (from stt.py) × a profile curve + an independent sine
+# idle-pulse so bars are never fully flat.
 
 _WAVEFORM_BAR_COUNT = 5
 _WAVEFORM_BAR_PROFILE: tuple[float, ...] = (0.4, 0.7, 1.0, 0.7, 0.4)
@@ -122,7 +127,7 @@ def _waveform_bar_height(bar_index: int, audio_level: float, phase_seconds: floa
     Args:
         bar_index: 0..4. Must be within _WAVEFORM_BAR_PROFILE bounds.
         audio_level: RMS-derived level in [0, 1] (from stt.py's on_audio_level).
-        phase_seconds: elapsed time since widget startup (drives the idle pulse).
+        phase_seconds: elapsed seconds (drives the idle pulse).
 
     Returns:
         Bar height in pixels, in range ~[3, 14.5].
@@ -133,21 +138,6 @@ def _waveform_bar_height(bar_index: int, audio_level: float, phase_seconds: floa
     animation_phase = phase_seconds * 3.6 + bar_index * 0.35
     idle_pulse = (math.sin(animation_phase) + 1.0) / 2.0 * _WAVEFORM_IDLE_PULSE_AMP
     return _WAVEFORM_BASE_HEIGHT + reactive + idle_pulse
-
-# --- Cursor polygon shape ----------------------------------------------------
-
-_CURSOR_VERTICES = [
-    (0, 0),       # tip (anchor point, lands on the target coordinate)
-    (0, 24),      # left edge down
-    (5, 19),      # notch inward
-    (10, 28),     # lower-right barb tip
-    (13, 26),     # barb right edge
-    (8, 17),      # barb back up to body
-    (16, 17),     # body right edge (widest point)
-]
-"""Blue cursor shape. Tip at (0,0) anchors on the target coordinate.
-Translucent dodger-blue fill with thin dark outline.
-"""
 
 _CURSOR_FOLLOW_LERP = 0.15
 """Spring interpolation factor for cursor following. Each frame, cursor moves
@@ -370,8 +360,9 @@ class OverlayWindow(QWidget):
 
     Responsibilities:
     - Cover exactly one physical monitor with a frameless transparent window
-    - Paint a blue animated pointer via QPainter in paintEvent
-    - Expose a pointerPos pyqtProperty so QPropertyAnimation can drive it
+    - Paint the pixel avatar (theme.paint_avatar), its landing burst, the
+      teaching annotations and the screen-edge glow via QPainter
+    - Fly the avatar along a Bezier arc with a QVariantAnimation
     - Apply Win32 click-through ex-styles via ctypes after show()
 
     Each OverlayWindow operates entirely in its own screen's local DIP
@@ -382,6 +373,13 @@ class OverlayWindow(QWidget):
     from the main Qt thread only. app.py enforces this via pyqtSignal
     cross-thread communication.
     """
+
+    _AVATAR_BOX = 60
+    """Half-size of the square around the tip that holds the avatar, its glow
+    and its landing burst; the only area repainted while it sits still."""
+
+    _BURST_S = 0.7
+    _LIFE_INTERVAL_MS = 33
 
     def __init__(self, screen: QScreen) -> None:
         """Construct the overlay window for a given QScreen.
@@ -418,17 +416,17 @@ class OverlayWindow(QWidget):
         self._pointer_pos = QPoint(0, 0)
         self._pointer_visible = False
 
-        # Visual state flags: gate cursor polygon paint + widget positions.
-        # Only one of these can be true at a time (Farza's verbatim state
-        # machine: cursor polygon never coexists with waveform or spinner).
+        # LISTENING / THINKING flags. They change the avatar's face and light
+        # the screen-edge glow; the words and level bars live in the side island.
         self._waveform_visible = False
         self._spinner_visible = False
-        self._waveform_widget = None  # lazy-created on first show_waveform()
-        self._spinner_widget = None   # lazy-created on first show_spinner()
+        self._audio_level = 0.0
+        self._glow_level = 0.0
+        self._glow_painted = False
 
         # Bezier flight animation: Farza's quadratic-bezier-arc + smoothstep +
         # scale-pulse. Port of OverlayWindow.swift:491-568 with no tangent
-        # rotation: our cursor is tip-anchored, so the tip stays on target
+        # rotation: our avatar is tip-anchored, so the tip stays on target
         # through flight.
         self._flight_anim = QVariantAnimation(self)
         self._flight_anim.setStartValue(0.0)
@@ -439,6 +437,12 @@ class OverlayWindow(QWidget):
         self._flight_p2: tuple[float, float] = (0.0, 0.0)
         self._flight_scale: float = 1.0
 
+        # Set by OverlayController.point_at so only a flight TO a target
+        # celebrates; the flight back to the mouse lands quietly.
+        self._celebrate_next_landing = False
+        self._landed_at: float | None = None
+        self._life_t0 = time.monotonic()
+
         # Teaching annotations (arrows/circles/underlines/labels)
         # drawn IN ADDITION to the cursor. Stored in this window's LOCAL-logical
         # coords (the controller transforms physical->local before storing, the
@@ -448,6 +452,12 @@ class OverlayWindow(QWidget):
         self._annotation_clear_timer = QTimer(self)
         self._annotation_clear_timer.setSingleShot(True)
         self._annotation_clear_timer.timeout.connect(self.clear_annotations)
+
+        # Blinking, flicker and the glow need repaints even while nothing
+        # moves. Only the avatar's square and the glowing edge strips repaint.
+        self._life_timer = QTimer(self)
+        self._life_timer.timeout.connect(self._on_life_tick)
+        self._life_timer.start(self._LIFE_INTERVAL_MS)
 
     def set_annotations(self, annotations: list) -> None:
         """Replace the current annotations (LOCAL-logical coords) + repaint.
@@ -468,114 +478,161 @@ class OverlayWindow(QWidget):
         self._annotation_clear_timer.stop()
         self.update()
 
+    # --- Life: mood, glow, partial repaints ------------------------------------
+
+    def _mood(self) -> str:
+        """Which face the avatar makes, from what the overlay is showing."""
+        if self._flight_anim.state() == QVariantAnimation.State.Running or self._burst_progress() is not None:
+            return "happy"
+        if self._waveform_visible:
+            return "listening"
+        if self._spinner_visible:
+            return "thinking"
+        return "idle"
+
+    def _burst_progress(self) -> float | None:
+        if self._landed_at is None:
+            return None
+        progress = (time.monotonic() - self._landed_at) / self._BURST_S
+        return progress if progress < 1.0 else None
+
+    def _glow_target(self) -> float:
+        if self._waveform_visible:
+            return 1.0
+        if self._spinner_visible:
+            return 0.55
+        return 0.0
+
+    def avatar_rect(self, pos: QPoint | None = None) -> QRect:
+        pos = self._pointer_pos if pos is None else pos
+        box = self._AVATAR_BOX
+        return QRect(pos.x() - box, pos.y() - box, 2 * box + 20, 2 * box + 20)
+
+    def _edge_rects(self) -> list[QRect]:
+        w, h, reach = self.width(), self.height(), theme.GLOW_REACH
+        return [QRect(0, 0, w, reach), QRect(0, h - reach, w, reach),
+                QRect(0, 0, reach, h), QRect(w - reach, 0, reach, h)]
+
+    def _on_life_tick(self) -> None:
+        if not self.isVisible():
+            return
+        self._glow_level += (self._glow_target() - self._glow_level) * 0.12
+        if self._glow_level < 0.01:
+            self._glow_level = 0.0
+        # 60 fps while the glow flows, 30 fps for blinking and flicker alone.
+        interval = 16 if self._glow_level > 0.0 or self._glow_target() > 0.0 else self._LIFE_INTERVAL_MS
+        if self._life_timer.interval() != interval:
+            self._life_timer.setInterval(interval)
+        if self._glow_level > 0.0 or self._glow_painted:
+            for rect in self._edge_rects():
+                self.update(rect)
+        if self._pointer_visible:
+            self.update(self.avatar_rect())
+
     def paintEvent(self, _event) -> None:
-        """Draw a blue arrow cursor polygon at the current pointer position.
+        """Draw the edge glow, the annotations, then the avatar.
 
-        The tip vertex (0,0 in _CURSOR_VERTICES) is anchored at pointer_pos
-        so point_at(x,y) puts the tip exactly on the target UI element.
-
-        During FLYING state, self._flight_scale rises to 1.3 at mid-flight and
-        returns to 1.0 on landing. We scale around the tip so the tip keeps
-        tracking the Bezier curve position exactly (scale around any other
-        point would drift the tip).
+        The avatar's tip is anchored at pointer_pos so point_at(x,y) puts it
+        exactly on the target UI element. During FLYING, self._flight_scale
+        rises to 1.3 at mid-flight and back to 1.0 on landing; the avatar
+        grows around its tip so the tip keeps tracking the Bezier curve.
         """
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        now = time.monotonic()
+        t = now - self._life_t0
 
-        # Teaching annotations paint independently of the cursor (they show
-        # during SPEAKING, when the cursor may be hidden or at rest).
+        self._glow_painted = self._glow_level > 0.0
+        if self._glow_painted:
+            theme.paint_edge_glow(
+                painter, QRectF(self.rect()), t=t, level=self._glow_level,
+                audio=self._audio_level if self._waveform_visible else 0.0,
+            )
+
+        # Teaching annotations paint independently of the avatar.
         if self._annotations:
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
             self._paint_annotations(painter)
 
         if not self._pointer_visible:
             return
-        px, py = self._pointer_pos.x(), self._pointer_pos.y()
-
-        # Glow: semi-transparent blue circle behind the cursor
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(30, 144, 255, 35))
-        painter.drawEllipse(QPointF(px + 5, py + 10), 22, 22)
-
-        # Apply mid-flight scale pulse around the tip (0, 0 in cursor space).
-        # painter.translate + scale + translate is standard Qt pattern for
-        # scaling around a specific point.
-        if self._flight_scale != 1.0:
-            painter.save()
-            painter.translate(float(px), float(py))
-            painter.scale(self._flight_scale, self._flight_scale)
-            painter.translate(-float(px), -float(py))
-
-        # Cursor polygon
-        painter.setBrush(QColor(30, 144, 255, 200))  # dodger blue, more opaque
-        painter.setPen(QPen(QColor(40, 40, 40, 100), 1))
-        poly = QPolygonF([
-            QPointF(px + dx, py + dy) for dx, dy in _CURSOR_VERTICES
-        ])
-        painter.drawPolygon(poly)
-
-        if self._flight_scale != 1.0:
-            painter.restore()
+        px, py = float(self._pointer_pos.x()), float(self._pointer_pos.y())
+        squash = 0.0 if self._landed_at is None else theme.landing_squash(now - self._landed_at)
+        theme.paint_avatar(
+            painter, px, py, t=t, mood=self._mood(), scale=self._flight_scale,
+            device_pixel_ratio=self.devicePixelRatioF(), squash=squash,
+        )
+        burst = self._burst_progress()
+        if burst is not None:
+            theme.paint_burst(painter, px, py, burst)
 
     def _paint_annotations(self, painter: QPainter) -> None:
         """Draw the teaching annotations. Coords are this window's LOCAL-logical
-        space (the controller already mapped physical->local). Blue accent to
-        match the cursor; circles/underlines are outlines (never filled) so they
-        frame the element without covering it."""
+        space (the controller already mapped physical->local). The theme's
+        accent over a cream halo, so they read on light and dark apps alike;
+        circles/underlines are outlines (never filled) so they frame the
+        element without covering it."""
         from annotations import Arrow, Circle, Underline, Label
 
-        accent = QColor(59, 130, 246)  # #3B82F6
-        pen = QPen(accent)
-        pen.setWidth(3)
-        painter.setPen(pen)
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
+        accent = theme.current_palette().accent
+        painter.setFont(theme.ui_font(11.5, QFont.Weight.ExtraBold))
+        # Two passes: the halo for every shape first, then the colored strokes,
+        # so one shape's halo never cuts through another's line.
+        for pen in (self._annotation_pen(_ANNOTATION_HALO, 7.0), self._annotation_pen(accent, 3.5)):
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            for ann in self._annotations:
+                if isinstance(ann, Circle):
+                    painter.drawEllipse(QPointF(ann.x, ann.y), float(ann.r), float(ann.r))
+                elif isinstance(ann, Arrow):
+                    painter.drawLine(QPointF(ann.x1, ann.y1), QPointF(ann.x2, ann.y2))
+                    self._draw_arrowhead(painter, ann.x1, ann.y1, ann.x2, ann.y2)
+                elif isinstance(ann, Underline):
+                    painter.drawLine(QPointF(ann.x, ann.y), QPointF(ann.x + ann.w, ann.y))
 
+        metrics = painter.fontMetrics()
         for ann in self._annotations:
-            if isinstance(ann, Circle):
-                painter.drawEllipse(QPointF(ann.x, ann.y), float(ann.r), float(ann.r))
-                if ann.label:
-                    metrics = painter.fontMetrics()
-                    lx, ly = _circle_label_origin(
-                        ann.x, ann.y, ann.r, metrics.horizontalAdvance(ann.label), metrics.ascent(),
-                    )
-                    self._draw_label(painter, lx, ly, ann.label)
-            elif isinstance(ann, Arrow):
-                painter.drawLine(
-                    QPointF(ann.x1, ann.y1), QPointF(ann.x2, ann.y2)
+            if isinstance(ann, Circle) and ann.label:
+                lx, ly = _circle_label_origin(
+                    ann.x, ann.y, ann.r, metrics.horizontalAdvance(ann.label), metrics.ascent(),
                 )
-                self._draw_arrowhead(painter, ann.x1, ann.y1, ann.x2, ann.y2)
-            elif isinstance(ann, Underline):
-                painter.drawLine(
-                    QPointF(ann.x, ann.y), QPointF(ann.x + ann.w, ann.y)
-                )
+                self._draw_label(painter, lx, ly, ann.label)
             elif isinstance(ann, Label):
                 self._draw_label(painter, ann.x, ann.y, ann.text)
 
     @staticmethod
+    def _annotation_pen(color: QColor, width: float) -> QPen:
+        pen = QPen(color, width)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        return pen
+
+    @staticmethod
     def _draw_label(painter: QPainter, x: float, y: float, text: str) -> None:
-        """Label text on a light backing, so it stays readable over a busy screen."""
+        """Label text on a pill in the theme's colors, so it stays readable
+        over a busy screen and matches the island."""
+        palette = theme.current_palette()
         metrics = painter.fontMetrics()
-        pad = 4
+        pad_x, pad_y = 8.0, 3.0
         box = QRectF(
-            x - pad, y - metrics.ascent() - pad / 2,
-            metrics.horizontalAdvance(text) + 2 * pad, metrics.height() + pad,
+            x - pad_x, y - metrics.ascent() - pad_y,
+            metrics.horizontalAdvance(text) + 2 * pad_x, metrics.height() + 2 * pad_y,
         )
         painter.save()
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(255, 255, 255, 235))
-        painter.drawRoundedRect(box, 4, 4)
-        painter.restore()
+        painter.setPen(QPen(palette.accent, 1.5))
+        painter.setBrush(palette.surface_top)
+        painter.drawRoundedRect(box, box.height() / 2, box.height() / 2)
+        painter.setPen(palette.text)
         painter.drawText(QPointF(x, y), text)
+        painter.restore()
 
     @staticmethod
     def _draw_arrowhead(
         painter: QPainter, x1: float, y1: float, x2: float, y2: float
     ) -> None:
-        """Filled arrowhead at (x2,y2) pointing along the (x1,y1)->(x2,y2) line."""
-        import math
-
+        """Rounded open arrowhead at (x2,y2) along the (x1,y1)->(x2,y2) line,
+        drawn with the current pen so it gets the same halo as the line."""
         angle = math.atan2(y2 - y1, x2 - x1)
-        size = 14.0
+        size = 13.0
         tip = QPointF(x2, y2)
         left = QPointF(
             x2 - size * math.cos(angle - math.pi / 6),
@@ -585,17 +642,15 @@ class OverlayWindow(QWidget):
             x2 - size * math.cos(angle + math.pi / 6),
             y2 - size * math.sin(angle + math.pi / 6),
         )
-        painter.setBrush(QColor(59, 130, 246))
-        painter.drawPolygon(QPolygonF([tip, left, right]))
-        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawPolyline(QPolygonF([left, tip, right]))
 
     def animate_pointer_to(self, local_logical_x: int, local_logical_y: int) -> None:
         """Fly the pointer along a quadratic Bezier arc to (x, y).
 
         Ports farzaa/clicky OverlayWindow.swift:491-568 verbatim with ONE
-        deliberate deviation: no tangent rotation. Our cursor is a tip-anchored
-        polygon: the tip IS the pointer, so it keeps pointing at the target
-        through flight instead of rotating along the tangent.
+        deliberate deviation: no tangent rotation. Our avatar is tip-anchored:
+        the tip IS the pointer, so it keeps pointing at the target through
+        flight instead of rotating along the tangent.
 
         Curve: P0=current pointer, P1=midpoint lifted up by min(dist*0.2, 80px),
         P2=target. Duration = clamp(distance/800 s, 0.6s, 1.4s). Smoothstep
@@ -639,6 +694,7 @@ class OverlayWindow(QWidget):
         """
         t = float(linear_t)
         eased_t = _smoothstep(t)
+        old_rect = self.avatar_rect()
         x, y = _bezier_position(eased_t, self._flight_p0, self._flight_p1, self._flight_p2)
         self._pointer_pos = QPoint(int(x), int(y))
         self._flight_scale = _scale_pulse(t)
@@ -647,241 +703,62 @@ class OverlayWindow(QWidget):
         if t >= 0.9999:
             self._pointer_pos = QPoint(int(self._flight_p2[0]), int(self._flight_p2[1]))
             self._flight_scale = 1.0
-        self.update()
+            if self._celebrate_next_landing:
+                self._celebrate_next_landing = False
+                self._landed_at = time.monotonic()
+        self.update(old_rect.united(self.avatar_rect()))
 
     def apply_win32_clickthrough(self) -> None:
         """Apply Win32 ex-styles for click-through. MUST be called after show()."""
         hwnd = int(self.winId())
         apply_clickthrough_styles(hwnd)
 
-    # --- Waveform + Spinner widgets (LISTENING / THINKING states) --------
+    # --- LISTENING / THINKING state ------------------------------------------
     #
-    # Both widgets position themselves at self._pointer_pos every follow-tick
-    # (matches Clicky's .position(cursorPosition) binding in farzaa/clicky
-    # OverlayWindow.swift:326-329 + 411-438: the widgets follow the OS cursor
-    # at 60Hz, they DO NOT stay pinned at press-time position).
-    #
-    # show_waveform / show_spinner just create the widget + flip a visibility
-    # flag. The 60Hz _on_follow_tick drives their positions.
+    # The avatar stays visible in every state and changes its face; the edge
+    # glow fades in while listening (swelling with the voice) and dims while
+    # thinking. The island beside the screen shows the words.
 
     def show_waveform(self) -> None:
-        """Enter LISTENING state: show waveform widget, hide cursor polygon.
-        Widget position is driven by _on_follow_tick (tracks mouse at 60Hz).
-        """
-        if getattr(self, "_waveform_widget", None) is None:
-            self._waveform_widget = WaveformWidget(self)
-        self._waveform_widget.show()
+        """Enter LISTENING state."""
         self._waveform_visible = True
-        self._pointer_visible = False  # cursor polygon hides during LISTENING
-        self.update()
+        self._spinner_visible = False
 
     def hide_waveform(self) -> None:
-        """Exit LISTENING state. Does NOT restore cursor visibility: caller
-        is expected to transition into THINKING (show_spinner) or IDLE (tick
-        will re-show the cursor when no waveform/spinner is active)."""
-        if getattr(self, "_waveform_widget", None) is not None:
-            self._waveform_widget.hide()
+        """Exit LISTENING state; the caller moves on to THINKING or IDLE."""
         self._waveform_visible = False
-        self.update()
+        self._audio_level = 0.0
 
     def show_spinner(self) -> None:
-        """Enter THINKING state: show rotating arc, keep cursor hidden.
-        Position tracks cursor via _on_follow_tick, same as waveform."""
-        if getattr(self, "_spinner_widget", None) is None:
-            self._spinner_widget = SpinnerWidget(self)
-        self._spinner_widget.show()
+        """Enter THINKING state."""
         self._spinner_visible = True
-        self._pointer_visible = False
-        self.update()
 
     def hide_spinner(self) -> None:
-        """Exit THINKING state. Cursor will reappear via _on_follow_tick when
-        no widget is active, OR via point_at() setting _pointer_visible=True
-        right before the bezier arc starts."""
-        if getattr(self, "_spinner_widget", None) is not None:
-            self._spinner_widget.hide()
+        """Exit THINKING state (the answer is arriving, or the turn ended)."""
         self._spinner_visible = False
-        self.update()
 
     def set_audio_level(self, level: float) -> None:
-        """Forward audio level to the waveform widget (no-op if not shown yet)."""
-        if getattr(self, "_waveform_widget", None) is not None:
-            self._waveform_widget.set_audio_level(level)
+        """Live mic level in [0, 1]; swells the glow while listening."""
+        self._audio_level = max(0.0, min(float(level), 1.0))
 
 
-# --- Spinner widget (THINKING state) -----------------------------------------
-#
-# Ports farzaa/clicky OverlayWindow.swift:749-773 (the
-# BlueCursorSpinnerView). Shown between hotkey RELEASE and Claude returning
-# a coordinate. Same visual vocabulary as the shipping macOS Clicky.
+_ANNOTATION_HALO = QColor(255, 248, 240, 170)
+"""Cream stroke under each annotation so it stays visible on dark apps."""
+
+
+# --- Thinking phase ------------------------------------------------------------
 
 _SPINNER_PERIOD_S = 0.8
-"""Full-rotation period. Matches Clicky's linear(duration: 0.8) forever-repeat."""
-
-_SPINNER_ARC_START_DEG = 54.0   # 0.15 * 360
-_SPINNER_ARC_SPAN_DEG = 252.0   # (0.85 - 0.15) * 360  → 70% of full circle
-
-_SPINNER_WIDGET_SIZE = 28  # px, leaves room around the 14px arc for stroke + glow
-_SPINNER_ARC_DIAMETER = 14.0
-_SPINNER_STROKE_WIDTH = 2.5
+"""Seconds per thinking-dots cycle. Matches Clicky's spinner rotation."""
 
 
 def _spinner_angle_deg(elapsed_s: float) -> float:
-    """Linear-rotation angle in degrees, wrapping at full period (0.8s).
+    """Cycle phase in degrees, wrapping at the full period (0.8s).
 
     Returns angle in [0, 360). Pure function (no Qt), easy to unit test.
+    Drives the island's three bobbing dots.
     """
     return (elapsed_s / _SPINNER_PERIOD_S * 360.0) % 360.0
-
-
-class SpinnerWidget(QWidget):
-    """14×14 rotating arc, shown during THINKING state (release → coord).
-
-    Port of Clicky's BlueCursorSpinnerView. The arc covers 70% of a circle
-    (trimmed 15% at top + 15% at bottom to match Farza's ``.trim(from: 0.15,
-    to: 0.85)``). Rotates continuously, 0.8s per full rotation.
-
-    Rendered via QPainter on a transparent, mouse-transparent QWidget. The
-    widget size is larger than the arc so the stroke + anti-aliasing don't
-    clip at the edges.
-
-    Thread safety: show()/hide() are Qt-main-thread only (called via
-    pyqtSignal slots in app.py). The timer ticks on the main thread too.
-    """
-
-    WIDGET_SIZE = _SPINNER_WIDGET_SIZE
-    UPDATE_INTERVAL_MS = 28  # ~36 fps, same cadence as waveform for consistency
-
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setFixedSize(self.WIDGET_SIZE, self.WIDGET_SIZE)
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
-        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-        self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
-
-        import time as _t
-        self._phase_start = _t.time()
-
-        self._tick_timer = QTimer(self)
-        self._tick_timer.timeout.connect(self._tick)
-        self._tick_timer.start(self.UPDATE_INTERVAL_MS)
-
-    def _tick(self) -> None:
-        self.update()
-
-    def paintEvent(self, _event) -> None:
-        """Draw a rotating 70% arc in dodger blue + subtle outer glow."""
-        import time as _t
-        from PyQt6.QtCore import QRectF as _QRectF
-
-        elapsed = _t.time() - self._phase_start
-        angle = _spinner_angle_deg(elapsed)
-
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-
-        # Center the arc in the widget + rotate by `angle` around the center.
-        cx = cy = self.WIDGET_SIZE / 2.0
-        painter.translate(cx, cy)
-        painter.rotate(angle)
-        painter.translate(-cx, -cy)
-
-        # Outer glow: a faint circle slightly larger than the arc.
-        glow_pen = QPen(QColor(30, 144, 255, 90))
-        glow_pen.setWidthF(_SPINNER_STROKE_WIDTH + 2.0)
-        glow_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-        painter.setPen(glow_pen)
-        arc_rect = _QRectF(
-            (self.WIDGET_SIZE - _SPINNER_ARC_DIAMETER) / 2.0,
-            (self.WIDGET_SIZE - _SPINNER_ARC_DIAMETER) / 2.0,
-            _SPINNER_ARC_DIAMETER,
-            _SPINNER_ARC_DIAMETER,
-        )
-        # QPainter.drawArc uses 1/16-degree units.
-        painter.drawArc(
-            arc_rect,
-            int(_SPINNER_ARC_START_DEG * 16),
-            int(_SPINNER_ARC_SPAN_DEG * 16),
-        )
-
-        # Main arc: fully opaque dodger blue.
-        main_pen = QPen(QColor(30, 144, 255, 220))
-        main_pen.setWidthF(_SPINNER_STROKE_WIDTH)
-        main_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-        painter.setPen(main_pen)
-        painter.drawArc(
-            arc_rect,
-            int(_SPINNER_ARC_START_DEG * 16),
-            int(_SPINNER_ARC_SPAN_DEG * 16),
-        )
-
-
-# --- Waveform widget -----------------------------------------------------------
-
-class WaveformWidget(QWidget):
-    """5-bar audio-level waveform rendered via QPainter at ~36 fps.
-
-    Ports farzaa/clicky OverlayWindow.swift:705-743. During
-    PTT hold, this widget shows at the cursor position (OverlayWindow hides
-    the cursor polygon). Bar heights come from _waveform_bar_height() using
-    the RMS level set via set_audio_level() + an independent idle-pulse sine
-    so bars are never fully flat.
-
-    Thread safety: set_audio_level may be called from any thread (it just
-    assigns a float). The timer-driven update() runs on the Qt main thread.
-    Rendering runs on the main thread via paintEvent.
-    """
-
-    BAR_WIDTH = 2
-    BAR_SPACING = 2
-    WIDGET_HEIGHT = 18  # px, slightly taller than cursor for visibility
-    WIDGET_WIDTH = _WAVEFORM_BAR_COUNT * BAR_WIDTH + (_WAVEFORM_BAR_COUNT - 1) * BAR_SPACING  # = 18
-    UPDATE_INTERVAL_MS = 28  # ~36 fps, matches Farza's 1/36s cadence
-
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setFixedSize(self.WIDGET_WIDTH, self.WIDGET_HEIGHT)
-        # Transparent bg + mouse-transparent (clicks pass through to apps below).
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
-        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-        self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
-
-        self._audio_level: float = 0.0
-        import time as _t
-        self._phase_start = _t.time()
-
-        self._tick_timer = QTimer(self)
-        self._tick_timer.timeout.connect(self._tick)
-        self._tick_timer.start(self.UPDATE_INTERVAL_MS)
-
-    def set_audio_level(self, level: float) -> None:
-        """Update live audio level (called from app.py via pyqtSignal)."""
-        self._audio_level = max(0.0, min(float(level), 1.0))
-
-    def _tick(self) -> None:
-        """Trigger a repaint on each timer tick, so bars redraw at ~36 fps."""
-        self.update()
-
-    def paintEvent(self, _event) -> None:
-        """Draw the 5 vertical bars centered vertically in the widget."""
-        from PyQt6.QtCore import QRectF as _QRectF  # local import: type only used here
-        import time as _t
-
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        painter.setPen(Qt.PenStyle.NoPen)
-        # Same dodger blue as cursor polygon
-        painter.setBrush(QColor(30, 144, 255, 220))
-
-        phase = _t.time() - self._phase_start
-        for i in range(_WAVEFORM_BAR_COUNT):
-            bar_h = _waveform_bar_height(i, self._audio_level, phase)
-            x = i * (self.BAR_WIDTH + self.BAR_SPACING)
-            y = (self.WIDGET_HEIGHT - bar_h) / 2.0
-            painter.drawRoundedRect(
-                _QRectF(float(x), float(y), float(self.BAR_WIDTH), float(bar_h)),
-                1.5, 1.5,
-            )
 
 
 # --- Controller --------------------------------------------------------------
@@ -897,8 +774,12 @@ class OverlayController:
 
     Always-visible mode only: the cursor is visible from launch.
 
+    The controller also owns the side island (island.py) and keeps it in
+    step: listening, thinking, hidden for screen captures.
+
     Dependency injection: overlay_factory, screens, and cursor_pos_fn are
-    injectable so tests can substitute mocks without real QWidgets.
+    injectable so tests can substitute mocks without real QWidgets. With a
+    mock factory there is no island.
     """
 
     _FOLLOW_OFFSET_X = 35
@@ -912,8 +793,11 @@ class OverlayController:
         screens: list[QScreen] | None = None,
         cursor_pos_fn=None,
     ) -> None:
+        self.island = None
         if overlay_factory is None:
             overlay_factory = OverlayWindow
+            from island import SideIsland
+            self.island = SideIsland()
         if screens is None:
             screens = QGuiApplication.screens()
         self._cursor_pos_fn = cursor_pos_fn or QCursor.pos
@@ -951,9 +835,9 @@ class OverlayController:
         if target_overlay is None:
             return
         for ov in self.overlays:
-            if ov is not target_overlay:
+            if ov is not target_overlay and ov._pointer_visible:
                 ov._pointer_visible = False
-                ov.update()
+                ov.update(ov.avatar_rect())
 
         local = target_overlay.mapFromGlobal(global_pos)
         target_x = local.x() + self._FOLLOW_OFFSET_X
@@ -978,32 +862,16 @@ class OverlayController:
             new_x = current_x + step_x
             new_y = current_y + step_y
 
+        old_pos = target_overlay._pointer_pos
+        was_visible = target_overlay._pointer_visible
         target_overlay._pointer_pos = QPoint(new_x, new_y)
-
-        # Visibility gating: waveform (LISTENING) and spinner (THINKING) hide
-        # the cursor polygon; otherwise cursor polygon is visible. Widgets are
-        # repositioned to the new cursor position so they track the OS mouse
-        # at 60Hz (matches Clicky's .position(cursorPosition) binding per
-        # OverlayWindow.swift:326-329 + 411-438).
-        wf_widget = getattr(target_overlay, "_waveform_widget", None)
-        sp_widget = getattr(target_overlay, "_spinner_widget", None)
-
-        if getattr(target_overlay, "_waveform_visible", False) and wf_widget is not None:
-            wf_widget.move(
-                int(new_x - wf_widget.width() // 2),
-                int(new_y - wf_widget.height() // 2),
+        target_overlay._pointer_visible = True
+        # Repaint only where the avatar was and is; the rest of the screen
+        # stays untouched (the old code repainted every monitor at 60 Hz).
+        if not was_visible or old_pos != target_overlay._pointer_pos:
+            target_overlay.update(
+                target_overlay.avatar_rect(old_pos).united(target_overlay.avatar_rect())
             )
-            target_overlay._pointer_visible = False
-        elif getattr(target_overlay, "_spinner_visible", False) and sp_widget is not None:
-            sp_widget.move(
-                int(new_x - sp_widget.width() // 2),
-                int(new_y - sp_widget.height() // 2),
-            )
-            target_overlay._pointer_visible = False
-        else:
-            target_overlay._pointer_visible = True
-
-        target_overlay.update()
 
     def point_at(
         self,
@@ -1028,6 +896,7 @@ class OverlayController:
             physical_x, physical_y, target_screen
         )
         target_overlay._pointer_visible = True
+        target_overlay._celebrate_next_landing = True
         target_overlay.animate_pointer_to(local_x, local_y)
         target_overlay._flight_anim.finished.connect(self._on_point_animation_finished)
 
@@ -1117,60 +986,97 @@ class OverlayController:
         for overlay in self.overlays:
             overlay._pointer_visible = False
             overlay.hide()
+        if self.island is not None:
+            self.island.hide_for_capture()
 
     def show_after_capture(self) -> None:
         """Re-show ALL overlays + restart cursor following."""
         for overlay in self.overlays:
             overlay.show()
             overlay.apply_win32_clickthrough()
+        if self.island is not None:
+            self.island.show_after_capture()
         self._pointing_overlay = None
         self._state = _OverlayState.IDLE
         self._follow_timer.start()
 
-    # --- Waveform + Spinner delegation (called by app.py state machine) ----
+    # --- LISTENING / THINKING delegation (called by app.py state machine) ---
     #
-    # Position is driven by _on_follow_tick, NOT by show_waveform/show_spinner
-    # args. The monitor arg is retained for multi-monitor routing: the widget
-    # is created on the OverlayWindow whose screen the cursor is on AT PRESS/
-    # RELEASE time. If the cursor crosses monitors mid-hold, the widget stays
-    # on its original monitor (known limitation).
+    # The names are kept from the waveform + spinner widgets these used to
+    # show. Now they set the avatar's face and the edge glow on the overlay
+    # whose screen the cursor is on AT PRESS/RELEASE time (the monitor arg),
+    # and move the side island to that screen. If the cursor crosses monitors
+    # mid-hold, the glow stays on the original monitor (known limitation).
 
     def show_waveform(self, physical_x: int, physical_y: int, monitor: dict) -> None:
-        """Show waveform on the overlay containing (physical_x, physical_y).
-        Called by app.py on hotkey PRESS."""
+        """LISTENING on the overlay containing (physical_x, physical_y), and
+        open the island on that screen. Called by app.py on hotkey PRESS."""
         target_overlay = self._pick_overlay_for_point(physical_x, physical_y, monitor)
         if target_overlay is not None and hasattr(target_overlay, "show_waveform"):
             target_overlay.show_waveform()
+        if self.island is not None:
+            self.island.listening(screen_for_monitor(monitor, QGuiApplication.screens()))
 
     def hide_waveform(self) -> None:
-        """Hide waveform on all overlays. app.py calls this on hotkey RELEASE."""
+        """End LISTENING on all overlays. app.py calls this on hotkey RELEASE."""
         for overlay in self.overlays:
             if hasattr(overlay, "hide_waveform"):
                 overlay.hide_waveform()
 
     def show_spinner(self, physical_x: int, physical_y: int, monitor: dict) -> None:
-        """Show spinner (THINKING state) on the overlay containing the cursor.
+        """THINKING on the overlay containing the cursor, and in the island.
         Called by app.py on hotkey RELEASE, immediately after hide_waveform."""
         target_overlay = self._pick_overlay_for_point(physical_x, physical_y, monitor)
         if target_overlay is not None and hasattr(target_overlay, "show_spinner"):
             target_overlay.show_spinner()
+        if self.island is not None:
+            self.island.thinking()
 
     def hide_spinner(self) -> None:
-        """Hide spinner on all overlays. Called by app.py when:
+        """End THINKING on all overlays. Called by app.py when:
         - Claude returns a coordinate (just before sig_point_at → bezier fires)
         - Text-only response path (no coordinate)
-        - Pipeline error / cancel paths (don't leave spinner spinning)
+        - Pipeline error / cancel paths (don't leave it thinking)
         - Top of _handle_press (clear stale from prior interaction)"""
         for overlay in self.overlays:
             if hasattr(overlay, "hide_spinner"):
                 overlay.hide_spinner()
 
     def set_audio_level(self, level: float) -> None:
-        """Forward audio level to ALL overlays (only the one with a showing
-        waveform widget renders, others are no-ops)."""
+        """Forward the mic level to every overlay (only a LISTENING one uses
+        it, to swell its glow) and to the island's level bars."""
         for overlay in self.overlays:
             if hasattr(overlay, "set_audio_level"):
                 overlay.set_audio_level(level)
+        if self.island is not None:
+            self.island.set_level(level)
+
+    # --- Island text (called by app.py on the Qt main thread) ---------------
+
+    def island_transcript(self, text: str) -> None:
+        """What the user asked, once speech-to-text has it."""
+        if self.island is not None:
+            self.island.set_transcript(text)
+
+    def island_say(self, sentence: str) -> None:
+        """A sentence of the answer, as it goes to the voice."""
+        if self.island is not None:
+            self.island.say(sentence)
+
+    def island_meta(self, text: str) -> None:
+        """The small chip: model, or time and cost of the answer."""
+        if self.island is not None:
+            self.island.set_meta(text)
+
+    def island_note(self, text: str) -> None:
+        """A short note in place of an answer ("didn't catch that")."""
+        if self.island is not None:
+            self.island.note(text)
+
+    def island_done(self) -> None:
+        """The turn is over; the island tucks itself away after a pause."""
+        if self.island is not None:
+            self.island.done()
 
     def _pick_overlay_for_point(
         self, physical_x: int, physical_y: int, monitor: dict,
@@ -1190,7 +1096,7 @@ class OverlayController:
 if __name__ == "__main__":
     # Manual click-through verification. Run: py -3.13 -m overlay
     #
-    # Opens one overlay per physical monitor and animates a blue pointer
+    # Opens one overlay per physical monitor and flies the avatar
     # through 5 positions (4 corners + center) of the primary overlay,
     # cycling every 1.5 seconds. User confirms the 5-point checklist below
     # by watching the overlay and trying to click on apps underneath.
@@ -1247,7 +1153,7 @@ if __name__ == "__main__":
     _animate_next()  # first position immediately
 
     print("\nManual verification checklist (confirm each):")
-    print("  1. Blue arrow cursor visible, animates smoothly through 5 positions")
+    print("  1. Pixel avatar visible, flies smoothly through 5 positions")
     print("  2. Clicks PASS THROUGH to apps underneath (try clicking desktop icons)")
     print("  3. No taskbar entry for overlay")
     print("  4. Overlay doesn't steal focus from the active app")

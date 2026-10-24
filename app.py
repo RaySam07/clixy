@@ -24,6 +24,7 @@ import re
 import signal
 import sys
 import threading
+import time
 from ctypes import wintypes
 
 from PyQt6.QtCore import QObject, pyqtSignal
@@ -50,6 +51,8 @@ from config import (
     ANNOTATION_MODE,
     ASSEMBLYAI_API_KEY,
     CARTESIA_API_KEY,
+    DEFAULT_STT_PROVIDER,
+    DEFAULT_TTS_PROVIDER,
     GEMINI_MODEL_VISION,
     MODEL_ID,
     OLLAMA_HOST,
@@ -370,6 +373,33 @@ def _friendly_error(stage: str, exc: BaseException) -> str:
     return f"The {stage} step failed. Details are in the debug log."
 
 
+# USD per million tokens (input, output) for the island's cost chip. Cached
+# input is billed at a tenth of the input price, cache writes at 1.25x.
+_PRICES_PER_MTOK = {
+    "claude-haiku-5-5": (0.10, 0.50),
+    "claude-sonnet-5-5": (2.00, 10.00),
+    "claude-opus-5-5": (4.00, 20.00),
+}
+
+
+def _answer_meta(first_sentence_s: float | None, model_id: str, usage: dict) -> str:
+    """Chip text for the island: time to the first spoken sentence and, for
+    models with a known price, roughly what the answer cost."""
+    parts = []
+    if first_sentence_s is not None:
+        parts.append(f"{first_sentence_s:.1f}s")
+    price = _PRICES_PER_MTOK.get(model_id.split("/", 1)[-1])
+    if price and usage:
+        dollars = (
+            usage.get("input", 0) * price[0]
+            + usage.get("cache_read", 0) * price[0] * 0.1
+            + usage.get("cache_write", 0) * price[0] * 1.25
+            + usage.get("output", 0) * price[1]
+        ) / 1_000_000
+        parts.append(f"${dollars:.4f}")
+    return " · ".join(parts)
+
+
 class ClickyApp(QObject):
     """Main orchestrator. Owns all services + signals + worker lifecycle."""
 
@@ -395,6 +425,13 @@ class ClickyApp(QObject):
     sig_clear_annotations = pyqtSignal()
     # One plain-language sentence for the tray when a provider call fails.
     sig_notify = pyqtSignal(str)
+    # Side island: what was asked, each sentence as it goes to the voice, the
+    # time/cost chip, a short note instead of an answer, and the end of a turn.
+    sig_island_transcript = pyqtSignal(str)
+    sig_island_say = pyqtSignal(str)
+    sig_island_meta = pyqtSignal(str)
+    sig_island_note = pyqtSignal(str)
+    sig_island_done = pyqtSignal()
 
     def __init__(
         self,
@@ -471,6 +508,11 @@ class ClickyApp(QObject):
         self.sig_hide_spinner.connect(self._on_hide_spinner)
         self.sig_show_annotations.connect(self._on_show_annotations)
         self.sig_clear_annotations.connect(self._on_clear_annotations)
+        self.sig_island_transcript.connect(lambda text: self._island("island_transcript", text))
+        self.sig_island_say.connect(lambda text: self._island("island_say", text))
+        self.sig_island_meta.connect(lambda text: self._island("island_meta", text))
+        self.sig_island_note.connect(lambda text: self._island("island_note", text))
+        self.sig_island_done.connect(lambda: self._island("island_done"))
 
     def start(self) -> None:
         """Initialize overlay + hotkey and begin listening.
@@ -481,6 +523,9 @@ class ClickyApp(QObject):
         """
         if self._overlay is None:
             self._overlay = OverlayController()
+        if getattr(self._overlay, "island", None) is not None:
+            from island import model_label
+            self._overlay.island.model_name = model_label(getattr(self._ai, "model_id", "") or "")
         if self._hotkey is None:
             self._hotkey = PushToTalkHotkey(
                 on_press=lambda: self.sig_pressed.emit(),
@@ -624,6 +669,7 @@ class ClickyApp(QObject):
                 return
             self._notice_times[message] = now
         self.sig_notify.emit(message)
+        self.sig_island_note.emit(message)
 
     def _warm_connections(self) -> None:
         self._ai.warm()
@@ -825,7 +871,7 @@ class ClickyApp(QObject):
             try:
                 import io as _io
                 import base64 as _b64
-                # Hide overlay so the model never sees our own blue cursor.
+                # Hide overlay so the model never sees our own avatar.
                 self.sig_hide_overlay.emit()
                 threading.Event().wait(0.05)
                 captures = capture_all_screens()
@@ -846,6 +892,7 @@ class ClickyApp(QObject):
                 _log(f"REALTIME: release failed: {exc}")
             return
         _log("RELEASE handler START (Qt main thread)")
+        self._released_at = time.monotonic()
         # LISTENING → THINKING transition: hide waveform, show spinner at the
         # current cursor position. Cursor polygon stays hidden while spinner
         # runs; it reappears when pipeline hides spinner + fires bezier.
@@ -942,7 +989,9 @@ class ClickyApp(QObject):
             if not transcript.strip():
                 dbg.log("NO SPEECH DETECTED, skipping interaction")
                 _log("No speech detected, skipping.")
+                self.sig_island_note.emit("I didn't catch that. Hold the keys and try again?")
                 return
+            self.sig_island_transcript.emit(transcript)
 
             if cancel.is_set():
                 return
@@ -1080,6 +1129,7 @@ class ClickyApp(QObject):
             stage = "AI"
             with self._ai.ask_stream(**_ask_kwargs) as stream:
                 first_token = True
+                first_sentence_s = None
                 for delta in stream.text_deltas():
                     if cancel.is_set():
                         return
@@ -1095,10 +1145,17 @@ class ClickyApp(QObject):
                             if cancel.is_set():
                                 return
                             self._tts.speak_sentence(s)
+                            self.sig_island_say.emit(s)
+                            if first_sentence_s is None:
+                                first_sentence_s = time.monotonic() - getattr(self, "_released_at", time.monotonic())
                             flushed.append(s)
 
                 result = stream.final_result()
-                dbg.log(f"LLM: usage {stream.usage()}")
+                usage = stream.usage()
+                dbg.log(f"LLM: usage {usage}")
+                self.sig_island_meta.emit(
+                    _answer_meta(first_sentence_s, getattr(self._ai, "model_id", ""), usage)
+                )
 
             if cancel.is_set():
                 return
@@ -1140,6 +1197,7 @@ class ClickyApp(QObject):
                 if tail:
                     dbg.log(f"TTS: flushing tail ({len(tail)} chars)")
                     self._tts.speak_sentence(tail)
+                    self.sig_island_say.emit(tail)
 
             if cancel.is_set():
                 return
@@ -1320,6 +1378,8 @@ class ClickyApp(QObject):
             # Prevents a stuck-spinning arc if anything above raises before
             # the normal hide_spinner emit fires.
             self.sig_hide_spinner.emit()
+            if not cancel.is_set():
+                self.sig_island_done.emit()
             # Kept open a little longer: the first audio often plays after the
             # model has finished, and its "first audible chunk" line belongs here.
             closer = threading.Timer(20.0, dbg.close)
@@ -1327,6 +1387,10 @@ class ClickyApp(QObject):
             closer.start()
 
     # --- Signal slot handlers (run on Qt main thread) ---
+
+    def _island(self, method: str, *args) -> None:
+        if self._overlay is not None and hasattr(self._overlay, method):
+            getattr(self._overlay, method)(*args)
 
     def _on_hide_overlay(self) -> None:
         if self._overlay:
@@ -1573,7 +1637,7 @@ def _resolve_tts_credentials() -> tuple[str, str | None]:
     the selected provider. Returned to __main__ which dispatches via
     tts.create_tts_client(provider, api_key).
     """
-    provider = resolve_setting("TTS_PROVIDER", default="cartesia")
+    provider = resolve_setting("TTS_PROVIDER", default=DEFAULT_TTS_PROVIDER)
     if provider == "kokoro":
         return provider, ""  # local offline TTS, no API key
     if provider == "elevenlabs":
@@ -1588,7 +1652,7 @@ def _resolve_stt_credentials() -> tuple[str, str]:
     _resolve_tts_credentials. faster-whisper is local offline (no key).
     Resolved fresh (env→keyring) so a Settings change is honored on restart.
     """
-    provider = resolve_setting("STT_PROVIDER", default="cartesia")
+    provider = resolve_setting("STT_PROVIDER", default=DEFAULT_STT_PROVIDER)
     if provider in ("faster-whisper", "local"):
         return "faster-whisper", ""
     if provider == "assemblyai":
@@ -1725,7 +1789,7 @@ if __name__ == "__main__":
         ctypes.windll.user32.MessageBoxW(
             None,
             "Clicky Windows is already running.\n\n"
-            "Look for the blue cursor icon in your system tray "
+            "Look for your buddy's icon in your system tray "
             "(bottom-right corner of your screen). Right-click it "
             "for the Settings and Quit menu.",
             "Clicky already running",
@@ -1740,16 +1804,13 @@ if __name__ == "__main__":
 
     set_dpi_awareness()
     qt_app = QApplication(sys.argv)
-    # App-level icon, used by Qt for any window that doesn't set its
-    # own (overlay, future dialogs). Belt-and-suspenders alongside
-    # clicky.spec's `icon=` (which embeds the icon as a Windows EXE
-    # resource for taskbar/Alt-Tab/etc). Path resolved via __file__
-    # so it works in both dev and bundled EXE.
-    from pathlib import Path as _Path
-    from PyQt6.QtGui import QIcon as _QIcon
-    _icon_path = _Path(__file__).parent / "assets" / "clicky_tray.ico"
-    if _icon_path.is_file():
-        qt_app.setWindowIcon(_QIcon(str(_icon_path)))
+    # Fonts, the app-wide stylesheet and the window icon all follow the
+    # chosen avatar's theme, and switch with it. clicky.spec's `icon=` still
+    # embeds assets/clicky_tray.ico as the EXE's own icon.
+    import theme
+    theme.apply(qt_app)
+    qt_app.setWindowIcon(theme.avatar_icon(theme.current_avatar_id()))
+    theme.on_avatar_changed(lambda avatar_id: qt_app.setWindowIcon(theme.avatar_icon(avatar_id)))
     # Tray-only mode: closing the overlay (or any internal window)
     # must NOT exit the app; only the Quit menu item should.
     qt_app.setQuitOnLastWindowClosed(False)

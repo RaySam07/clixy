@@ -1627,9 +1627,15 @@ class TestPlainLanguageFailures:
 
 
 class TestListeningProvider:
-    def test_new_installs_listen_with_cartesia(self, mocker):
+    def test_new_installs_listen_locally(self, mocker):
         from app import _resolve_stt_credentials
         mocker.patch("app.resolve_setting", side_effect=lambda name, default=None: default)
+        mocker.patch("app.resolve_api_key", side_effect=lambda name: {"CARTESIA_API_KEY": "cart"}.get(name))
+        assert _resolve_stt_credentials() == ("faster-whisper", "")
+
+    def test_a_saved_cartesia_choice_is_kept(self, mocker):
+        from app import _resolve_stt_credentials
+        mocker.patch("app.resolve_setting", return_value="cartesia")
         mocker.patch("app.resolve_api_key", side_effect=lambda name: {"CARTESIA_API_KEY": "cart"}.get(name))
         assert _resolve_stt_credentials() == ("cartesia", "cart")
 
@@ -1921,3 +1927,20 @@ class TestChimeNeverBlocksThePress:
             release.set()
             for t in threads:
                 t.join(2)
+
+
+class TestAnswerMeta:
+    """The island's chip: time to first sentence and the rough cost."""
+
+    def test_haiku_cost_and_time(self):
+        from app import _answer_meta
+        text = _answer_meta(2.14, "anthropic/claude-haiku-5-5", {"input": 3000, "output": 80})
+        assert text == "2.1s · $0.0003"
+
+    def test_unknown_model_shows_only_time(self):
+        from app import _answer_meta
+        assert _answer_meta(1.0, "gpt-6.1-sol", {"input": 10, "output": 10}) == "1.0s"
+
+    def test_nothing_known_gives_an_empty_chip(self):
+        from app import _answer_meta
+        assert _answer_meta(None, "gpt-6.1-sol", {}) == ""

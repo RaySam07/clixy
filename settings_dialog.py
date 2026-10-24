@@ -29,9 +29,10 @@ from pathlib import Path
 
 import keyring
 
-from PyQt6.QtCore import QUrl
-from PyQt6.QtGui import QDesktopServices, QIcon
+from PyQt6.QtCore import QSize, Qt, QUrl
+from PyQt6.QtGui import QDesktopServices, QIcon, QPixmap
 from PyQt6.QtWidgets import (
+    QButtonGroup,
     QCheckBox,
     QComboBox,
     QDialog,
@@ -41,9 +42,12 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
+
+import theme
 
 from config import KEYRING_SERVICE, OLLAMA_HOST
 
@@ -221,7 +225,7 @@ _PROVIDER_CATEGORIES: tuple[_ProviderCategory, ...] = (
                 hide_key_field=True,  # truly local, no key field at all
             ),
         ),
-        default_index=0,
+        default_index=2,  # local: your voice stays on this PC
     ),
     _ProviderCategory(
         category_key="TTS",
@@ -250,7 +254,7 @@ _PROVIDER_CATEGORIES: tuple[_ProviderCategory, ...] = (
                 hide_key_field=True,  # truly local, no key field at all
             ),
         ),
-        default_index=0,
+        default_index=2,  # local: speaks offline, no key
     ),
 )
 
@@ -280,7 +284,7 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Clicky Settings")
         self.setModal(True)
-        self.setMinimumWidth(520)
+        self.setMinimumWidth(560)
         # Use the tray icon as the window icon for visual consistency.
         # Path resolved via __file__ so it works inside both the dev
         # checkout (CWD = repo root) AND the bundled EXE (CWD =
@@ -315,12 +319,21 @@ class SettingsDialog(QDialog):
         self._category_widgets: dict[str, QWidget] = {}
         self._realtime_note: QLabel | None = None
         self._draw_checkbox: QCheckBox | None = None
+        # Avatar picked in this dialog. Clicking one previews its theme live;
+        # Cancel puts the previous one back.
+        self._avatar_at_open = theme.current_avatar_id()
+        self._avatar_buttons: dict[str, QToolButton] = {}
+        self._header_avatar: QLabel | None = None
         self._build_ui()
 
     # ---------- UI construction -----------------------------------------
 
     def _build_ui(self) -> None:
         outer = QVBoxLayout(self)
+        outer.setContentsMargins(22, 18, 22, 18)
+        outer.setSpacing(8)
+        outer.addLayout(self._build_header())
+        outer.addWidget(self._build_avatar_picker())
 
         # Lean privacy framing, two sentences; a multi-line splash reads as
         # too loud. On the cloud defaults, screenshots and audio go straight
@@ -329,11 +342,12 @@ class SettingsDialog(QDialog):
         # telemetry"): denying something the user never suspected reads as
         # defensive.
         privacy = QLabel(
-            "🔒 Keys stored locally, encrypted by Windows Credential Manager. "
-            "Your screen, your voice and Clicky's notes for the current app go to the providers you pick below."
+            "🔒 Keys stay on this PC, encrypted by Windows Credential Manager. "
+            "Your screen, your question and Clicky's notes for the current app go to the AI you pick; "
+            "with the local options your voice stays on this PC."
         )
         privacy.setWordWrap(True)
-        privacy.setStyleSheet("color: gray; padding-bottom: 4px;")
+        privacy.setObjectName("clickyMuted")
         outer.addWidget(privacy)
 
         for category in _PROVIDER_CATEGORIES:
@@ -366,6 +380,7 @@ class SettingsDialog(QDialog):
         )
         self._buttons.accepted.connect(self._on_save)
         self._buttons.rejected.connect(self.reject)
+        self._buttons.button(QDialogButtonBox.StandardButton.Save).setObjectName("clickyPrimary")
         outer.addWidget(self._buttons)
         self._update_save_enabled()
 
@@ -377,7 +392,8 @@ class SettingsDialog(QDialog):
         v = QVBoxLayout(container)
         v.setContentsMargins(0, 4, 0, 8)
 
-        label = QLabel(f"<b>{category.label}</b>")
+        label = QLabel(category.label)
+        label.setObjectName("clickySection")
         v.addWidget(label)
 
         # Resolve currently-selected provider for this category.
@@ -427,7 +443,7 @@ class SettingsDialog(QDialog):
         v.addWidget(key_input)
 
         share_note = QLabel()
-        share_note.setStyleSheet("color: gray;")
+        share_note.setObjectName("clickyMuted")
         share_note.setVisible(False)
         self._share_notes[category.category_key] = share_note
         v.addWidget(share_note)
@@ -454,7 +470,7 @@ class SettingsDialog(QDialog):
                 "STT + TTS aren't used in this mode."
             )
             note.setWordWrap(True)
-            note.setStyleSheet("color: #2563eb; padding-top: 2px;")
+            note.setObjectName("clickyNote")
             v.addWidget(note)
             self._realtime_note = note
             current_provider = category.providers[selected_index]
@@ -784,7 +800,81 @@ class SettingsDialog(QDialog):
                 "ANNOTATION_MODE",
                 "on" if self._draw_checkbox.isChecked() else "off",
             )
+        theme.set_avatar(theme.current_avatar_id())  # persists the picked avatar
+        self._avatar_at_open = theme.current_avatar_id()
         self.accept()
+
+    def reject(self) -> None:
+        """Cancel also undoes an avatar previewed in this dialog."""
+        if theme.current_avatar_id() != self._avatar_at_open:
+            theme.set_avatar(self._avatar_at_open, persist=False)
+        super().reject()
+
+    # ---------- Header + avatar picker ------------------------------------
+
+    def _build_header(self) -> QHBoxLayout:
+        row = QHBoxLayout()
+        row.setSpacing(14)
+        self._header_avatar = QLabel()
+        self._header_avatar.setFixedSize(64, 64)
+        self._refresh_header_avatar()
+        row.addWidget(self._header_avatar)
+        text = QVBoxLayout()
+        text.setSpacing(2)
+        title = QLabel("CLICKY")
+        title.setObjectName("clickyTitle")
+        text.addWidget(title)
+        subtitle = QLabel("Hold Ctrl+Alt+Space, ask out loud, let go. I'll point and tell you.")
+        subtitle.setObjectName("clickySubtitle")
+        subtitle.setWordWrap(True)
+        text.addWidget(subtitle)
+        row.addLayout(text, stretch=1)
+        return row
+
+    def _refresh_header_avatar(self) -> None:
+        if self._header_avatar is None:
+            return
+        dpr = self.devicePixelRatioF() or 1.0
+        image = theme.avatar_image(theme.current_avatar_id(), round(64 * dpr))
+        pixmap = QPixmap.fromImage(image)
+        pixmap.setDevicePixelRatio(dpr)
+        self._header_avatar.setPixmap(pixmap)
+
+    def _build_avatar_picker(self) -> QWidget:
+        container = QWidget()
+        v = QVBoxLayout(container)
+        v.setContentsMargins(0, 6, 0, 2)
+        label = QLabel("Your buddy")
+        label.setObjectName("clickySection")
+        v.addWidget(label)
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        group = QButtonGroup(container)
+        group.setExclusive(True)
+        for av in theme.AVATARS:
+            button = QToolButton()
+            button.setObjectName("clickyAvatar")
+            button.setCheckable(True)
+            button.setChecked(av.id == theme.current_avatar_id())
+            button.setIcon(theme.avatar_icon(av.id))
+            button.setIconSize(QSize(40, 40))
+            button.setText(av.name)
+            button.setToolTip(f"{av.name}: {av.tagline} · {av.palette.name} theme")
+            button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
+            button.setFixedHeight(92)
+            button.setMinimumWidth(92)
+            button.clicked.connect(lambda _checked=False, avatar_id=av.id: self._on_avatar_picked(avatar_id))
+            group.addButton(button)
+            row.addWidget(button)
+            self._avatar_buttons[av.id] = button
+        v.addLayout(row)
+        v.addSpacing(6)
+        return container
+
+    def _on_avatar_picked(self, avatar_id: str) -> None:
+        """Preview the avatar and its theme right away; Save keeps it."""
+        theme.set_avatar(avatar_id, persist=False)
+        self._refresh_header_avatar()
 
     def _confirm_ollama_compat(self, model: str) -> bool:
         """Pre-save Ollama compatibility check (Issue #1).

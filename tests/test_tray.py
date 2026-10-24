@@ -25,13 +25,13 @@ def test_tray_module_importable():
 
 
 class TestClickyTrayMenu:
-    """The tray menu must have exactly 4 visible actions in this order:
-    Settings... / Open Knowledge Folder / Open Memory Folder / Quit
-    Clicky. The Quit action's callback must be the on_quit kwarg passed
-    at construction time."""
+    """The tray menu must have exactly 6 visible items in this order:
+    Settings... / Avatar / Open Knowledge Folder / Open Memory Folder /
+    Forget My History... / Quit Clicky. The Quit action's callback must be
+    the on_quit kwarg passed at construction time."""
 
-    def test_menu_has_four_actions_in_order(self, qapp, mocker):
-        """The 4 visible menu items + 1 separator. Verified by reading
+    def test_menu_has_six_items_in_order(self, qapp, mocker):
+        """The 6 visible menu items + 1 separator. Verified by reading
         QMenu.actions() in order."""
         from tray import ClickyTray
         on_quit = mocker.MagicMock()
@@ -42,8 +42,10 @@ class TestClickyTrayMenu:
         labels = [a.text() for a in actions]
         assert labels == [
             "Settings...",
+            "Avatar",
             "Open Knowledge Folder",
             "Open Memory Folder",
+            "Forget My History...",
             "Quit Clicky",
         ]
 
@@ -132,3 +134,22 @@ class TestClickyTrayMenu:
                 on_quit=mocker.MagicMock(),
                 on_settings=mocker.MagicMock(),
             )
+
+
+def test_forget_history_clears_memory_index_and_debug_but_not_the_kb(tmp_path, monkeypatch):
+    import tray
+    home = tmp_path / ".clicky-windows"
+    memory, debug, kb = home / "memory", home / "debug", tmp_path / "Clicky Wiki"
+    for folder in (memory, debug / "2026-10-24_X", kb):
+        folder.mkdir(parents=True)
+    (memory / "excel.exe.md").write_text("asked about pivots")
+    (debug / "2026-10-24_X" / "interaction.log").write_text("log")
+    (home / "index.db").write_text("db")
+    (kb / "excel.exe.md").write_text("my manual")
+    monkeypatch.setattr(tray, "MEMORY_DIR", memory)
+    monkeypatch.setattr(tray, "INDEX_DB_PATH", home / "index.db")
+
+    assert tray.forget_history() == []
+    assert list(memory.iterdir()) == [] and list(debug.iterdir()) == []
+    assert not (home / "index.db").exists()
+    assert (kb / "excel.exe.md").exists()

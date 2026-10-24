@@ -237,22 +237,26 @@ class _MockOverlayWindow:
         pass
 
 
-# --- Cursor polygon geometry --------------------------------------------------
+# --- Avatar tip anchoring ----------------------------------------------------
 
-class TestCursorPolygonGeometry:
-    """Tests for the _CURSOR_VERTICES constant used by OverlayWindow.paintEvent."""
+class TestAvatarTip:
+    """The avatar's tip cell (0, 0) is the pointer: its top-left corner is the
+    pixel the model asked for, so it must be there in every frame and mood."""
 
-    def test_tip_is_at_origin(self):
-        """First vertex (the tip) must be (0, 0) so the tip anchors at pointer_pos."""
-        from overlay import _CURSOR_VERTICES
-        assert _CURSOR_VERTICES[0] == (0, 0)
+    def test_every_avatar_frame_and_mood_has_the_tip_cell(self):
+        import theme
+        for av in theme.AVATARS:
+            for frame in range(0, 120, 7):
+                for mood in theme.MOODS:
+                    cells = {cell for cell, _color in theme.sprite(av.id, frame, mood)}
+                    assert (0, 0) in cells, (av.id, frame, mood)
 
-    def test_all_vertices_within_bounding_box(self):
-        """All vertices within a reasonable bounding box."""
-        from overlay import _CURSOR_VERTICES
-        for dx, dy in _CURSOR_VERTICES:
-            assert 0 <= dx <= 30, f"dx={dx} out of bounds"
-            assert 0 <= dy <= 30, f"dy={dy} out of bounds"
+    def test_avatars_stay_cursor_sized(self):
+        import theme
+        for av in theme.AVATARS:
+            min_x, min_y, max_x, max_y = theme.sprite_bounds(av.id)
+            assert -4 <= min_x and -6 <= min_y, (av.id, min_x, min_y)
+            assert max_x <= 20 and max_y <= 20, (av.id, max_x, max_y)
 
 
 class TestOverlayControllerLookup:

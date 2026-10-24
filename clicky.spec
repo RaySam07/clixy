@@ -93,8 +93,14 @@ a = Analysis(
         # lookup. Without this entry, the .ico is missing from the
         # bundle and the tray icon shows blank.
         ("assets/clicky_tray.ico", "assets"),
+        # Nunito (UI) and Silkscreen (pixel titles), both SIL OFL; theme.py
+        # loads them from assets/fonts at startup.
+        ("assets/fonts", "assets/fonts"),
     ],
     hiddenimports=[
+        # Look and feel: imported lazily by overlay.py / app.py.
+        "theme",
+        "island",
         # Qt 6 sub-modules: PyInstaller's hook misses some by default.
         "PyQt6.QtCore",
         "PyQt6.QtGui",

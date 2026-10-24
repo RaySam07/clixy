@@ -241,12 +241,18 @@ def default_llm_provider() -> str:
             return provider
     return "openai"
 
-STT_PROVIDER: str = resolve_setting("STT_PROVIDER", default="cartesia")
+DEFAULT_STT_PROVIDER: str = "faster-whisper"
+DEFAULT_TTS_PROVIDER: str = "kokoro"
+"""Listening and voice run on this PC unless chosen otherwise: your voice
+never leaves the machine and no key is needed. Cartesia (one key for both)
+is the faster cloud option in Settings."""
+
+STT_PROVIDER: str = resolve_setting("STT_PROVIDER", default=DEFAULT_STT_PROVIDER)
 """Which STT subclass to construct."""
 
-TTS_PROVIDER: str = resolve_setting("TTS_PROVIDER", default="cartesia")
-"""Which TTS subclass to construct: "cartesia" (default), "elevenlabs" or
-"kokoro". User switches via Settings dialog dropdown."""
+TTS_PROVIDER: str = resolve_setting("TTS_PROVIDER", default=DEFAULT_TTS_PROVIDER)
+"""Which TTS subclass to construct: "kokoro" (default, local), "cartesia" or
+"elevenlabs". User switches via Settings dialog dropdown."""
 
 LLM_PROVIDER: str = resolve_setting("LLM_PROVIDER", default=default_llm_provider())
 """Which LLM subclass to construct. Settings dialog dropdown writes this.
@@ -272,6 +278,11 @@ import (env→keyring→default); app.py reads this cached constant per interact
 rather than calling resolve_setting on the hot path, so there is no
 per-interaction keyring read/write latency. Set it in .env and restart to
 toggle."""
+
+DEBUG_LOG: bool = resolve_setting("DEBUG_LOG", default="off").lower() == "on"
+"""Write a per-question log (what you asked, what Clicky answered, timings) to
+~/.clicky-windows/debug/. Off by default so your questions aren't kept on
+disk; set DEBUG_LOG=on when you need it for a bug report."""
 
 DEBUG_SCREENSHOTS: bool = resolve_setting("DEBUG_SCREENSHOTS", default="off").lower() == "on"
 """Keep a copy of each screenshot in the debug folder. Off by default: the

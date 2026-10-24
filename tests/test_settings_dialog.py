@@ -76,9 +76,18 @@ class TestRequiredKeysPresent:
     def test_one_missing_returns_false(self, monkeypatch, fake_keyring):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "a")
         monkeypatch.setenv("ASSEMBLYAI_API_KEY", "b")
+        monkeypatch.setenv("TTS_PROVIDER", "cartesia")
         monkeypatch.delenv("CARTESIA_API_KEY", raising=False)
         from settings_dialog import required_keys_present
         assert required_keys_present() is False
+
+    def test_a_new_install_needs_only_the_ai_key(self, monkeypatch, fake_keyring):
+        """Listening and voice default to the local providers, which need no key."""
+        for name in ("STT_PROVIDER", "TTS_PROVIDER", "CARTESIA_API_KEY", "ASSEMBLYAI_API_KEY"):
+            monkeypatch.delenv(name, raising=False)
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "a")
+        from settings_dialog import required_keys_present
+        assert required_keys_present() is True
 
     def test_all_in_keyring_no_env_returns_true(
         self, monkeypatch, fake_keyring
@@ -168,7 +177,7 @@ class TestProviderCategoriesData:
         assert [p.provider_id for p in stt.providers] == [
             "cartesia", "assemblyai", "faster-whisper",
         ]
-        assert stt.default_index == 0  # Cartesia, the same key as the voice
+        assert stt.default_index == 2  # local: the voice stays on this PC
 
     def test_tts_category_has_cartesia_and_elevenlabs(self):
         from settings_dialog import _PROVIDER_CATEGORIES
@@ -176,7 +185,7 @@ class TestProviderCategoriesData:
         assert [p.provider_id for p in tts.providers] == [
             "cartesia", "elevenlabs", "kokoro",
         ]
-        assert tts.default_index == 0  # Cartesia default
+        assert tts.default_index == 2  # local Kokoro
 
     def test_each_provider_has_env_var_and_signup_url(self):
         """Every provider has a non-empty display name + keyring slot + signup
@@ -302,14 +311,15 @@ class TestSettingsDialogRender:
         assert llm_dropdown.itemData(llm_dropdown.currentIndex()) == "openai"
 
     def test_stt_dropdown_lists_cartesia_first(self, qapp, mocker):
-        """STT dropdown has Cartesia (default), AssemblyAI and Local (faster-whisper)."""
+        """STT dropdown has Cartesia, AssemblyAI and Local (faster-whisper),
+        and a new install starts on the local one."""
         mocker.patch("settings_dialog.keyring.get_password", return_value=None)
         from settings_dialog import SettingsDialog
         dlg = SettingsDialog()
         stt_dropdown = dlg._dropdowns["STT"]
         ids = [stt_dropdown.itemData(i) for i in range(stt_dropdown.count())]
         assert ids == ["cartesia", "assemblyai", "faster-whisper"]
-        assert stt_dropdown.currentIndex() == 0
+        assert stt_dropdown.currentData() == "faster-whisper"
 
 class TestSettingsDialogDropdownSwap:
     """Switching the TTS dropdown from Cartesia → ElevenLabs must:
@@ -323,6 +333,7 @@ class TestSettingsDialogDropdownSwap:
     ):
         # Pre-populate keyring with both Cartesia and ElevenLabs keys.
         store = {
+            ("clicky-windows", "TTS_PROVIDER"): "cartesia",
             ("clicky-windows", "CARTESIA_API_KEY"): "sk_car_existing",
             ("clicky-windows", "ELEVENLABS_API_KEY"): "eleven_existing",
         }
@@ -348,6 +359,7 @@ class TestSettingsDialogDropdownSwap:
         self, qapp, mocker, monkeypatch
     ):
         store = {
+            ("clicky-windows", "TTS_PROVIDER"): "cartesia",
             ("clicky-windows", "CARTESIA_API_KEY"): "sk_car_existing",
             # No ElevenLabs key stored.
         }
@@ -422,7 +434,7 @@ class TestSettingsDialogSave:
 
         from settings_dialog import SettingsDialog
         dlg = SettingsDialog()
-        # Stay on Cartesia (default index 0).
+        dlg._dropdowns["TTS"].setCurrentIndex(_dropdown_index(dlg._dropdowns["TTS"], "cartesia"))
         dlg._key_inputs["LLM"].setText("a")
         dlg._key_inputs["STT"].setText("a")
         dlg._key_inputs["TTS"].setText("sk_car_value")
@@ -605,12 +617,12 @@ class TestSetupChecks:
 
 
 class TestTwoKeySetup:
-    """New installs need two keys: one for the AI model, one Cartesia key that
-    covers both listening and the voice."""
+    """With Cartesia picked for both, one Cartesia key covers listening and
+    the voice, so the cloud setup needs two keys (AI model + Cartesia)."""
 
     @pytest.fixture
     def stored(self, monkeypatch):
-        values: dict[str, str] = {}
+        values: dict[str, str] = {"STT_PROVIDER": "cartesia", "TTS_PROVIDER": "cartesia"}
         for name in ("LLM_PROVIDER", "STT_PROVIDER", "TTS_PROVIDER", "ANTHROPIC_API_KEY",
                      "ASSEMBLYAI_API_KEY", "CARTESIA_API_KEY", "ELEVENLABS_API_KEY"):
             monkeypatch.delenv(name, raising=False)
@@ -618,10 +630,12 @@ class TestTwoKeySetup:
         monkeypatch.setattr("keyring.set_password", lambda s, n, v: values.update({n: v}))
         return values
 
-    def test_listening_defaults_to_cartesia(self, qapp, stored):
+    def test_a_new_install_listens_and_speaks_locally(self, qapp, stored):
         from settings_dialog import SettingsDialog
+        stored.clear()
         dlg = SettingsDialog()
-        assert dlg._dropdowns["STT"].currentData() == "cartesia"
+        assert dlg._dropdowns["STT"].currentData() == "faster-whisper"
+        assert dlg._dropdowns["TTS"].currentData() == "kokoro"
 
     def test_one_cartesia_key_covers_listening_and_voice(self, qapp, stored):
         from PyQt6.QtWidgets import QDialogButtonBox
@@ -733,7 +747,8 @@ class TestOpenAIFirst:
 
 class TestSharedKeyEdits:
     def test_an_edited_shared_key_survives_the_rows_splitting(self, qapp, monkeypatch):
-        values = {"CARTESIA_API_KEY": "old-cartesia", "OPENAI_API_KEY": "sk-proj-x"}
+        values = {"CARTESIA_API_KEY": "old-cartesia", "OPENAI_API_KEY": "sk-proj-x",
+                  "STT_PROVIDER": "cartesia", "TTS_PROVIDER": "cartesia"}
         for name in ("LLM_PROVIDER", "STT_PROVIDER", "TTS_PROVIDER"):
             monkeypatch.delenv(name, raising=False)
         monkeypatch.setattr("keyring.get_password", lambda s, n: values.get(n))
