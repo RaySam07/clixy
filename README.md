@@ -2,6 +2,8 @@
   <img src="docs/media/banner.png" alt="Clixy: a pixel buddy that lives on your Windows screen" width="100%" />
 </p>
 
+<h1 align="center">Clixy: the AI buddy that draws on your Windows screen</h1>
+
 <p align="center">
   <a href="https://github.com/RaySam07/clixy/releases/latest/download/Clixy-Setup.exe"><img src="https://img.shields.io/badge/Download%20for%20Windows-Clixy--Setup.exe-ff5a3d?style=for-the-badge&logo=windows&logoColor=white" alt="Download Clixy for Windows" /></a>
 </p>
@@ -28,6 +30,13 @@ Stuck in an app, a spreadsheet, a maths problem or a video? Ask your buddy.</p>
 <p align="center">
   <img src="docs/media/draws-on-screen.gif" width="860" alt="Asked about a Fourier transform video, the fire buddy flies over and draws a box around the frequency graph, with a label placed where it's easy to read" />
 </p>
+
+### Ask about anything on your screen
+
+- **Any app:** "how do I freeze the top row?", "where's export in Premiere?"
+- **Homework:** "show me the radius", "what are these angles?"
+- **Videos and docs:** "what is this graph showing?"
+- **Errors:** "what does this message mean, and what do I click?"
 
 ---
 
@@ -162,6 +171,18 @@ Ideas and pull requests welcome: see [CONTRIBUTING.md](CONTRIBUTING.md).
 <p align="center">
   <a href="https://star-history.com/#RaySam07/clixy&Date"><img src="https://api.star-history.com/svg?repos=RaySam07/clixy&type=Date" width="560" alt="Star history" /></a>
 </p>
+
+## FAQ
+
+**Is it free?** Yes. Clixy is free and MIT licensed. You pay your AI provider directly for what you use: a fraction of a cent per question with Claude Haiku 5.5.
+
+**Does it watch my screen?** No. It captures the screen only while you hold the shortcut, and that screenshot plus your question go only to the AI you chose. There's no Clixy server and no telemetry.
+
+**Which AI does it use?** Claude Haiku 5.5 by default. OpenRouter, OpenAI, Google Gemini and local models through Ollama work too (Settings › Advanced).
+
+**Mac or Linux?** Windows 10 and 11 for now. On a Mac, try [Clicky](https://github.com/farzaa/clicky) by Farza, which inspired Clixy.
+
+**Can I change the shortcut or the buddy?** Yes, both in Settings, any time.
 
 ## Acknowledgements
 
