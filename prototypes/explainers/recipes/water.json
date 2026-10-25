@@ -1,0 +1,441 @@
+{
+  "title": "The water cycle",
+  "subtitle": "the same water, going round for 4 billion years",
+  "backdrop": "backdrop_water.png",
+  "duration": 12,
+  "floor": false,
+  "camera": {
+    "target": [
+      0.3,
+      1.25,
+      0.2
+    ],
+    "distance": 11.5,
+    "elevation": 22,
+    "azimuth": [
+      -24,
+      18
+    ],
+    "fov": 34,
+    "light": [
+      5,
+      7,
+      -1
+    ],
+    "shadowExtent": 5
+  },
+  "parts": [
+    {
+      "id": "base",
+      "type": "box",
+      "at": [
+        0,
+        -0.45,
+        0
+      ],
+      "size": [
+        8,
+        0.6,
+        5
+      ],
+      "color": "#5a4636"
+    },
+    {
+      "id": "land",
+      "type": "terrain",
+      "at": [
+        0,
+        0,
+        0
+      ],
+      "size": [
+        8,
+        5
+      ],
+      "height": 1.9,
+      "peak": [
+        -2.1,
+        -0.7
+      ]
+    },
+    {
+      "id": "sea",
+      "type": "water",
+      "at": [
+        0,
+        0.03,
+        0
+      ],
+      "size": [
+        8,
+        5
+      ]
+    },
+    {
+      "id": "river",
+      "type": "river",
+      "path": [
+        [
+          -1.9,
+          1.15,
+          -0.5
+        ],
+        [
+          -1.4,
+          0.75,
+          -0.1
+        ],
+        [
+          -0.6,
+          0.4,
+          0.3
+        ],
+        [
+          0.3,
+          0.16,
+          0.6
+        ],
+        [
+          1.0,
+          0.05,
+          0.8
+        ]
+      ],
+      "radius": 0.07
+    },
+    {
+      "id": "sun",
+      "type": "sun",
+      "at": [
+        3.3,
+        3.3,
+        -1.6
+      ],
+      "radius": 0.42
+    },
+    {
+      "id": "cloud1",
+      "type": "cloud",
+      "at": [
+        1.2,
+        2.55,
+        -0.3
+      ],
+      "scale": 0.42
+    },
+    {
+      "id": "cloud2",
+      "type": "cloud",
+      "at": [
+        -1.6,
+        2.85,
+        -0.75
+      ],
+      "scale": 0.58,
+      "color": "#d5dbe8"
+    },
+    {
+      "id": "cloud3",
+      "type": "cloud",
+      "at": [
+        2.7,
+        2.35,
+        0.7
+      ],
+      "scale": 0.32
+    },
+    {
+      "id": "evap",
+      "type": "particles",
+      "path": [
+        [
+          2.3,
+          0.08,
+          0.5
+        ],
+        [
+          1.9,
+          1.2,
+          0.3
+        ],
+        [
+          1.3,
+          2.3,
+          -0.2
+        ]
+      ],
+      "color": "#a9d6ff",
+      "size": 0.05,
+      "count": 34,
+      "speed": 0.2,
+      "spread": 0.35,
+      "window": [
+        0,
+        3.2
+      ]
+    },
+    {
+      "id": "drift",
+      "type": "particles",
+      "path": [
+        [
+          1.1,
+          2.6,
+          -0.3
+        ],
+        [
+          -0.2,
+          2.85,
+          -0.55
+        ],
+        [
+          -1.4,
+          2.95,
+          -0.75
+        ]
+      ],
+      "color": "#eef4ff",
+      "size": 0.045,
+      "count": 26,
+      "speed": 0.3,
+      "spread": 0.12,
+      "window": [
+        3,
+        6.2
+      ]
+    },
+    {
+      "id": "rain",
+      "type": "particles",
+      "path": [
+        [
+          -1.6,
+          2.55,
+          -0.75
+        ],
+        [
+          -1.65,
+          1.6,
+          -0.72
+        ],
+        [
+          -1.7,
+          0.9,
+          -0.7
+        ]
+      ],
+      "color": "#4aa3ff",
+      "size": 0.035,
+      "count": 44,
+      "speed": 0.7,
+      "spread": 0.45,
+      "window": [
+        6,
+        9.2
+      ]
+    },
+    {
+      "id": "runoff",
+      "type": "particles",
+      "path": [
+        [
+          -1.9,
+          1.2,
+          -0.5
+        ],
+        [
+          -1.4,
+          0.8,
+          -0.1
+        ],
+        [
+          -0.6,
+          0.45,
+          0.3
+        ],
+        [
+          0.3,
+          0.2,
+          0.6
+        ],
+        [
+          1.1,
+          0.08,
+          0.8
+        ]
+      ],
+      "color": "#2f8cff",
+      "size": 0.05,
+      "count": 28,
+      "speed": 0.28,
+      "spread": 0.03,
+      "window": [
+        9,
+        12
+      ]
+    }
+  ],
+  "motions": [
+    {
+      "part": "cloud1",
+      "drift": {
+        "axis": [
+          -1,
+          0,
+          0
+        ],
+        "amplitude": 0.5,
+        "period": 12
+      }
+    },
+    {
+      "part": "cloud2",
+      "bob": {
+        "speed": 1.2,
+        "amplitude": 0.04
+      }
+    },
+    {
+      "part": "cloud3",
+      "drift": {
+        "axis": [
+          -1,
+          0,
+          0.2
+        ],
+        "amplitude": 0.3,
+        "period": 9
+      }
+    },
+    {
+      "part": "sun",
+      "bob": {
+        "speed": 0.8,
+        "amplitude": 0.05
+      }
+    }
+  ],
+  "steps": [
+    {
+      "from": 0,
+      "to": 3,
+      "name": "Evaporation",
+      "caption": "The sun warms the sea and water rises as invisible vapour.",
+      "highlight": [
+        "sun",
+        "evap"
+      ]
+    },
+    {
+      "from": 3,
+      "to": 6,
+      "name": "Condensation",
+      "caption": "Up high it cools into tiny droplets, and they gather as clouds.",
+      "highlight": [
+        "cloud1",
+        "cloud2",
+        "drift"
+      ]
+    },
+    {
+      "from": 6,
+      "to": 9,
+      "name": "Precipitation",
+      "caption": "Clouds get heavy and it rains, or snows on the peak.",
+      "highlight": [
+        "cloud2",
+        "rain"
+      ]
+    },
+    {
+      "from": 9,
+      "to": 12,
+      "name": "Collection",
+      "caption": "Rivers carry it all back to the sea, and round it goes.",
+      "highlight": [
+        "river",
+        "runoff"
+      ]
+    }
+  ],
+  "labels": [
+    {
+      "text": "Sun",
+      "part": "sun",
+      "anchor": [
+        0,
+        -0.5,
+        0
+      ],
+      "offset": [
+        -170,
+        50
+      ]
+    },
+    {
+      "text": "Evaporation",
+      "part": "evap",
+      "anchor": [
+        1.9,
+        1.2,
+        0.3
+      ],
+      "offset": [
+        240,
+        20
+      ]
+    },
+    {
+      "text": "Clouds",
+      "part": "cloud1",
+      "anchor": [
+        0,
+        0.35,
+        0
+      ],
+      "offset": [
+        -210,
+        -80
+      ]
+    },
+    {
+      "text": "Rain",
+      "part": "rain",
+      "anchor": [
+        -1.65,
+        1.7,
+        -0.72
+      ],
+      "offset": [
+        -230,
+        -20
+      ]
+    },
+    {
+      "text": "River",
+      "part": "river",
+      "anchor": [
+        -0.6,
+        0.42,
+        0.3
+      ],
+      "offset": [
+        -210,
+        140
+      ]
+    },
+    {
+      "text": "Sea",
+      "part": "sea",
+      "anchor": [
+        1.9,
+        0.0,
+        1.4
+      ],
+      "offset": [
+        200,
+        90
+      ]
+    }
+  ]
+}

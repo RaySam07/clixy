@@ -1,0 +1,52 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  @font-face { font-family: Manrope; font-weight: 200; src: url(Manrope-ExtraLight.ttf); }
+  @font-face { font-family: Manrope; font-weight: 300; src: url(Manrope-Light.ttf); }
+  @font-face { font-family: Manrope; font-weight: 400; src: url(Manrope-Regular.ttf); }
+  @font-face { font-family: Manrope; font-weight: 500; src: url(Manrope-Medium.ttf); }
+  @font-face { font-family: Manrope; font-weight: 600; src: url(Manrope-SemiBold.ttf); }
+  html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; font-family: Manrope, sans-serif; }
+  body { background: #0a0a12 center / cover no-repeat; }
+  #stage, #overlay, #leaders { position: absolute; inset: 0; }
+  #title { position: absolute; left: 72px; top: 52px; color: #fff; font-weight: 200; font-size: 50px; letter-spacing: -0.5px; }
+  #subtitle { position: absolute; left: 75px; top: 122px; color: rgba(255,255,255,.62); font-size: 22px; }
+  #dots { position: absolute; left: 75px; top: 166px; display: flex; gap: 10px; }
+  #dots i { width: 12px; height: 12px; border-radius: 6px; background: rgba(255,255,255,.35); transition: none; }
+  #dots i.on { width: 46px; background: #ff5a3d; }
+  #leaders path { fill: none; stroke: rgba(255,255,255,.55); stroke-width: 1.8; }
+  #leaders path.on { stroke: #ff5a3d; stroke-width: 2.6; }
+  #leaders circle { fill: #fff; }
+  #leaders circle.on { fill: #ff5a3d; }
+  .label { position: absolute; transform: translate(-50%, -50%); background: #fff; color: #0a0a12; font-weight: 500;
+           font-size: 25px; padding: 10px 22px; border-radius: 999px; white-space: nowrap;
+           box-shadow: 0 6px 18px rgba(0,0,0,.35); }
+  .label.on { background: #ff5a3d; color: #fff; transform: translate(-50%, -50%) scale(1.06); }
+  #caption { position: absolute; left: 50%; bottom: 52px; transform: translateX(-50%); display: flex; align-items: center;
+             gap: 22px; background: rgba(0,0,0,.88); border-radius: 999px; padding: 14px 34px 14px 14px; white-space: nowrap; }
+  #caption-chip { background: #ffd23f; color: #0a0a12; font-weight: 600; font-size: 24px; padding: 12px 20px; border-radius: 999px; }
+  #caption-text { color: #fff; font-weight: 300; font-size: 28px; }
+  #ember { position: absolute; width: 84px; image-rendering: pixelated; filter: drop-shadow(0 8px 14px rgba(255,120,40,.45)); }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<svg id="leaders" width="1920" height="1080"></svg>
+<div id="overlay">
+  <div id="title"></div><div id="subtitle"></div><div id="dots"></div>
+  <div id="labels"></div>
+  <div id="caption"><span id="caption-chip"></span><span id="caption-text"></span></div>
+  <img id="ember" src="ember.png">
+</div>
+<script type="module">
+  import { start } from './clixy3d.js';
+  const name = new URLSearchParams(location.search).get('recipe');
+  const recipe = await (await fetch(`recipes/${name}.json`)).json();
+  document.body.style.backgroundImage = `url(${recipe.backdrop})`;
+  await document.fonts.ready;
+  start(recipe);
+</script>
+</body>
+</html>

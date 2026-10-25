@@ -1,0 +1,375 @@
+{
+  "title": "The solar system",
+  "subtitle": "not to scale: the real thing is mostly empty space",
+  "backdrop": "backdrop_plain.png",
+  "duration": 12,
+  "floor": false,
+  "camera": {
+    "target": [
+      0,
+      -0.6,
+      0
+    ],
+    "distance": 21,
+    "elevation": 36,
+    "azimuth": [
+      -20,
+      20
+    ],
+    "fov": 34,
+    "light": [
+      0,
+      3,
+      0
+    ],
+    "shadowExtent": 9
+  },
+  "parts": [
+    {
+      "id": "sun",
+      "type": "sun",
+      "at": [
+        0,
+        0,
+        0
+      ],
+      "radius": 1.1
+    },
+    {
+      "id": "orbit_mercury",
+      "type": "torus",
+      "at": [
+        0,
+        0,
+        0
+      ],
+      "radius": 2.0,
+      "tube": 0.012,
+      "axis": "y",
+      "material": "glow",
+      "color": "#3a3d52"
+    },
+    {
+      "id": "orbit_venus",
+      "type": "torus",
+      "at": [
+        0,
+        0,
+        0
+      ],
+      "radius": 2.8,
+      "tube": 0.012,
+      "axis": "y",
+      "material": "glow",
+      "color": "#3a3d52"
+    },
+    {
+      "id": "orbit_earth",
+      "type": "torus",
+      "at": [
+        0,
+        0,
+        0
+      ],
+      "radius": 3.7,
+      "tube": 0.012,
+      "axis": "y",
+      "material": "glow",
+      "color": "#3a3d52"
+    },
+    {
+      "id": "orbit_mars",
+      "type": "torus",
+      "at": [
+        0,
+        0,
+        0
+      ],
+      "radius": 4.6,
+      "tube": 0.012,
+      "axis": "y",
+      "material": "glow",
+      "color": "#3a3d52"
+    },
+    {
+      "id": "orbit_jupiter",
+      "type": "torus",
+      "at": [
+        0,
+        0,
+        0
+      ],
+      "radius": 6.4,
+      "tube": 0.014,
+      "axis": "y",
+      "material": "glow",
+      "color": "#3a3d52"
+    },
+    {
+      "id": "orbit_saturn",
+      "type": "torus",
+      "at": [
+        0,
+        0,
+        0
+      ],
+      "radius": 8.2,
+      "tube": 0.014,
+      "axis": "y",
+      "material": "glow",
+      "color": "#3a3d52"
+    },
+    {
+      "id": "mercury",
+      "type": "sphere",
+      "at": [
+        2.0,
+        0,
+        0
+      ],
+      "radius": 0.14,
+      "color": "#a7a3a0"
+    },
+    {
+      "id": "venus",
+      "type": "sphere",
+      "at": [
+        2.8,
+        0,
+        0
+      ],
+      "radius": 0.24,
+      "color": "#e8c37a"
+    },
+    {
+      "id": "earth",
+      "type": "sphere",
+      "at": [
+        3.7,
+        0,
+        0
+      ],
+      "radius": 0.26,
+      "color": "#2f8cff"
+    },
+    {
+      "id": "mars",
+      "type": "sphere",
+      "at": [
+        4.6,
+        0,
+        0
+      ],
+      "radius": 0.18,
+      "color": "#e0623c"
+    },
+    {
+      "id": "jupiter",
+      "type": "sphere",
+      "at": [
+        6.4,
+        0,
+        0
+      ],
+      "radius": 0.62,
+      "color": "#d9a066"
+    },
+    {
+      "id": "saturn",
+      "type": "sphere",
+      "at": [
+        8.2,
+        0,
+        0
+      ],
+      "radius": 0.52,
+      "color": "#e8d39b"
+    },
+    {
+      "id": "saturn_ring",
+      "type": "torus",
+      "attach": "saturn",
+      "at": [
+        0,
+        0,
+        0
+      ],
+      "radius": 0.85,
+      "tube": 0.08,
+      "rotation": [
+        1.3,
+        0.2,
+        0
+      ],
+      "color": "#cdb98a"
+    }
+  ],
+  "motions": [
+    {
+      "part": "mercury",
+      "orbit": {
+        "radius": 2.0,
+        "period": 3,
+        "phase": 0.5
+      }
+    },
+    {
+      "part": "venus",
+      "orbit": {
+        "radius": 2.8,
+        "period": 5,
+        "phase": 2.0
+      }
+    },
+    {
+      "part": "earth",
+      "orbit": {
+        "radius": 3.7,
+        "period": 7,
+        "phase": 4.0
+      }
+    },
+    {
+      "part": "mars",
+      "orbit": {
+        "radius": 4.6,
+        "period": 10,
+        "phase": 1.0
+      }
+    },
+    {
+      "part": "jupiter",
+      "orbit": {
+        "radius": 6.4,
+        "period": 20,
+        "phase": 3.0
+      }
+    },
+    {
+      "part": "saturn",
+      "orbit": {
+        "radius": 8.2,
+        "period": 30,
+        "phase": 5.2
+      }
+    },
+    {
+      "part": "sun",
+      "rotate": {
+        "axis": "y",
+        "rps": 0.05
+      }
+    }
+  ],
+  "steps": [
+    {
+      "from": 0,
+      "to": 3,
+      "name": "The Sun",
+      "caption": "The Sun holds 99.8% of the solar system's mass. Everything orbits it.",
+      "highlight": [
+        "sun"
+      ]
+    },
+    {
+      "from": 3,
+      "to": 6,
+      "name": "Rocky planets",
+      "caption": "Mercury, Venus, Earth and Mars: small, rocky, close in.",
+      "highlight": [
+        "mercury",
+        "venus",
+        "earth",
+        "mars"
+      ]
+    },
+    {
+      "from": 6,
+      "to": 9,
+      "name": "Gas giants",
+      "caption": "Jupiter and Saturn: huge balls of gas, far out.",
+      "highlight": [
+        "jupiter",
+        "saturn",
+        "saturn_ring"
+      ]
+    },
+    {
+      "from": 9,
+      "to": 12,
+      "name": "Speed",
+      "caption": "The closer a planet, the faster it goes round.",
+      "highlight": [
+        "mercury",
+        "earth"
+      ]
+    }
+  ],
+  "labels": [
+    {
+      "text": "Sun",
+      "part": "sun",
+      "anchor": [
+        0,
+        1.3,
+        0
+      ],
+      "offset": [
+        0,
+        -70
+      ]
+    },
+    {
+      "text": "Earth",
+      "part": "earth",
+      "anchor": [
+        0,
+        0.3,
+        0
+      ],
+      "offset": [
+        0,
+        -60
+      ]
+    },
+    {
+      "text": "Mars",
+      "part": "mars",
+      "anchor": [
+        0,
+        0.25,
+        0
+      ],
+      "offset": [
+        0,
+        -60
+      ]
+    },
+    {
+      "text": "Jupiter",
+      "part": "jupiter",
+      "anchor": [
+        0,
+        0.7,
+        0
+      ],
+      "offset": [
+        0,
+        -60
+      ]
+    },
+    {
+      "text": "Saturn",
+      "part": "saturn",
+      "anchor": [
+        0,
+        0.7,
+        0
+      ],
+      "offset": [
+        0,
+        -60
+      ]
+    }
+  ]
+}
