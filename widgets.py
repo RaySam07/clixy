@@ -72,7 +72,7 @@ class Toggle(QCheckBox):
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         track = QRectF(0.5, 0.5, self.width() - 1, self.height() - 1)
         on = max(0.0, min(1.0, self._pos))
-        off_c, on_c = QColor(227, 222, 206), theme.INK
+        off_c, on_c = QColor(227, 222, 206), theme.CORAL
         mix = QColor(
             int(off_c.red() + (on_c.red() - off_c.red()) * on),
             int(off_c.green() + (on_c.green() - off_c.green()) * on),
@@ -83,7 +83,7 @@ class Toggle(QCheckBox):
         p.drawRoundedRect(track, track.height() / 2, track.height() / 2)
         knob_d = self.height() - 8
         x = 4 + (self.width() - 8 - knob_d) * self._pos
-        p.setBrush(theme.BUTTER if on > 0.5 else QColor(255, 255, 255))
+        p.setBrush(QColor(255, 255, 255))
         p.drawEllipse(QRectF(x, 4, knob_d, knob_d))
         if self.hasFocus():
             p.setPen(QPen(theme.INK, 1.5, Qt.PenStyle.DotLine))
@@ -207,11 +207,19 @@ class KeyCaps(QWidget):
             return 78.0, 24.0, 14.0, 26.0
         return 30.0, 11.0, 6.0, 12.0
 
+    def _logo(self, label: str, fm: QFontMetricsF) -> float:
+        """Width of the Windows logo drawn before "Win", with its gap."""
+        return fm.capHeight() * 1.05 + (10 if self._big else 5) if label == "Win" else 0.0
+
+    def _cap_width(self, label: str, fm: QFontMetricsF) -> float:
+        cap_h, pad, _gap, _plus = self._metrics()
+        return max(cap_h, fm.horizontalAdvance(label) + self._logo(label, fm) + 2 * pad)
+
     def _resize(self) -> None:
         cap_h, pad, gap, plus = self._metrics()
         fm = QFontMetricsF(self._cap_font())
         labels = self._labels()
-        width = sum(max(cap_h, fm.horizontalAdvance(l) + 2 * pad) for l in labels)
+        width = sum(self._cap_width(l, fm) for l in labels)
         width += (len(labels) - 1) * (2 * gap + plus)
         self.setFixedSize(int(math.ceil(width)) + 4, int(cap_h) + 6)
 
@@ -273,21 +281,37 @@ class KeyCaps(QWidget):
         x = 2.0
         labels = self._labels()
         blink_on = not self._recording or int(time.monotonic() * 2) % 2 == 0
+        hot = not self._recording
         for i, label in enumerate(labels):
-            w = max(cap_h, fm.horizontalAdvance(label) + 2 * pad)
+            w = self._cap_width(label, fm)
             lip = 5.0 if self._big else 3.0
             radius = 16.0 if self._big else 8.0
-            body = QRectF(x, 1, w, cap_h)
-            ink = theme.INK if not self._recording else QColor(theme.INK.red(), theme.INK.green(), theme.INK.blue(), 255 if blink_on else 110)
+            body = QRectF(x, 1, w, cap_h - lip)
             p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(ink)
-            p.drawRoundedRect(body.adjusted(0, lip, 0, lip), radius, radius)  # the key's lip
-            p.setBrush(theme.BUTTER if (self._big and not self._recording) else theme.CARD)
-            p.setPen(QPen(ink, 1.5))
-            p.drawRoundedRect(body.adjusted(0.75, 0.75, -0.75, -0.75), radius, radius)
+            p.setBrush(QColor(0, 0, 0, 34))
+            p.drawRoundedRect(body.translated(0, lip + 1.5), radius, radius)  # shadow
+            p.setBrush(QColor(190, 60, 36) if hot else QColor(206, 200, 187))
+            p.drawRoundedRect(body.translated(0, lip), radius, radius)  # the key's side
+            p.setBrush(theme.CORAL if hot else theme.CARD)
+            p.setPen(QPen(QColor(255, 130, 100) if hot else QColor(228, 222, 210), 1.2))
+            p.drawRoundedRect(body.adjusted(0.6, 0.6, -0.6, -0.6), radius, radius)
+            if hot:
+                text_color = QColor(255, 255, 255)
+            else:
+                text_color = QColor(theme.INK)
+                text_color.setAlpha(255 if blink_on else 110)
             p.setFont(font)
-            p.setPen(ink)
-            p.drawText(body, Qt.AlignmentFlag.AlignCenter, label)
+            p.setPen(text_color)
+            logo = self._logo(label, fm)
+            if logo:
+                size = fm.capHeight() * 1.05
+                left = body.center().x() - (logo + fm.horizontalAdvance(label)) / 2
+                _paint_windows_logo(p, QRectF(left, body.center().y() - size / 2, size, size), text_color)
+                p.setPen(text_color)
+                p.drawText(QRectF(left + logo, body.top(), body.width(), body.height()),
+                           Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, label)
+            else:
+                p.drawText(body, Qt.AlignmentFlag.AlignCenter, label)
             x += w
             if i < len(labels) - 1:
                 p.setPen(theme.MUTED)
@@ -297,6 +321,20 @@ class KeyCaps(QWidget):
 
 
 # --- Paste zone -------------------------------------------------------------------
+
+def _paint_windows_logo(p: QPainter, rect: QRectF, color: QColor) -> None:
+    """The four-pane Windows logo, filling ``rect``."""
+    gap = rect.width() * 0.1
+    pane = (rect.width() - gap) / 2
+    p.save()
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(color)
+    for dx in (0, 1):
+        for dy in (0, 1):
+            p.drawRoundedRect(QRectF(rect.left() + dx * (pane + gap), rect.top() + dy * (pane + gap), pane, pane),
+                              pane * 0.15, pane * 0.15)
+    p.restore()
+
 
 def classify_key(text: str) -> tuple[str | None, str]:
     """What kind of key this looks like. Returns (kind, message):
@@ -394,8 +432,8 @@ class PasteZone(QFrame):
         rect = QRectF(self.rect()).adjusted(1, 1, -1, -1)
         bad = self._kind is None and bool(self.text())
         if self._kind:
-            p.setBrush(theme.BUTTER)
-            p.setPen(QPen(theme.INK, 1.5))
+            p.setBrush(theme.SUN)
+            p.setPen(QPen(theme.INK, 2.2))
         else:
             p.setBrush(theme.PAPER)
             pen = QPen(theme.CORAL if bad else QColor(207, 200, 182), 1.5)
@@ -409,7 +447,7 @@ class PasteZone(QFrame):
             p.setBrush(theme.INK)
             p.drawEllipse(c, r, r)
             if self._check > 0.6:
-                p.setPen(QPen(theme.BUTTER, 2.4, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+                p.setPen(QPen(theme.SUN, 2.4, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
                 path = QPainterPath(QPointF(c.x() - 6, c.y() + 0.5))
                 path.lineTo(QPointF(c.x() - 1.5, c.y() + 5))
                 path.lineTo(QPointF(c.x() + 6.5, c.y() - 4.5))
@@ -493,7 +531,7 @@ class MicMeter(QWidget):
         for i in range(n):
             weight = 1 - abs(i - mid) / (mid + 1)
             h = 3 + (self.height() - 3) * self._level * weight * (0.75 + 0.25 * math.sin(t * 11 + i))
-            p.setBrush(theme.INK if self._level > 0.03 else QColor(217, 212, 198))
+            p.setBrush(theme.CORAL if self._level > 0.03 else QColor(217, 212, 198))
             p.drawRoundedRect(QRectF(i * (w + gap), (self.height() - h) / 2, w, h), w / 2, w / 2)
 
 
@@ -623,8 +661,9 @@ class BuddyView(QWidget):
 
 
 class AvatarCard(QAbstractButton):
-    """A buddy, alive: blinks and flickers at its own 10 fps, with its name
-    and what it is. Checked: butter with an ink border."""
+    """A buddy, alive: blinks and flickers at its own 10 fps, on a card in
+    its own bold colour with its name and what it is. Checked: an ink ring
+    and a "with you" chip."""
 
     def __init__(self, avatar_id: str, *, compact: bool = False, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -646,28 +685,50 @@ class AvatarCard(QAbstractButton):
     def paintEvent(self, _event) -> None:
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        rect = QRectF(self.rect()).adjusted(1, 1, -1, -1)
+        outer = QRectF(self.rect()).adjusted(1.5, 1.5, -1.5, -1.5)
+        rect = outer.adjusted(4, 4, -4, -4)
         checked = self.isChecked()
         hover = self.underMouse()
-        p.setBrush(theme.BUTTER if checked else theme.CARD)
-        p.setPen(QPen(theme.INK if (checked or hover) else theme.LINE, 2 if checked else 1.5))
-        p.drawRoundedRect(rect, 22, 22)
-
         av = theme.avatar(self.avatar_id)
-        top_h = rect.height() - (48 if self._compact else 58)
-        mood = "happy" if checked else ("listening" if hover else "idle")
-        theme.paint_avatar_in(p, QRectF(rect.left(), rect.top() + 6, rect.width(), top_h),
-                              t=time.monotonic() - self._t0, mood=mood, avatar_id=self.avatar_id,
-                              scale=1.8 if self._compact else 2.4, device_pixel_ratio=self.devicePixelRatioF())
+        pal = av.palette
+        radius = 18 if self._compact else 22
+        if checked or hover:
+            ring = QColor(theme.INK)
+            ring.setAlphaF(1.0 if checked else 0.35)
+            p.setPen(QPen(ring, 3))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawRoundedRect(outer, radius + 4, radius + 4)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(pal.flood)
+        p.drawRoundedRect(rect, radius, radius)
 
-        p.setPen(theme.INK)
-        p.setFont(theme.ui_font(11 if self._compact else 12, QFont.Weight.DemiBold))
-        name_y = rect.bottom() - (34 if self._compact else 47)
-        p.drawText(QRectF(rect.left(), name_y, rect.width(), 20), Qt.AlignmentFlag.AlignHCenter, av.name)
+        top_h = rect.height() - (44 if self._compact else 60)
+        mood = "happy" if checked else ("listening" if hover else "idle")
+        theme.paint_avatar_in(p, QRectF(rect.left(), rect.top() + (10 if checked else 4), rect.width(), top_h),
+                              t=time.monotonic() - self._t0, mood=mood, avatar_id=self.avatar_id,
+                              scale=1.7 if self._compact else 2.3, device_pixel_ratio=self.devicePixelRatioF())
+
+        p.setPen(pal.on_flood)
+        p.setFont(theme.display_font(12.5 if self._compact else 14))
+        name_y = rect.bottom() - (32 if self._compact else 52)
+        p.drawText(QRectF(rect.left(), name_y, rect.width(), 24), Qt.AlignmentFlag.AlignHCenter, av.name)
         if not self._compact:
-            p.setPen(theme.MUTED)
-            p.setFont(theme.ui_font(9, QFont.Weight.Light))
-            p.drawText(QRectF(rect.left() + 8, name_y + 19, rect.width() - 16, 18), Qt.AlignmentFlag.AlignHCenter, av.tagline)
+            sub = QColor(pal.on_flood)
+            sub.setAlphaF(0.78)
+            p.setPen(sub)
+            p.setFont(theme.ui_font(8.5, QFont.Weight.Normal))
+            p.drawText(QRectF(rect.left() + 8, name_y + 27, rect.width() - 16, 18), Qt.AlignmentFlag.AlignHCenter,
+                       av.tagline)
+        if checked:
+            font = theme.ui_font(7.5 if self._compact else 8.5, QFont.Weight.Medium)
+            fm = QFontMetricsF(font)
+            chip = QRectF(rect.left() + 8, rect.top() + 8, fm.horizontalAdvance("with you") + 16, fm.height() + 6)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor(255, 255, 255))
+            p.drawRoundedRect(chip, chip.height() / 2, chip.height() / 2)
+            p.setPen(theme.INK)
+            p.setFont(font)
+            p.drawText(chip, Qt.AlignmentFlag.AlignCenter, "with you")
 
 
 def buddy_grid(on_pick, *, compact: bool = False, columns: int = 3) -> tuple[QWidget, dict[str, AvatarCard]]:

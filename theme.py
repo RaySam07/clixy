@@ -49,6 +49,8 @@ INK = _c(10, 10, 18)
 PAPER = _c(245, 242, 234)
 CARD = _c(255, 255, 255)
 BUTTER = _c(255, 241, 161)
+SUN = _c(255, 210, 63)
+"""Bold yellow for the big cards (the connection, a key that looks right)."""
 CORAL = _c(255, 90, 61)
 LINE = _c(226, 221, 208)
 MIST = _c(241, 237, 226)
@@ -116,13 +118,17 @@ def app_icon() -> QIcon:
 @dataclass(frozen=True)
 class Palette:
     """A buddy's own colors: its glow, its landing burst and the screen-edge
-    glow while you talk. ``glow`` stops run around the screen edge."""
+    glow while you talk. ``glow`` stops run around the screen edge.
+    ``flood`` is the bold colour the app wears for this buddy (the Settings
+    rail, the setup panel, its card), with ``on_flood`` for text on it."""
 
     name: str
     glow: tuple[tuple[float, QColor], ...]
     accent: QColor
     halo: QColor
     dots: tuple[QColor, QColor, QColor]
+    flood: QColor
+    on_flood: QColor
 
 
 CAMPFIRE = Palette(
@@ -132,6 +138,7 @@ CAMPFIRE = Palette(
           (1.00, _c(255, 70, 30))),
     accent=_c(255, 122, 36), halo=_c(255, 120, 30),
     dots=(_c(255, 104, 30), _c(255, 166, 30), _c(255, 218, 80)),
+    flood=_c(255, 106, 31), on_flood=INK,
 )
 
 LAGOON = Palette(
@@ -141,6 +148,7 @@ LAGOON = Palette(
           (1.00, _c(40, 110, 255))),
     accent=_c(62, 190, 255), halo=_c(60, 170, 255),
     dots=(_c(60, 140, 255), _c(60, 200, 255), _c(130, 250, 220)),
+    flood=_c(30, 150, 255), on_flood=INK,
 )
 
 MATCHA = Palette(
@@ -150,6 +158,7 @@ MATCHA = Palette(
           (1.00, _c(60, 170, 90))),
     accent=_c(132, 210, 104), halo=_c(110, 210, 110),
     dots=(_c(80, 180, 90), _c(150, 220, 100), _c(230, 236, 150)),
+    flood=_c(46, 190, 106), on_flood=INK,
 )
 
 MIDNIGHT = Palette(
@@ -159,6 +168,7 @@ MIDNIGHT = Palette(
           (1.00, _c(90, 80, 230))),
     accent=_c(178, 140, 255), halo=_c(150, 110, 255),
     dots=(_c(150, 110, 255), _c(200, 160, 255), _c(255, 212, 100)),
+    flood=_c(112, 84, 255), on_flood=_c(255, 255, 255),
 )
 
 DREAMY = Palette(
@@ -168,6 +178,7 @@ DREAMY = Palette(
           (1.00, _c(170, 150, 255))),
     accent=_c(255, 210, 90), halo=_c(255, 220, 120),
     dots=(_c(160, 150, 255), _c(120, 210, 255), _c(255, 222, 140)),
+    flood=_c(255, 201, 51), on_flood=INK,
 )
 
 
@@ -892,17 +903,19 @@ def _chevron_file() -> str:
 
 def app_stylesheet() -> str:
     ink, paper, card, butter, coral = _hex(INK), _hex(PAPER), _hex(CARD), _hex(BUTTER), _hex(CORAL)
+    sun = _hex(SUN)
     line, mist, muted = _hex(LINE), _hex(MIST), _hex(MUTED)
     chevron = _chevron_file()
-    light, regular, medium, semi = (family(w) for w in (QFont.Weight.Light, QFont.Weight.Normal,
-                                                       QFont.Weight.Medium, QFont.Weight.DemiBold))
+    thin, light, regular, medium, semi = (family(w) for w in (QFont.Weight.ExtraLight, QFont.Weight.Light,
+                                                             QFont.Weight.Normal, QFont.Weight.Medium,
+                                                             QFont.Weight.DemiBold))
     return f"""
 QDialog, QMessageBox {{ background: {paper}; color: {ink}; }}
 QDialog QLabel, QMessageBox QLabel, QDialog QCheckBox {{ color: {ink}; }}
 QMessageBox QLabel#qt_msgbox_label {{ font-family: "{light}"; font-size: 20px; }}
 QMessageBox QLabel#qt_msgbox_informativelabel {{ color: {muted}; }}
 
-QLabel#h1 {{ font-family: "{light}"; font-size: 34px; color: {ink}; }}
+QLabel#h1 {{ font-family: "{thin}"; font-size: 44px; color: {ink}; }}
 QLabel#h2 {{ font-family: "{light}"; font-size: 24px; color: {ink}; }}
 QLabel#lead {{ color: #4a4a57; font-size: 14px; }}
 QLabel#muted {{ color: {muted}; font-size: 13px; }}
@@ -927,12 +940,13 @@ QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical, QScrollBar::add-pa
 QScrollBar::sub-page:vertical {{ height: 0; background: transparent; }}
 QFrame#rows {{ background: {card}; border: 1px solid #e8e2d3; border-radius: 18px; }}
 QFrame#rowSep {{ background: #f1ede2; max-height: 1px; min-height: 1px; border: none; margin: 0 18px; }}
-QFrame#conn {{ background: {butter}; border-radius: 20px; }}
-QLabel#connModel {{ font-family: "{light}"; font-size: 26px; color: {ink}; }}
-QLabel#connChip {{ background: rgba(10, 10, 18, 0.08); border-radius: 10px; padding: 3px 9px; color: {ink}; font-size: 11.5px; }}
-QLabel#whereHere {{ background: {butter}; border-radius: 11px; padding: 4px 11px; color: {ink}; }}
+QFrame#conn {{ background: {sun}; border-radius: 22px; }}
+QLabel#connModel {{ font-family: "{light}"; font-size: 28px; color: {ink}; }}
+QLabel#connChip {{ background: transparent; border: 1.4px solid rgba(10, 10, 18, 0.45); border-radius: 11px;
+    padding: 3px 10px; color: {ink}; font-size: 11.5px; }}
+QLabel#whereHere {{ background: {sun}; border-radius: 11px; padding: 4px 11px; color: {ink}; }}
 QLabel#whereAway {{ background: {mist}; border-radius: 11px; padding: 4px 11px; color: {ink}; }}
-QLabel#liveChip {{ background: {ink}; border-radius: 10px; padding: 3px 9px; color: {butter}; font-size: 11.5px; }}
+QLabel#liveChip {{ background: {ink}; border-radius: 11px; padding: 4px 10px; color: {sun}; font-size: 11.5px; }}
 
 QLineEdit, QComboBox {{
     background: {card}; color: {ink}; min-height: 22px;
@@ -967,6 +981,40 @@ QMenu::item:checked {{ color: {butter}; }}
 QMenu::separator {{ height: 1px; background: #23232e; margin: 5px 10px; }}
 QToolTip {{ background: {ink}; color: #ffffff; border: none; border-radius: 8px; padding: 6px 9px; }}
 """
+
+
+def _rgba(color: QColor, alpha: float) -> str:
+    return f"rgba({color.red()}, {color.green()}, {color.blue()}, {alpha:g})"
+
+
+def rail_stylesheet(palette: Palette | None = None) -> str:
+    """The Settings rail in the buddy's colour: set on the rail itself, so it
+    changes the moment you pick another buddy."""
+    pal = palette or current_palette()
+    fg = pal.on_flood
+    pill_bg, pill_fg = (INK, CARD) if fg == INK else (CARD, INK)
+    light, regular, medium = (family(w) for w in (QFont.Weight.Light, QFont.Weight.Normal, QFont.Weight.Medium))
+    return f"""
+QWidget#rail {{ background: {_hex(pal.flood)}; }}
+QLabel#railWordmark {{ font-family: "{family(QFont.Weight.ExtraLight)}"; font-size: 24px; color: {_hex(fg)}; }}
+QPushButton#nav {{ text-align: left; background: transparent; border: none; border-radius: 19px;
+    padding: 9px 16px; font-family: "{light}"; font-size: 16px; color: {_rgba(fg, 0.82)}; }}
+QPushButton#nav:hover {{ color: {_hex(fg)}; background: {_rgba(fg, 0.1)}; }}
+QPushButton#nav:checked {{ background: {_hex(pill_bg)}; color: {_hex(pill_fg)}; font-family: "{medium}"; }}
+QLabel#railBuddy {{ font-family: "{medium}"; font-size: 12.5px; color: {_hex(fg)}; padding-bottom: 4px; }}
+QLabel#railVersion {{ font-family: "{regular}"; font-size: 10.5px; color: {_rgba(fg, 0.6)}; }}
+"""
+
+
+def heading_html(text: str, accent: str = "") -> str:
+    """A headline in the video's style: ``accent`` (a word in ``text``) in
+    coral, and a coral full stop when the text doesn't end with one."""
+    import html
+    body = html.escape(text.rstrip("."))
+    if accent and accent in text:
+        body = body.replace(html.escape(accent), f'<span style="color:{_hex(CORAL)}">{html.escape(accent)}</span>', 1)
+    dot_color = INK if accent else CORAL
+    return f'{body}<span style="color:{_hex(dot_color)}">.</span>'
 
 
 def apply(app) -> None:

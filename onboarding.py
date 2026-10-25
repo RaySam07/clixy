@@ -1,13 +1,13 @@
 """First launch: three steps, about a minute.
 
 1. Paste your Claude key. A paste zone instead of a text box: it checks the
-   key's shape and turns butter when it looks right.
+   key's shape and turns bold yellow when it looks right.
 2. Say hi to your buddies. Pick who points for you.
 3. Hold to talk. The shortcut as big keycaps; press Change and hold any
    keys you like.
 
-On the left an ink panel carries the step number in big butter type and
-your buddy, alive. Finishing saves the key to Windows Credential Manager
+On the left a panel in your buddy's colour carries the step number in big
+thin type and your buddy, alive; pick another buddy and the panel follows. Finishing saves the key to Windows Credential Manager
 and picks Claude, voice on this PC, the buddy and the shortcut.
 
 Threading: Qt main thread only (modal).
@@ -18,8 +18,8 @@ import time
 
 import keyring
 
-from PyQt6.QtCore import QEasingCurve, QPropertyAnimation, QRectF, Qt, QTimer, QUrl
-from PyQt6.QtGui import QDesktopServices, QFont, QPainter
+from PyQt6.QtCore import QEasingCurve, QPointF, QPropertyAnimation, QRectF, Qt, QTimer, QUrl
+from PyQt6.QtGui import QColor, QDesktopServices, QFont, QPainter, QRadialGradient
 from PyQt6.QtWidgets import (
     QDialog,
     QGraphicsOpacityEffect,
@@ -49,8 +49,8 @@ def needs_onboarding() -> bool:
 
 
 class _ArtPanel(QWidget):
-    """The ink side: mark and wordmark, the step number, what the step is,
-    progress dots, and the buddy at the bottom."""
+    """The bold side, in your buddy's colour: mark and wordmark, the step
+    number, what the step is, progress dots, and the buddy at the bottom."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -64,34 +64,43 @@ class _ArtPanel(QWidget):
     def paintEvent(self, _event) -> None:
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        p.fillRect(self.rect(), theme.INK)
+        pal = theme.current_palette()
+        fg = pal.on_flood
+        dim = QColor(fg)
+        dim.setAlphaF(0.3)
+        p.fillRect(self.rect(), pal.flood)
+        light = QRadialGradient(QPointF(self.width() / 2, self.height() - 130), 260)
+        light.setColorAt(0, QColor(255, 255, 255, 70))
+        light.setColorAt(1, QColor(255, 255, 255, 0))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(light)
+        p.drawEllipse(QPointF(self.width() / 2, self.height() - 130), 260, 260)
         x = 40.0
         theme.paint_avatar_in(p, QRectF(x - 2, 38, 30, 32), t=time.monotonic() - self._t0, mood="happy",
                               avatar_id=theme.LOGO_BUDDY, scale=30 / (18 * theme.CELL),
                               device_pixel_ratio=self.devicePixelRatioF())
-        p.setPen(theme.NOTCH_TEXT)
-        p.setFont(theme.display_font(17))
+        p.setPen(fg)
+        wordmark = theme.ui_font(19, QFont.Weight.ExtraLight)
+        p.setFont(wordmark)
         p.drawText(QRectF(x + 40, 36, 200, 36), Qt.AlignmentFlag.AlignVCenter, "clixy")
 
-        p.setPen(theme.BUTTER)
-        p.setFont(theme.ui_font(96, QFont.Weight.ExtraLight))
-        p.drawText(QRectF(x - 6, 92, 240, 150), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop, str(self.step + 1))
-        p.setPen(theme.NOTCH_TEXT)
-        p.setFont(theme.display_font(16))
-        p.drawText(QRectF(x, 240, 260, 30), Qt.AlignmentFlag.AlignLeft, _STEPS[self.step])
+        p.setFont(theme.ui_font(120, QFont.Weight.ExtraLight))
+        p.drawText(QRectF(x - 8, 78, 240, 190), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop, str(self.step + 1))
+        p.setFont(theme.display_font(19))
+        p.drawText(QRectF(x, 262, 270, 34), Qt.AlignmentFlag.AlignLeft, _STEPS[self.step])
         p.setPen(Qt.PenStyle.NoPen)
         for i in range(len(_STEPS)):
-            p.setBrush(theme.BUTTER if i == self.step else theme.NOTCH_CHIP_DIM)
+            p.setBrush(fg if i == self.step else dim)
             width = 22.0 if i == self.step else 8.0
             dx = sum(30.0 if j == self.step else 16.0 for j in range(i))
-            p.drawRoundedRect(QRectF(x + dx, 286, width, 8), 4, 4)
+            p.drawRoundedRect(QRectF(x + dx, 310, width, 8), 4, 4)
 
-        # The buddy, big and glowing, at the bottom of the panel.
-        area = QRectF(0, self.height() - 210, self.width(), 170)
+        # The buddy, big, at the bottom of the panel.
+        area = QRectF(0, self.height() - 230, self.width(), 190)
         theme.paint_avatar_in(p, area, t=time.monotonic() - self._t0, mood=_MOODS[self.step],
-                              scale=4.0, device_pixel_ratio=self.devicePixelRatioF(), glow=True)
-        p.setPen(theme.NOTCH_MUTED)
-        p.setFont(theme.ui_font(9.5))
+                              scale=5.0, device_pixel_ratio=self.devicePixelRatioF())
+        p.setPen(fg)
+        p.setFont(theme.ui_font(10, QFont.Weight.Medium))
         p.drawText(QRectF(0, self.height() - 40, self.width(), 20), Qt.AlignmentFlag.AlignHCenter,
                    f"{theme.current_avatar().name} says hi")
 
@@ -132,13 +141,15 @@ class Onboarding(QDialog):
 
     # ---------- Steps -------------------------------------------------------------
 
-    def _step(self, title: str, lead: str) -> tuple[QWidget, QVBoxLayout]:
+    def _step(self, title: str, lead: str, accent: str = "") -> tuple[QWidget, QVBoxLayout]:
         page = QWidget()
         v = QVBoxLayout(page)
         v.setContentsMargins(0, 0, 0, 0)
         v.setSpacing(14)
-        h = QLabel(title)
+        h = QLabel(theme.heading_html(title, accent))
         h.setObjectName("h1")
+        h.setTextFormat(Qt.TextFormat.RichText)
+        h.setAccessibleName(title)
         v.addWidget(h)
         label = QLabel(lead)
         label.setObjectName("lead")
@@ -168,7 +179,8 @@ class Onboarding(QDialog):
     def _step_key(self) -> QWidget:
         page, v = self._step(
             "Paste your Claude key.",
-            "Clixy uses Claude Haiku 5.5 to see your screen and answer. About $0.0003 a question.",
+            "Clixy uses Claude Haiku 5.5 to see your screen and answer. A fraction of a cent a question.",
+            accent="Claude",
         )
         self.paste = PasteZone()
         self.paste.keyChanged.connect(lambda _text: self._next_key.setEnabled(self.paste.kind is not None))
@@ -214,6 +226,7 @@ class Onboarding(QDialog):
         page, v = self._step(
             "Say hi to your buddies.",
             "Pick who points for you. Switch any time from the tray.",
+            accent="buddies",
         )
         grid, self.cards = buddy_grid(self._pick, compact=True, columns=3)
         v.addWidget(grid)
@@ -227,6 +240,7 @@ class Onboarding(QDialog):
             "Hold to talk.",
             "Hold these keys, ask out loud, let go. Clixy looks at your screen, "
             "points and tells you.",
+            accent="talk",
         )
         self.caps = KeyCaps(self._hotkey, big=True)
         self.caps.recorded.connect(self._on_recorded)

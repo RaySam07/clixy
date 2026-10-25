@@ -1,7 +1,7 @@
-"""Clicky's Settings window.
+"""Clixy's Settings window.
 
-An ink rail on the left (the mark, the pages, and your buddy at the
-bottom) and one page at a time on the right:
+A rail on the left in your buddy's colour (the mark, the pages, and your
+buddy at the bottom) and one page at a time on the right:
 
 - General: your AI connection as a card (model, status, key ending, cost);
   Replace opens the paste zone. The push-to-talk shortcut as keycaps you
@@ -337,13 +337,17 @@ def _row(title: str, subtitle: str, *controls: QWidget) -> QWidget:
     return row
 
 
-def _heading(text: str, lead: str = "") -> QWidget:
+def _heading(text: str, lead: str = "", accent: str = "") -> QWidget:
+    """A page title in the launch video's style: thin and big, with
+    ``accent`` (a word of it) or the full stop in coral."""
     box = QWidget()
     v = QVBoxLayout(box)
     v.setContentsMargins(0, 0, 0, 6)
     v.setSpacing(6)
-    h1 = QLabel(text)
+    h1 = QLabel(theme.heading_html(text, accent))
     h1.setObjectName("h1")
+    h1.setTextFormat(Qt.TextFormat.RichText)
+    h1.setAccessibleName(text)
     v.addWidget(h1)
     if lead:
         label = QLabel(lead)
@@ -354,7 +358,7 @@ def _heading(text: str, lead: str = "") -> QWidget:
 
 
 class SettingsDialog(QDialog):
-    """Clicky's Settings. ``exec()`` returns Accepted on Save, Rejected on
+    """Clixy's Settings. ``exec()`` returns Accepted on Save, Rejected on
     Cancel. Saved values land in Windows Credential Manager under
     ``KEYRING_SERVICE`` ("clixy"), one entry per setting."""
 
@@ -464,7 +468,9 @@ class SettingsDialog(QDialog):
     def _build_rail(self) -> QWidget:
         rail = QWidget()
         rail.setObjectName("rail")
+        rail.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         rail.setFixedWidth(212)
+        self._rail = rail
         v = QVBoxLayout(rail)
         v.setContentsMargins(20, 28, 16, 20)
         v.setSpacing(4)
@@ -491,7 +497,7 @@ class SettingsDialog(QDialog):
             self._nav[key] = button
         v.addStretch(1)
         # Your buddy keeps you company at the bottom of the rail.
-        self._rail_buddy = BuddyView(84, scale=2.0)
+        self._rail_buddy = BuddyView(128, scale=3.0)
         v.addWidget(self._rail_buddy, alignment=Qt.AlignmentFlag.AlignHCenter)
         self._rail_name = QLabel()
         self._rail_name.setObjectName("railBuddy")
@@ -669,7 +675,7 @@ class SettingsDialog(QDialog):
             return html("Ollama", model), "", "free · on this PC", True
         if provider.provider_id == "anthropic":
             model = resolve_model("ANTHROPIC_MODEL", "claude-haiku-5-5")
-            cost = "≈ $0.0003 a question" if "haiku" in model else ""
+            cost = "< 1¢ a question" if "haiku" in model else ""
             return html("Claude", model_label(model)), key, cost + via, False
         if provider.provider_id == "gemini":
             model = resolve_model("GEMINI_MODEL_VISION", "google/gemini-4-argon")
@@ -726,7 +732,8 @@ class SettingsDialog(QDialog):
         page, v = self._page()
         v.addWidget(_heading(
             "Say hi to your buddies",
-            "Pick who points for you. Each one brings its own colors to the screen glow.",
+            "Pick who points for you. The app and the screen glow wear its colour.",
+            accent="buddies",
         ))
         grid, self._avatar_cards = buddy_grid(self._on_avatar_picked, columns=3)
         v.addWidget(grid)
@@ -741,6 +748,7 @@ class SettingsDialog(QDialog):
     def _refresh_rail_buddy(self) -> None:
         av = theme.current_avatar()
         self._rail_name.setText(f"{av.name} is with you")
+        self._rail.setStyleSheet(theme.rail_stylesheet(av.palette))
 
     # ---------- Look ----------------------------------------------------------
 

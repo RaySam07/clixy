@@ -94,8 +94,8 @@ def test_settings_has_five_pages_and_buddies_say_hi(qapp, stored):
     from settings_dialog import SettingsDialog
     dlg = SettingsDialog()
     assert list(dlg._pages) == ["general", "buddies", "look", "privacy", "advanced"]
-    texts = [label.text() for label in dlg.findChildren(QLabel)]
-    assert "Say hi to your buddies" in texts
+    titles = [label.accessibleName() for label in dlg.findChildren(QLabel)]
+    assert "Say hi to your buddies" in titles
     assert set(dlg._avatar_cards) == {"ember", "splash", "sprout", "mochi", "twinkle"}
 
 
@@ -116,7 +116,7 @@ def test_the_connection_card_shows_claude_and_the_key_ending(qapp, stored):
     dlg = SettingsDialog()
     model, key, cost, local = dlg._connection()
     assert "Claude" in model and "Haiku 5.5" in model
-    assert key == ANT_KEY and "$0.0003" in cost and not local
+    assert key == ANT_KEY and "1¢" in cost and not local
     assert dlg._conn_card.key.text().endswith("3f9a")
 
 
@@ -262,3 +262,38 @@ def test_overlay_applies_glow_and_island_side_live(qapp, monkeypatch):
     finally:
         controller._follow_timer.stop()
         controller.island.close()
+
+
+# --- Bold look: the app wears your buddy's colour ---------------------------------------
+
+def test_every_buddy_has_a_bold_colour_with_readable_text():
+    import theme
+
+    def luminance(c):
+        def lin(v):
+            return v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4
+        return 0.2126 * lin(c.redF()) + 0.7152 * lin(c.greenF()) + 0.0722 * lin(c.blueF())
+
+    for av in theme.AVATARS:
+        a, b = luminance(av.palette.flood), luminance(av.palette.on_flood)
+        contrast = (max(a, b) + 0.05) / (min(a, b) + 0.05)
+        assert contrast >= 4.5, (av.id, round(contrast, 2))   # WCAG AA for body text
+
+
+def test_the_settings_rail_follows_the_buddy(qapp, stored):
+    import theme
+    from settings_dialog import SettingsDialog
+    dlg = SettingsDialog()
+    dlg._on_avatar_picked("mochi")
+    assert theme.MIDNIGHT.flood.name() in dlg._rail.styleSheet()
+    dlg._on_avatar_picked("ember")
+    assert theme.CAMPFIRE.flood.name() in dlg._rail.styleSheet()
+    dlg.reject()
+
+
+def test_headlines_put_one_word_or_the_full_stop_in_coral():
+    import theme
+    coral = theme.CORAL.name()
+    assert theme.heading_html("General").endswith(f'<span style="color:{coral}">.</span>')
+    html = theme.heading_html("Say hi to your buddies", "buddies")
+    assert f'<span style="color:{coral}">buddies</span>' in html and html.startswith("Say hi to your ")

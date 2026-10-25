@@ -50,7 +50,7 @@ Stuck in an app, a spreadsheet, a maths problem or a video? Ask your buddy.</p>
 3. **Say hi to your buddies**, pick one, pick your shortcut, and you're done.
 
 <p align="center">
-  <img src="docs/media/setup.png" width="640" alt="First launch: paste your Claude key into a box that turns yellow with a check mark when it looks right" />
+  <img src="docs/media/setup.png" width="640" alt="First launch: an orange panel with Ember and a big step 1, and a box for your Claude key that turns bold yellow with a check mark when it looks right" />
 </p>
 
 <details>
@@ -110,11 +110,13 @@ Ember, Splash, Sprout, Mochi and Twinkle. Each one blinks, reacts and brings its
   <img src="docs/media/buddies.png" width="860" alt="Ember the campfire, Splash the water drop, Sprout the leaf, Mochi the black cat and Twinkle the star" />
 </p>
 
-### Settings that make sense
+### Settings that wear your buddy's colour
+
+Pick a buddy and the whole app takes its colour: orange for Ember, blue for Splash, green for Sprout, purple for Mochi, gold for Twinkle.
 
 <p align="center">
-  <img src="docs/media/settings-general.png" width="420" alt="Settings: your Claude connection as a card with its status and cost, the shortcut as keycaps, voice on this PC or in the cloud, a microphone picker with a live meter, and drawing on screen" />
-  <img src="docs/media/settings-buddies.png" width="420" alt="Settings: say hi to your buddies" />
+  <img src="docs/media/settings-general.png" width="420" alt="Settings with Ember's orange sidebar: your Claude connection on a yellow card, the shortcut as coral keycaps, voice on this PC or in the cloud, a microphone picker with a live meter, and drawing on screen" />
+  <img src="docs/media/settings-buddies.png" width="420" alt="Settings with Mochi's purple sidebar: the five buddies on cards in their own colours, Mochi marked with you" />
 </p>
 
 ---
