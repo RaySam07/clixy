@@ -70,7 +70,18 @@ function buildTopics() {
 
 export function show(id) {
   if (current) current.dispose();
-  current = new Explainer(id, payload.recipes[id]);
+  current = null;
+  try {
+    current = new Explainer(id, payload.recipes[id]);
+  } catch (e) {
+    // No WebGL: the graphics driver is blocked or off (some VMs, remote desktops).
+    document.body.classList.add('no3d');
+    $('title').textContent = "3D can't start on this PC";
+    $('subtitle').textContent = 'Graphics acceleration is off or blocked here. Updating the graphics driver usually fixes it.';
+    tell('error:webgl');
+    return;
+  }
+  document.body.classList.remove('no3d');
   for (const b of $('topics').children) b.classList.toggle('on', b.dataset.id === id);
   tell(`topic:${id}`);
 }
@@ -253,6 +264,7 @@ class Explainer {
 
   dispose() {
     this.alive = false;
+    if (!this.renderer) return;
     this.unbind();
     this.renderer.domElement.remove();
     this.renderer.dispose();
