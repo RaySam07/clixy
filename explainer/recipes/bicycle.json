@@ -1,0 +1,527 @@
+{
+ "title": "How a bike turns pedals into speed",
+ "subtitle": "one push, a chain, and gears doing the maths",
+ "backdrop": "backdrop_bicycle.png",
+ "duration": 12,
+ "camera": {
+  "target": [
+   0.42,
+   0.44,
+   0.03
+  ],
+  "distance": 2.45,
+  "elevation": 12,
+  "azimuth": [
+   -32,
+   24
+  ],
+  "fov": 34,
+  "light": [
+   2,
+   5,
+   3
+  ],
+  "shadowExtent": 1.4
+ },
+ "floorY": 0,
+ "parts": [
+  {
+   "id": "rear_wheel",
+   "type": "wheel",
+   "at": [
+    0,
+    0.34,
+    0
+   ],
+   "radius": 0.34
+  },
+  {
+   "id": "front_wheel",
+   "type": "wheel",
+   "at": [
+    1.02,
+    0.34,
+    0
+   ],
+   "radius": 0.34
+  },
+  {
+   "id": "chainstay_r",
+   "type": "tube",
+   "from": [
+    0,
+    0.34,
+    0.035
+   ],
+   "to": [
+    0.42,
+    0.28,
+    0.035
+   ],
+   "radius": 0.012
+  },
+  {
+   "id": "chainstay_l",
+   "type": "tube",
+   "from": [
+    0,
+    0.34,
+    -0.035
+   ],
+   "to": [
+    0.42,
+    0.28,
+    -0.035
+   ],
+   "radius": 0.012
+  },
+  {
+   "id": "seatstay_r",
+   "type": "tube",
+   "from": [
+    0,
+    0.34,
+    0.035
+   ],
+   "to": [
+    0.3,
+    0.8,
+    0
+   ],
+   "radius": 0.011
+  },
+  {
+   "id": "seatstay_l",
+   "type": "tube",
+   "from": [
+    0,
+    0.34,
+    -0.035
+   ],
+   "to": [
+    0.3,
+    0.8,
+    0
+   ],
+   "radius": 0.011
+  },
+  {
+   "id": "seat_tube",
+   "type": "tube",
+   "from": [
+    0.42,
+    0.28,
+    0
+   ],
+   "to": [
+    0.3,
+    0.86,
+    0
+   ],
+   "radius": 0.018
+  },
+  {
+   "id": "top_tube",
+   "type": "tube",
+   "from": [
+    0.3,
+    0.8,
+    0
+   ],
+   "to": [
+    0.86,
+    0.82,
+    0
+   ],
+   "radius": 0.017
+  },
+  {
+   "id": "down_tube",
+   "type": "tube",
+   "from": [
+    0.42,
+    0.28,
+    0
+   ],
+   "to": [
+    0.85,
+    0.71,
+    0
+   ],
+   "radius": 0.021
+  },
+  {
+   "id": "head_tube",
+   "type": "tube",
+   "from": [
+    0.84,
+    0.68,
+    0
+   ],
+   "to": [
+    0.88,
+    0.87,
+    0
+   ],
+   "radius": 0.024
+  },
+  {
+   "id": "fork_r",
+   "type": "tube",
+   "from": [
+    0.84,
+    0.7,
+    0.04
+   ],
+   "to": [
+    1.02,
+    0.34,
+    0.04
+   ],
+   "radius": 0.012,
+   "material": "metal"
+  },
+  {
+   "id": "fork_l",
+   "type": "tube",
+   "from": [
+    0.84,
+    0.7,
+    -0.04
+   ],
+   "to": [
+    1.02,
+    0.34,
+    -0.04
+   ],
+   "radius": 0.012,
+   "material": "metal"
+  },
+  {
+   "id": "stem",
+   "type": "tube",
+   "from": [
+    0.88,
+    0.86,
+    0
+   ],
+   "to": [
+    0.92,
+    0.93,
+    0
+   ],
+   "radius": 0.014,
+   "material": "darkmetal"
+  },
+  {
+   "id": "bars",
+   "type": "tube",
+   "from": [
+    0.92,
+    0.93,
+    -0.22
+   ],
+   "to": [
+    0.92,
+    0.93,
+    0.22
+   ],
+   "radius": 0.013,
+   "material": "darkmetal"
+  },
+  {
+   "id": "seat_post",
+   "type": "tube",
+   "from": [
+    0.3,
+    0.86,
+    0
+   ],
+   "to": [
+    0.29,
+    0.93,
+    0
+   ],
+   "radius": 0.012,
+   "material": "metal"
+  },
+  {
+   "id": "saddle",
+   "type": "box",
+   "at": [
+    0.27,
+    0.945,
+    0
+   ],
+   "size": [
+    0.25,
+    0.035,
+    0.1
+   ],
+   "material": "rubber"
+  },
+  {
+   "id": "bb_axle",
+   "type": "tube",
+   "from": [
+    0.42,
+    0.28,
+    -0.17
+   ],
+   "to": [
+    0.42,
+    0.28,
+    0.1
+   ],
+   "radius": 0.012,
+   "material": "darkmetal"
+  },
+  {
+   "id": "chainring",
+   "type": "gear",
+   "at": [
+    0.42,
+    0.28,
+    0.07
+   ],
+   "radius": 0.105,
+   "teeth": 44,
+   "thickness": 0.006,
+   "depth": 0.007
+  },
+  {
+   "id": "cog",
+   "type": "gear",
+   "at": [
+    0,
+    0.34,
+    0.07
+   ],
+   "radius": 0.042,
+   "teeth": 16,
+   "thickness": 0.006,
+   "depth": 0.006
+  },
+  {
+   "id": "crank_r",
+   "type": "box",
+   "attach": "chainring",
+   "at": [
+    0,
+    -0.085,
+    0.018
+   ],
+   "size": [
+    0.028,
+    0.17,
+    0.012
+   ],
+   "material": "metal"
+  },
+  {
+   "id": "pedal_r",
+   "type": "box",
+   "attach": "chainring",
+   "at": [
+    0,
+    -0.17,
+    0.06
+   ],
+   "size": [
+    0.1,
+    0.022,
+    0.07
+   ],
+   "material": "darkmetal"
+  },
+  {
+   "id": "crank_l",
+   "type": "box",
+   "attach": "chainring",
+   "at": [
+    0,
+    0.085,
+    -0.235
+   ],
+   "size": [
+    0.028,
+    0.17,
+    0.012
+   ],
+   "material": "metal"
+  },
+  {
+   "id": "pedal_l",
+   "type": "box",
+   "attach": "chainring",
+   "at": [
+    0,
+    0.17,
+    -0.275
+   ],
+   "size": [
+    0.1,
+    0.022,
+    0.07
+   ],
+   "material": "darkmetal"
+  },
+  {
+   "id": "chain",
+   "type": "chain",
+   "ring": "chainring",
+   "cog": "cog",
+   "pitch": 0.0127
+  }
+ ],
+ "motions": [
+  {
+   "part": "chainring",
+   "rotate": {
+    "axis": "z",
+    "rps": 0.32
+   }
+  },
+  {
+   "part": "cog",
+   "rotate": {
+    "axis": "z",
+    "follow": "chainring",
+    "ratio": 2.75
+   }
+  },
+  {
+   "part": "rear_wheel",
+   "rotate": {
+    "axis": "z",
+    "follow": "cog",
+    "ratio": 1
+   }
+  },
+  {
+   "part": "front_wheel",
+   "rotate": {
+    "axis": "z",
+    "follow": "rear_wheel",
+    "ratio": 1
+   }
+  }
+ ],
+ "steps": [
+  {
+   "from": 0,
+   "to": 3,
+   "name": "Push",
+   "caption": "You push the pedal. The cranks turn the chainring.",
+   "highlight": [
+    "pedal_r",
+    "crank_r",
+    "pedal_l",
+    "crank_l"
+   ]
+  },
+  {
+   "from": 3,
+   "to": 6,
+   "name": "Chainring",
+   "caption": "The 44-tooth chainring pulls the chain along.",
+   "highlight": [
+    "chainring",
+    "chain"
+   ]
+  },
+  {
+   "from": 6,
+   "to": 9,
+   "name": "Rear cog",
+   "caption": "The chain wraps the 16-tooth cog and turns it.",
+   "highlight": [
+    "cog",
+    "chain"
+   ]
+  },
+  {
+   "from": 9,
+   "to": 12,
+   "name": "Wheel",
+   "caption": "44 ÷ 16: one pedal turn spins the wheel 2.75 times.",
+   "highlight": [
+    "rear_wheel",
+    "cog"
+   ]
+  }
+ ],
+ "labels": [
+  {
+   "text": "Pedal",
+   "part": "pedal_r",
+   "offset": [
+    -60,
+    150
+   ],
+   "info": "Your legs push here. The crank arm turns that push into a turning force around the chainring.",
+   "also": [
+    "crank_r",
+    "pedal_l",
+    "crank_l"
+   ]
+  },
+  {
+   "text": "Chainring · 44 teeth",
+   "part": "chainring",
+   "anchor": [
+    0.0,
+    0.1,
+    0.0
+   ],
+   "offset": [
+    230,
+    -150
+   ],
+   "info": "The big gear at the front. 44 teeth means one turn of the pedals pulls 44 links of chain."
+  },
+  {
+   "text": "Chain",
+   "part": "chain",
+   "anchor": [
+    0.2,
+    0.4,
+    0.07
+   ],
+   "offset": [
+    -40,
+    -170
+   ],
+   "info": "Carries the pull from the front gear to the back one. Each link is half an inch long."
+  },
+  {
+   "text": "Rear cog · 16 teeth",
+   "part": "cog",
+   "anchor": [
+    0,
+    0.04,
+    0
+   ],
+   "offset": [
+    -190,
+    -170
+   ],
+   "info": "16 teeth: when the chain pulls 44 links, this cog turns 44 ÷ 16 = 2.75 times."
+  },
+  {
+   "text": "Rear wheel",
+   "part": "rear_wheel",
+   "anchor": [
+    -0.24,
+    -0.2,
+    0
+   ],
+   "offset": [
+    -150,
+    90
+   ],
+   "info": "Bolted to the cog, so it turns 2.75 times for every pedal turn. That's the speed."
+  }
+ ],
+ "short": "Bicycle"
+}

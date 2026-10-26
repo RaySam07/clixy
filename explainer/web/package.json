@@ -1,0 +1,12 @@
+{
+  "name": "clixy-explainer-web",
+  "private": true,
+  "description": "Builds clixy3d.js, the one-file 3D engine the explainer window loads (a classic script, so it runs from file://).",
+  "scripts": {
+    "build": "esbuild src/live.js --bundle --format=iife --minify --legal-comments=eof --target=chrome110 --outfile=clixy3d.js"
+  },
+  "devDependencies": {
+    "esbuild": "0.24.0",
+    "three": "0.160.0"
+  }
+}

@@ -1,0 +1,1067 @@
+{
+ "title": "How a 2-stroke engine works",
+ "short": "2-stroke engine",
+ "subtitle": "a spark every single turn of the crank",
+ "backdrop": "backdrop_plain.png",
+ "duration": 15,
+ "floorY": 0,
+ "camera": {
+  "target": [
+   0.0,
+   1.62,
+   0
+  ],
+  "distance": 9.0,
+  "elevation": 9,
+  "azimuth": [
+   -28,
+   20
+  ],
+  "fov": 34,
+  "light": [
+   3,
+   7,
+   5
+  ],
+  "shadowExtent": 3.2
+ },
+ "parts": [
+  {
+   "id": "crankcase_back",
+   "type": "cylinder",
+   "radius": 0.84,
+   "height": 0.08,
+   "at": [
+    0,
+    0.9,
+    -0.34
+   ],
+   "rotation": [
+    1.5707963267948966,
+    0,
+    0
+   ],
+   "material": "darkmetal",
+   "name": "Crankcase",
+   "info": "The sealed box under the piston. In a 2-stroke it doubles as a pump: the piston squeezes fresh mix out of it."
+  },
+  {
+   "id": "crankcase",
+   "type": "shell",
+   "radius": 0.86,
+   "inner": 0.78,
+   "height": 0.68,
+   "arc": 260,
+   "at": [
+    0,
+    0.9,
+    0
+   ],
+   "rotation": [
+    -1.5707963267948966,
+    0,
+    0
+   ],
+   "color": "#c9ced8",
+   "name": "Crankcase",
+   "info": "The sealed box under the piston. In a 2-stroke it doubles as a pump: the piston squeezes fresh mix out of it."
+  },
+  {
+   "id": "crank",
+   "type": "group",
+   "at": [
+    0,
+    0.9,
+    0
+   ]
+  },
+  {
+   "id": "main_shaft",
+   "type": "cylinder",
+   "radius": 0.08,
+   "height": 0.9,
+   "attach": "crank",
+   "at": [
+    0,
+    0,
+    -0.45
+   ],
+   "rotation": [
+    1.5707963267948966,
+    0,
+    0
+   ],
+   "material": "metal"
+  },
+  {
+   "id": "crank_web",
+   "type": "cylinder",
+   "radius": 0.22,
+   "height": 0.1,
+   "attach": "crank",
+   "at": [
+    0,
+    0,
+    -0.16
+   ],
+   "rotation": [
+    1.5707963267948966,
+    0,
+    0
+   ],
+   "material": "darkmetal"
+  },
+  {
+   "id": "counterweight",
+   "type": "shell",
+   "radius": 0.5,
+   "inner": 0,
+   "height": 0.1,
+   "arc": 180,
+   "attach": "crank",
+   "at": [
+    0,
+    0,
+    -0.16
+   ],
+   "rotation": [
+    -1.5707963267948966,
+    0,
+    0
+   ],
+   "color": "#8a909c"
+  },
+  {
+   "id": "crank_arm",
+   "type": "box",
+   "size": [
+    0.2,
+    0.36,
+    0.1
+   ],
+   "attach": "crank",
+   "at": [
+    0,
+    0.16,
+    -0.16
+   ],
+   "material": "darkmetal"
+  },
+  {
+   "id": "crank_pin",
+   "type": "cylinder",
+   "radius": 0.075,
+   "height": 0.34,
+   "attach": "crank",
+   "at": [
+    0,
+    0.3,
+    -0.02
+   ],
+   "rotation": [
+    1.5707963267948966,
+    0,
+    0
+   ],
+   "material": "metal"
+  },
+  {
+   "id": "piston",
+   "type": "group",
+   "at": [
+    0,
+    2.2,
+    0
+   ]
+  },
+  {
+   "id": "piston_body",
+   "type": "cylinder",
+   "radius": 0.465,
+   "height": 0.5,
+   "attach": "piston",
+   "at": [
+    0,
+    0.13,
+    0
+   ],
+   "material": "metal",
+   "color": "#e4e7ee"
+  },
+  {
+   "id": "piston_ring_0",
+   "type": "torus",
+   "radius": 0.468,
+   "tube": 0.014,
+   "attach": "piston",
+   "at": [
+    0,
+    0.33,
+    0
+   ],
+   "axis": "y",
+   "material": "darkmetal"
+  },
+  {
+   "id": "piston_ring_1",
+   "type": "torus",
+   "radius": 0.468,
+   "tube": 0.014,
+   "attach": "piston",
+   "at": [
+    0,
+    0.26,
+    0
+   ],
+   "axis": "y",
+   "material": "darkmetal"
+  },
+  {
+   "id": "wrist_pin",
+   "type": "cylinder",
+   "radius": 0.065,
+   "height": 0.4,
+   "attach": "piston",
+   "at": [
+    0,
+    0,
+    0
+   ],
+   "rotation": [
+    1.5707963267948966,
+    0,
+    0
+   ],
+   "material": "darkmetal"
+  },
+  {
+   "id": "rod",
+   "type": "link",
+   "radius": 0.06,
+   "to": {
+    "part": "piston",
+    "at": [
+     0,
+     0,
+     0.06
+    ]
+   },
+   "material": "metal",
+   "color": "#d9dde6",
+   "from": {
+    "part": "crank",
+    "at": [
+     0,
+     0.3,
+     0.06
+    ]
+   }
+  },
+  {
+   "id": "cylinder",
+   "type": "shell",
+   "radius": 0.56,
+   "inner": 0.48,
+   "height": 1.34,
+   "arc": 200,
+   "at": [
+    0,
+    2.12,
+    0
+   ],
+   "color": "#c9ced8",
+   "name": "Cylinder",
+   "info": "The tube the piston slides in. The fins around it shed the heat into the air."
+  },
+  {
+   "id": "cylinder_glass",
+   "type": "cylinder",
+   "radius": 0.56,
+   "height": 1.34,
+   "at": [
+    0,
+    2.12,
+    0
+   ],
+   "material": "glass",
+   "opacity": 0.1,
+   "name": "Cylinder",
+   "info": "The tube the piston slides in. The fins around it shed the heat into the air."
+  },
+  {
+   "id": "fin_0",
+   "type": "shell",
+   "radius": 0.84,
+   "inner": 0.56,
+   "height": 0.035,
+   "arc": 180,
+   "at": [
+    0,
+    1.62,
+    0
+   ],
+   "color": "#aeb4c0",
+   "name": "Cooling fins",
+   "info": "Thin metal fins give the heat more surface to escape from. No radiator needed."
+  },
+  {
+   "id": "fin_1",
+   "type": "shell",
+   "radius": 0.84,
+   "inner": 0.56,
+   "height": 0.035,
+   "arc": 180,
+   "at": [
+    0,
+    1.77,
+    0
+   ],
+   "color": "#aeb4c0",
+   "name": "Cooling fins",
+   "info": "Thin metal fins give the heat more surface to escape from. No radiator needed."
+  },
+  {
+   "id": "fin_2",
+   "type": "shell",
+   "radius": 0.84,
+   "inner": 0.56,
+   "height": 0.035,
+   "arc": 180,
+   "at": [
+    0,
+    1.92,
+    0
+   ],
+   "color": "#aeb4c0",
+   "name": "Cooling fins",
+   "info": "Thin metal fins give the heat more surface to escape from. No radiator needed."
+  },
+  {
+   "id": "fin_3",
+   "type": "shell",
+   "radius": 0.84,
+   "inner": 0.56,
+   "height": 0.035,
+   "arc": 180,
+   "at": [
+    0,
+    2.07,
+    0
+   ],
+   "color": "#aeb4c0",
+   "name": "Cooling fins",
+   "info": "Thin metal fins give the heat more surface to escape from. No radiator needed."
+  },
+  {
+   "id": "fin_4",
+   "type": "shell",
+   "radius": 0.84,
+   "inner": 0.56,
+   "height": 0.035,
+   "arc": 180,
+   "at": [
+    0,
+    2.22,
+    0
+   ],
+   "color": "#aeb4c0",
+   "name": "Cooling fins",
+   "info": "Thin metal fins give the heat more surface to escape from. No radiator needed."
+  },
+  {
+   "id": "fin_5",
+   "type": "shell",
+   "radius": 0.84,
+   "inner": 0.56,
+   "height": 0.035,
+   "arc": 180,
+   "at": [
+    0,
+    2.37,
+    0
+   ],
+   "color": "#aeb4c0",
+   "name": "Cooling fins",
+   "info": "Thin metal fins give the heat more surface to escape from. No radiator needed."
+  },
+  {
+   "id": "fin_6",
+   "type": "shell",
+   "radius": 0.84,
+   "inner": 0.56,
+   "height": 0.035,
+   "arc": 180,
+   "at": [
+    0,
+    2.52,
+    0
+   ],
+   "color": "#aeb4c0",
+   "name": "Cooling fins",
+   "info": "Thin metal fins give the heat more surface to escape from. No radiator needed."
+  },
+  {
+   "id": "fin_7",
+   "type": "shell",
+   "radius": 0.84,
+   "inner": 0.56,
+   "height": 0.035,
+   "arc": 180,
+   "at": [
+    0,
+    2.67,
+    0
+   ],
+   "color": "#aeb4c0",
+   "name": "Cooling fins",
+   "info": "Thin metal fins give the heat more surface to escape from. No radiator needed."
+  },
+  {
+   "id": "head",
+   "type": "cylinder",
+   "radius": 0.6,
+   "height": 0.16,
+   "at": [
+    0,
+    2.87,
+    0
+   ],
+   "material": "darkmetal"
+  },
+  {
+   "id": "head_fin_0",
+   "type": "cylinder",
+   "radius": 0.8,
+   "height": 0.035,
+   "at": [
+    0,
+    3.0,
+    0
+   ],
+   "color": "#aeb4c0",
+   "material": "metal",
+   "name": "Cooling fins",
+   "info": "Thin metal fins give the heat more surface to escape from. No radiator needed."
+  },
+  {
+   "id": "head_fin_1",
+   "type": "cylinder",
+   "radius": 0.74,
+   "height": 0.035,
+   "at": [
+    0,
+    3.08,
+    0
+   ],
+   "color": "#aeb4c0",
+   "material": "metal",
+   "name": "Cooling fins",
+   "info": "Thin metal fins give the heat more surface to escape from. No radiator needed."
+  },
+  {
+   "id": "head_fin_2",
+   "type": "cylinder",
+   "radius": 0.68,
+   "height": 0.035,
+   "at": [
+    0,
+    3.16,
+    0
+   ],
+   "color": "#aeb4c0",
+   "material": "metal",
+   "name": "Cooling fins",
+   "info": "Thin metal fins give the heat more surface to escape from. No radiator needed."
+  },
+  {
+   "id": "spark_plug",
+   "type": "group",
+   "at": [
+    0,
+    3.0,
+    0
+   ]
+  },
+  {
+   "id": "plug_ceramic",
+   "type": "cylinder",
+   "radius": 0.075,
+   "height": 0.34,
+   "attach": "spark_plug",
+   "at": [
+    0,
+    0.34,
+    0
+   ],
+   "material": "ceramic"
+  },
+  {
+   "id": "plug_cap",
+   "type": "cylinder",
+   "radius": 0.05,
+   "height": 0.1,
+   "attach": "spark_plug",
+   "at": [
+    0,
+    0.55,
+    0
+   ],
+   "material": "darkmetal"
+  },
+  {
+   "id": "plug_hex",
+   "type": "cylinder",
+   "radius": 0.12,
+   "height": 0.1,
+   "attach": "spark_plug",
+   "at": [
+    0,
+    0.15,
+    0
+   ],
+   "material": "metal"
+  },
+  {
+   "id": "plug_tip",
+   "type": "cylinder",
+   "radius": 0.03,
+   "height": 0.3,
+   "attach": "spark_plug",
+   "at": [
+    0,
+    -0.12,
+    0
+   ],
+   "material": "metal"
+  },
+  {
+   "id": "spark",
+   "type": "sphere",
+   "radius": 0.1,
+   "at": [
+    0,
+    2.74,
+    0.02
+   ],
+   "material": "glow",
+   "color": "#fff1a8",
+   "name": "Spark",
+   "info": "About 20,000 volts jumping a gap thinner than a coin. It lasts a thousandth of a second."
+  },
+  {
+   "id": "burst",
+   "type": "sphere",
+   "radius": 0.44,
+   "at": [
+    0,
+    2.66,
+    0
+   ],
+   "material": "glow",
+   "color": "#ff8a3d",
+   "opacity": 0.8,
+   "name": "Combustion",
+   "info": "Fuel and air burning in a flash. The pressure spike is what pushes the piston down."
+  },
+  {
+   "id": "intake_pipe",
+   "type": "pipe",
+   "radius": 0.12,
+   "path": [
+    [
+     -2.1,
+     0.5,
+     0
+    ],
+    [
+     -1.45,
+     0.52,
+     0
+    ],
+    [
+     -1.0,
+     0.6,
+     0
+    ],
+    [
+     -0.8,
+     0.72,
+     0
+    ]
+   ],
+   "material": "glass",
+   "color": "#bfe9ff",
+   "opacity": 0.42
+  },
+  {
+   "id": "carburettor",
+   "type": "box",
+   "size": [
+    0.36,
+    0.4,
+    0.4
+   ],
+   "at": [
+    -2.2,
+    0.5,
+    0
+   ],
+   "color": "#ff5a3d",
+   "name": "Carburettor",
+   "info": "Mixes a fine mist of fuel (with a little oil in it) into the air on its way in."
+  },
+  {
+   "id": "reed_valve",
+   "type": "box",
+   "size": [
+    0.04,
+    0.26,
+    0.24
+   ],
+   "at": [
+    -0.8,
+    0.73,
+    0
+   ],
+   "rotation": [
+    0,
+    0,
+    -0.5
+   ],
+   "material": "darkmetal",
+   "name": "Reed valve",
+   "info": "A one-way flap: it lets fresh mix into the crankcase but never back out."
+  },
+  {
+   "id": "transfer_duct",
+   "type": "pipe",
+   "radius": 0.09,
+   "path": [
+    [
+     -0.62,
+     1.22,
+     0
+    ],
+    [
+     -0.84,
+     1.5,
+     0
+    ],
+    [
+     -0.82,
+     1.86,
+     0
+    ],
+    [
+     -0.62,
+     2.03,
+     0
+    ],
+    [
+     -0.46,
+     2.06,
+     0
+    ]
+   ],
+   "material": "glass",
+   "color": "#bfe9ff",
+   "opacity": 0.42
+  },
+  {
+   "id": "exhaust_pipe",
+   "type": "pipe",
+   "radius": 0.11,
+   "path": [
+    [
+     0.46,
+     2.12,
+     0
+    ],
+    [
+     0.8,
+     2.1,
+     0
+    ],
+    [
+     1.15,
+     1.96,
+     0
+    ],
+    [
+     1.6,
+     1.72,
+     0
+    ],
+    [
+     2.25,
+     1.62,
+     0
+    ]
+   ],
+   "material": "glass",
+   "color": "#ffd2b8",
+   "opacity": 0.42
+  },
+  {
+   "id": "intake_flow",
+   "type": "particles",
+   "count": 22,
+   "size": 0.04,
+   "color": "#4fd1ff",
+   "speed": 0.55,
+   "spread": 0.03,
+   "path": [
+    [
+     -2.0,
+     0.5,
+     0
+    ],
+    [
+     -1.4,
+     0.52,
+     0
+    ],
+    [
+     -0.95,
+     0.62,
+     0
+    ],
+    [
+     -0.68,
+     0.8,
+     0
+    ],
+    [
+     -0.35,
+     0.95,
+     0.15
+    ],
+    [
+     0.05,
+     0.75,
+     0.22
+    ]
+   ],
+   "gate": {
+    "crank": "crank",
+    "from": 0.55,
+    "to": 0.98
+   }
+  },
+  {
+   "id": "transfer_flow",
+   "type": "particles",
+   "count": 18,
+   "size": 0.04,
+   "color": "#4fd1ff",
+   "speed": 0.95,
+   "spread": 0.03,
+   "path": [
+    [
+     -0.5,
+     1.15,
+     0.05
+    ],
+    [
+     -0.82,
+     1.5,
+     0
+    ],
+    [
+     -0.8,
+     1.86,
+     0
+    ],
+    [
+     -0.55,
+     2.05,
+     0.05
+    ],
+    [
+     -0.15,
+     2.2,
+     0.12
+    ],
+    [
+     0.12,
+     2.36,
+     0.12
+    ]
+   ],
+   "gate": {
+    "crank": "crank",
+    "from": 0.38,
+    "to": 0.62
+   }
+  },
+  {
+   "id": "exhaust_flow",
+   "type": "particles",
+   "count": 22,
+   "size": 0.045,
+   "color": "#5f6470",
+   "speed": 0.95,
+   "spread": 0.04,
+   "path": [
+    [
+     -0.15,
+     2.32,
+     0.12
+    ],
+    [
+     0.25,
+     2.18,
+     0.08
+    ],
+    [
+     0.75,
+     2.1,
+     0
+    ],
+    [
+     1.15,
+     1.96,
+     0
+    ],
+    [
+     1.6,
+     1.72,
+     0
+    ],
+    [
+     2.3,
+     1.6,
+     0
+    ]
+   ],
+   "gate": {
+    "crank": "crank",
+    "from": 0.33,
+    "to": 0.67
+   }
+  }
+ ],
+ "motions": [
+  {
+   "part": "crank",
+   "rotate": {
+    "axis": "z",
+    "rps": 0.34
+   }
+  },
+  {
+   "part": "piston",
+   "slider": {
+    "crank": "crank",
+    "pin": [
+     0,
+     0.3,
+     0
+    ],
+    "rod": 1.0
+   }
+  },
+  {
+   "part": "spark",
+   "flash": {
+    "crank": "crank",
+    "from": 0.965,
+    "to": 0.035,
+    "opacity": 1
+   }
+  },
+  {
+   "part": "burst",
+   "flash": {
+    "crank": "crank",
+    "from": 0.0,
+    "to": 0.17,
+    "grow": true,
+    "opacity": 0.8
+   }
+  }
+ ],
+ "steps": [
+  {
+   "name": "Squeeze",
+   "from": 0,
+   "to": 3,
+   "highlight": [
+    "piston_body",
+    "piston_ring_0",
+    "piston_ring_1",
+    "intake_pipe",
+    "reed_valve"
+   ],
+   "caption": "The piston rises: it squeezes fuel and air up top and sucks fresh mix in below."
+  },
+  {
+   "name": "Bang",
+   "from": 3,
+   "to": 6,
+   "highlight": [
+    "spark_plug",
+    "plug_ceramic",
+    "plug_tip",
+    "spark",
+    "burst"
+   ],
+   "caption": "At the top, the spark plug fires. The blast slams the piston back down."
+  },
+  {
+   "name": "Exhaust",
+   "from": 6,
+   "to": 9,
+   "highlight": [
+    "exhaust_pipe"
+   ],
+   "caption": "Near the bottom, the exhaust port opens and burnt gas rushes out."
+  },
+  {
+   "name": "Refill",
+   "from": 9,
+   "to": 12,
+   "highlight": [
+    "transfer_duct",
+    "crankcase"
+   ],
+   "caption": "Fresh mix shoots up the transfer port and refills the cylinder."
+  },
+  {
+   "name": "Spin",
+   "from": 12,
+   "to": 15,
+   "highlight": [
+    "rod",
+    "crank",
+    "crank_arm",
+    "crank_web",
+    "crank_pin",
+    "counterweight",
+    "main_shaft"
+   ],
+   "caption": "The rod turns all that pushing into spin: a power stroke every single turn."
+  }
+ ],
+ "labels": [
+  {
+   "text": "Spark plug",
+   "part": "spark_plug",
+   "also": [
+    "plug_ceramic",
+    "plug_cap",
+    "plug_hex",
+    "plug_tip"
+   ],
+   "anchor": [
+    0,
+    0.3,
+    0
+   ],
+   "offset": [
+    -300,
+    -20
+   ],
+   "info": "Makes a tiny lightning bolt at exactly the right moment, once every turn. That is what lights the fuel."
+  },
+  {
+   "text": "Piston",
+   "part": "piston_body",
+   "also": [
+    "piston_ring_0",
+    "piston_ring_1",
+    "wrist_pin"
+   ],
+   "anchor": [
+    -0.3,
+    0,
+    0.2
+   ],
+   "offset": [
+    -360,
+    -120
+   ],
+   "info": "A metal plug that slides up and down. The rings around it seal the gap so the blast can't leak past."
+  },
+  {
+   "text": "Connecting rod",
+   "part": "rod",
+   "anchor": [
+    0,
+    0,
+    0.1
+   ],
+   "offset": [
+    330,
+    30
+   ],
+   "info": "Links the piston to the crank, turning up-and-down into round-and-round."
+  },
+  {
+   "text": "Crankshaft",
+   "part": "crank",
+   "also": [
+    "crank_arm",
+    "crank_web",
+    "crank_pin",
+    "counterweight",
+    "main_shaft"
+   ],
+   "anchor": [
+    0.3,
+    -0.25,
+    0
+   ],
+   "offset": [
+    320,
+    70
+   ],
+   "info": "Spins with every stroke. The heavy half is a counterweight that balances the piston so the engine doesn't shake itself apart."
+  },
+  {
+   "text": "Exhaust port",
+   "part": "exhaust_pipe",
+   "anchor": [
+    1.6,
+    1.72,
+    0
+   ],
+   "offset": [
+    160,
+    -110
+   ],
+   "info": "A hole in the cylinder wall. The piston uncovers it near the bottom of its stroke and burnt gas escapes."
+  },
+  {
+   "text": "Transfer port",
+   "part": "transfer_duct",
+   "anchor": [
+    -0.84,
+    1.66,
+    0
+   ],
+   "offset": [
+    -300,
+    30
+   ],
+   "info": "A channel from the crankcase up to the cylinder. The falling piston squeezes fresh mix up through it."
+  },
+  {
+   "text": "Fuel + air in",
+   "part": "intake_pipe",
+   "also": [
+    "intake_flow"
+   ],
+   "anchor": [
+    -1.5,
+    0.52,
+    0
+   ],
+   "offset": [
+    -40,
+    -120
+   ],
+   "info": "Fresh mix enters the crankcase here while the piston rises. The oil mixed into the fuel is why 2-strokes smoke."
+  }
+ ]
+}

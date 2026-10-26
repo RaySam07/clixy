@@ -1,7 +1,31 @@
 # Explain mode: 3D explainers and visual diagrams
 
-**Status:** plan, ready to build. Prototype in `prototypes/explainers/`.
+**Status:** M1 built as a preview on the `explainers` branch: the live,
+on-screen explainer (`explainer/`), opened by voice or from the tray, with six
+library topics including the 2-stroke engine. The video-capture prototype stays
+in `prototypes/explainers/`.
 **Target:** Clixy 1.1 (beta) → 1.2.
+
+### In the preview build
+
+- `explainer/__init__.py`: the library, which questions open which topic
+  (`match`), and the boot payload (recipes, fonts, buddy frames, a blurred
+  picture of your screen, your buddy's colour).
+- `explainer/window.py`: a frameless, always-on-top window over the screen your
+  mouse is on, hosting an off-the-record `QWebEngineView` that can't navigate
+  or reach the network. Esc, the close button or Alt+F4 hide it; it stays
+  loaded so the next one opens at once.
+- `explainer/web/`: the page and `clixy3d.js`, built from `src/` with esbuild
+  (`npm install && npm run build`) into one classic script, because a
+  `file://` page can't load ES modules, fonts or JSON.
+- Live engine: drag to turn, scroll to zoom, double-click or R to reset,
+  click any part or label for a card about it, ← → for steps, Space to pause,
+  topic switcher. New parts (`shell` cutaways, `link` rods, `pipe` ducts,
+  `glass`, `ceramic`) and motions (`slider` crank-sliders, `flash` gated by a
+  crank's phase, particle `gate`s), plus a studio environment map so metal
+  looks like metal.
+- App: `sig_explain`; a question `explainer.match` recognises opens the topic
+  and speaks one intro line instead of asking the AI. Tray: "Show me in 3D".
 
 ## The idea in one paragraph
 

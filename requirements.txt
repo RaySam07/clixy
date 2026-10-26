@@ -5,6 +5,7 @@ anthropic>=0.40.0          # Claude SDK: plain vision messages.stream()
 openai>=1.60.0             # OpenAI-compatible endpoints: OpenAI, Gemini, OpenRouter
 mss>=9.0.1                 # Multi-monitor screen capture, DPI-aware
 PyQt6>=6.7.0               # Transparent overlay + QPropertyAnimation
+PyQt6-WebEngine>=6.7.0     # 3D explainers: the web view the 3D model renders in (explainer/window.py)
 pynput>=1.7.7              # Global hotkey, observe-only (keys still reach other apps)
 sounddevice>=0.5.0         # Audio capture (PCM16 16kHz for STT) + output playback (Cartesia PCM stream)
 numpy>=1.26.0              # Audio buffer manipulation

@@ -28,6 +28,11 @@ def _no_real_audio(monkeypatch):
     monkeypatch.setattr(mic, "_sounddevice", _no_audio)
 
 
+# As app.py does: lets the 3D explainer's web view load after the app exists.
+from PyQt6.QtCore import QCoreApplication, Qt  # noqa: E402
+
+QCoreApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts)
+
 _QT_APP = []
 
 

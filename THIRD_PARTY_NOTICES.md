@@ -58,6 +58,12 @@ SOFTWARE.
 
 Adapted from Bitshank-2338/clicky-windows (`ai/universal_locator.py`), MIT License.
 
+### three.js (`explainer/web/clixy3d.js`)
+
+The 3D explainers' engine bundles three.js 0.160.0, Copyright 2010-2023
+three.js authors, MIT License (the same terms as Clicky's notice above).
+<https://github.com/mrdoob/three.js>
+
 ## Fonts
 
 Manrope and JetBrains Mono, under the SIL Open Font License 1.1. The license
@@ -69,5 +75,7 @@ texts ship with the fonts in [`assets/fonts/`](assets/fonts).
 [`requirements.txt`](requirements.txt), each under its own license. Of note:
 **PyQt6** is licensed under the GNU GPL v3, so the bundled builds are
 distributed under the GPL v3's terms for that component; the complete source
-for every build is this repository. The local speech models (faster-whisper,
+for every build is this repository. **PyQt6-WebEngine** (the 3D explainers'
+web view) is GPL v3 likewise, and carries Qt WebEngine and Chromium, whose
+licenses ship inside the build. The local speech models (faster-whisper,
 Kokoro) download on first use under their own licenses.
