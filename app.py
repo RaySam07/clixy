@@ -537,6 +537,7 @@ class ClickyApp(QObject):
         self._history: list[dict] = []
         self._cancel_event = threading.Event()
         self._worker_thread: threading.Thread | None = None
+        self._holding = False  # the shortcut is held down right now
         self._current_app: str = "unknown"
         self._current_title: str = ""
 
@@ -769,9 +770,15 @@ class ClickyApp(QObject):
         self._ai.warm()
         self._tts.warm()
 
+    def busy(self) -> bool:
+        """Whether a question is being heard or answered right now."""
+        worker = self._worker_thread
+        return self._holding or (worker is not None and worker.is_alive())
+
     def _handle_press(self) -> None:
         """Hotkey pressed: kill TTS + start recording + capture foreground app."""
         import time
+        self._holding = True
         # GPT-Realtime mode takes a separate path: stream the mic to the
         # realtime WS instead of STT. The normal STT/AI/TTS chain is skipped.
         if self._realtime is not None:
@@ -959,6 +966,7 @@ class ClickyApp(QObject):
 
     def _handle_release(self) -> None:
         """Hotkey released: cancel previous worker, spawn new pipeline."""
+        self._holding = False
         import time
         # GPT-Realtime mode: capture the screen and hand it to the
         # realtime session, which commits the spoken audio + requests a
@@ -2138,6 +2146,21 @@ if __name__ == "__main__":
         clicky.stop()
         sys.exit(1)
     clicky.sig_notify.connect(tray.notify)
+
+    # Dev mode (tools/dev/Start-Clixy-Dev.bat): restart by itself when the code changes.
+    import devmode
+    if devmode.enabled():
+        from pathlib import Path
+
+        def _reload() -> None:
+            _log("Dev mode: the code changed, restarting...")
+            clicky.stop()
+            devmode.restart(_mutex_handle)
+            qt_app.quit()
+
+        _dev_watcher = devmode.Watcher(Path(__file__).resolve().parent, on_change=_reload, busy=clicky.busy,
+                                       on_error=clicky.sig_island_note.emit)
+        clicky.sig_island_note.emit("Dev mode is on: I restart by myself whenever the code changes.")
 
     def _shutdown(*_args):
         _log("Shutting down...")
