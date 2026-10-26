@@ -3,8 +3,9 @@
 A pure-black shape that grows out of the right (or left) screen edge, like
 the Dynamic Island turned on its side:
 
-- Idle: a thin sliver on the edge. It peeks out a little when the mouse
-  comes near.
+- Idle: a thin sliver on the edge. When the mouse comes near it springs
+  out into a pill that says hello: your buddy, "Clixy here." and the keys to
+  hold. It lingers a moment after the mouse leaves, then tucks back in.
 - Listening: stretches down the edge into a tall capsule with a coral
   recording dot, a vertical waveform that moves with your voice, and your
   pixel buddy at the bottom, listening.
@@ -38,7 +39,7 @@ import theme
 
 class SideIsland(QWidget):
     SLIVER = (8.0, 58.0)
-    PEEK = (14.0, 76.0)
+    GREET = (256.0, 78.0)
     CAPSULE = (60.0, 214.0)
     CARD_W = 360.0
     MAX_CARD_H = 300.0
@@ -47,7 +48,8 @@ class SideIsland(QWidget):
     _PAD = 24.0
     _TOP = 0.34    # vertical centre, as a fraction of the screen's height
     _STIFF, _DAMP = 0.16, 0.70   # per 60 Hz frame: slight overshoot, settles in ~0.5 s
-    _PEEK_REACH = 70             # px from the edge where the sliver starts to peek
+    _PEEK_REACH = 70             # px from the edge where the sliver opens to greet you
+    _LINGER = 0.6                # s it stays open after the mouse leaves
     _BARS = 13
     _HEAD = 36.0   # card header: the buddy, its name and your question
 
@@ -82,6 +84,8 @@ class SideIsland(QWidget):
         self._smooth_level = 0.0
         self.model_name = ""
         """Shown in the chip while listening; app.py sets it, e.g. 'Haiku 5.5'."""
+        self.hotkey = _hotkey_text()
+        """The keys to hold, as shown when it greets you, e.g. 'Ctrl + Win'."""
         self._t0 = time.monotonic()
         self._last_tick = self._t0
         self._layout_cache: dict = {}
@@ -91,7 +95,9 @@ class SideIsland(QWidget):
         self._vw = self._vh = 0.0
         self._fade_voice = 0.0
         self._fade_card = 0.0
+        self._fade_greet = 0.0
         self._near = False
+        self._near_until = 0.0
 
         self._collapse_timer = QTimer(self)
         self._collapse_timer.setSingleShot(True)
@@ -207,7 +213,7 @@ class SideIsland(QWidget):
             return self.CARD_W, self._card_height()
         if self._state == "note":
             return self.CARD_W, min(self.MAX_CARD_H, 2 * self._PAD + self._HEAD + 14.0 + self._note_height())
-        return self.PEEK if self._near else self.SLIVER
+        return self.GREET if self._near else self.SLIVER
 
     def _card_height(self) -> float:
         body = self._captions_layout(self.CARD_W - 2 * self._PAD)[1]
@@ -242,13 +248,19 @@ class SideIsland(QWidget):
     def _update_near(self) -> None:
         if self._state != "idle" or self._screen is None:
             self._near = False
+            self._near_until = 0.0
             return
         pos = QCursor.pos()
         geo = self.geometry()
         edge = geo.right() if self.side == "right" else geo.left()
-        close_x = abs(pos.x() - edge) < self._PEEK_REACH
-        close_y = abs(pos.y() - geo.center().y()) < 160
-        self._near = close_x and close_y
+        # Once it's open the whole pill counts, so it stays while you look at it.
+        reach = max(self._PEEK_REACH, self._w + 24) if self._near else self._PEEK_REACH
+        close_x = abs(pos.x() - edge) < reach
+        close_y = abs(pos.y() - geo.center().y()) < max(160.0, self._h / 2 + 40)
+        now = time.monotonic()
+        if close_x and close_y:
+            self._near_until = now + self._LINGER
+        self._near = now < self._near_until
 
     def _animate(self) -> None:
         now = time.monotonic()
@@ -269,7 +281,9 @@ class SideIsland(QWidget):
 
         voice_on = self._state in ("listening", "thinking") and self._h > 150 and self._w > 44
         card_on = self._state in ("answer", "note") and self._w > tw * 0.85
-        for attr, on, rate in (("_fade_voice", voice_on, 0.22), ("_fade_card", card_on, 0.18)):
+        greet_on = self._state == "idle" and self._near and self._w > self.GREET[0] * 0.8
+        for attr, on, rate in (("_fade_voice", voice_on, 0.22), ("_fade_card", card_on, 0.18),
+                               ("_fade_greet", greet_on, 0.3)):
             value = getattr(self, attr)
             target = 1.0 if on else 0.0
             if abs(value - target) > 0.005:
@@ -313,6 +327,8 @@ class SideIsland(QWidget):
             self._paint_voice(painter, rect, t)
         if self._fade_card > 0.01:
             self._paint_card(painter, rect)
+        if self._fade_greet > 0.01:
+            self._paint_greet(painter, rect, t)
 
     def _scaled(self, painter: QPainter, rect: QRectF, fade: float) -> None:
         """Fade in with a little grow, from the edge the shape grows out of."""
@@ -365,6 +381,75 @@ class SideIsland(QWidget):
                               mood="listening" if listening else "thinking", scale=1.0,
                               device_pixel_ratio=self.devicePixelRatioF(), glow=True)
         painter.restore()
+
+    def _paint_greet(self, painter: QPainter, rect: QRectF, t: float) -> None:
+        """Your buddy, "Clixy here." and the keys to hold."""
+        painter.save()
+        self._scaled(painter, rect, self._fade_greet)
+        width, height = self.GREET
+        # Laid out at full size from the screen edge, so it slides out with the shape.
+        x0 = rect.right() - width
+        top = rect.center().y() - height / 2
+        pad, buddy = 16.0, 46.0
+        theme.paint_avatar_in(painter, QRectF(x0 + pad, top + (height - buddy) / 2, buddy, buddy), t=t,
+                              mood="happy", scale=1.0, device_pixel_ratio=self.devicePixelRatioF(), glow=True)
+        tx = x0 + pad + buddy + 12
+        right = x0 + width - pad
+
+        hello = "Clixy here"
+        painter.setFont(theme.display_font(15.5))
+        fm = painter.fontMetrics()
+        base = top + 33
+        painter.setPen(theme.NOTCH_TEXT)
+        painter.drawText(QPointF(tx, base), hello)
+        painter.setPen(theme.current_palette().flood)
+        painter.drawText(QPointF(tx + fm.horizontalAdvance(hello), base), ".")
+
+        x = self._paint_mini_keys(painter, tx, top + 44, 19.0)
+        painter.setFont(theme.ui_font(8.8, QFont.Weight.Light))
+        hint = "hold to ask"
+        if x + 7 + painter.fontMetrics().horizontalAdvance(hint) <= right:
+            painter.setPen(theme.NOTCH_MUTED)
+            painter.drawText(QRectF(x + 7, top + 44, right - x - 7, 17), Qt.AlignmentFlag.AlignVCenter, hint)
+        painter.restore()
+
+    def _paint_mini_keys(self, painter: QPainter, x: float, y: float, cap_h: float) -> float:
+        """The shortcut as small coral keycaps (the look of Settings' keycaps);
+        returns where they end."""
+        from widgets import _paint_windows_logo
+        font = theme.ui_font(8.4, QFont.Weight.DemiBold)
+        fm = QFontMetricsF(font)
+        lip, radius, pad = 2.5, 5.0, 7.0
+        labels = self.hotkey.split(" + ")
+        for i, label in enumerate(labels):
+            logo = fm.capHeight() * 1.05 + 4 if label == "Win" else 0.0
+            w = max(cap_h, fm.horizontalAdvance(label) + logo + 2 * pad)
+            body = QRectF(x, y, w, cap_h - lip)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(190, 60, 36))
+            painter.drawRoundedRect(body.translated(0, lip), radius, radius)
+            painter.setBrush(theme.CORAL)
+            painter.setPen(QPen(QColor(255, 130, 100), 1.0))
+            painter.drawRoundedRect(body.adjusted(0.5, 0.5, -0.5, -0.5), radius, radius)
+            white = QColor(255, 255, 255)
+            painter.setFont(font)
+            painter.setPen(white)
+            if logo:
+                size = fm.capHeight() * 1.05
+                left = body.center().x() - (logo + fm.horizontalAdvance(label)) / 2
+                _paint_windows_logo(painter, QRectF(left, body.center().y() - size / 2, size, size), white)
+                painter.setPen(white)
+                painter.drawText(QRectF(left + logo, body.top(), body.width(), body.height()),
+                                 Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, label)
+            else:
+                painter.drawText(body, Qt.AlignmentFlag.AlignCenter, label)
+            x += w
+            if i < len(labels) - 1:
+                painter.setPen(theme.NOTCH_MUTED)
+                painter.setFont(theme.ui_font(9.0))
+                painter.drawText(QRectF(x, y, 14, cap_h - lip), Qt.AlignmentFlag.AlignCenter, "+")
+                x += 14
+        return x
 
     def _paint_card(self, painter: QPainter, rect: QRectF) -> None:
         painter.save()
@@ -471,6 +556,15 @@ class SideIsland(QWidget):
 
 
 _QUOTED = re.compile(r"[\"“‘']([^\"”’']{1,40})[\"”’']")
+
+
+def _hotkey_text() -> str:
+    try:
+        from config import resolve_setting
+        from hotkey import DEFAULT_COMBO, describe
+        return describe(resolve_setting("HOTKEY", DEFAULT_COMBO))
+    except Exception:
+        return "Ctrl + Win"
 
 
 def split_chips(sentence: str, highlights: list[str]) -> list[tuple[str, bool, bool]]:

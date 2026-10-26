@@ -42,9 +42,81 @@ def test_a_turn_opens_the_island_and_then_tucks_it_away(island):
     assert island._target() == island.SLIVER
 
 
-def test_it_peeks_out_when_the_mouse_comes_near(island):
+def test_it_greets_you_when_the_mouse_comes_near(island):
     island._near = True
-    assert island._target() == island.PEEK
+    assert island._target() == island.GREET
+
+
+def _mouse_at(monkeypatch, island, dx, dy=0):
+    """Put the mouse ``dx`` px in from the island's screen edge."""
+    import island as island_mod
+    from PyQt6.QtCore import QPoint
+    g = island.geometry()
+    edge = g.right() if island.side == "right" else g.left()
+    x = edge - dx if island.side == "right" else edge + dx
+    monkeypatch.setattr(island_mod.QCursor, "pos", staticmethod(lambda: QPoint(int(x), g.center().y() + dy)))
+
+
+def _clock(monkeypatch, start=100.0):
+    import island as island_mod
+    now = [start]
+    monkeypatch.setattr(island_mod.time, "monotonic", lambda: now[0])
+    return now
+
+
+def test_the_greeting_lingers_a_moment_then_tucks_away(island, monkeypatch):
+    now = _clock(monkeypatch)
+    _mouse_at(monkeypatch, island, 20)
+    island._update_near()
+    assert island._near
+    _mouse_at(monkeypatch, island, 600)
+    now[0] += island._LINGER - 0.1
+    island._update_near()
+    assert island._near, "still open just after the mouse leaves"
+    now[0] += 0.2
+    island._update_near()
+    assert not island._near
+
+
+def test_it_stays_open_while_the_mouse_is_over_the_pill(island, monkeypatch):
+    now = _clock(monkeypatch)
+    _mouse_at(monkeypatch, island, 20)
+    for _ in range(120):
+        island._animate()
+    _mouse_at(monkeypatch, island, island.GREET[0] - 10)  # over the pill, far past the peek reach
+    now[0] += 5
+    island._update_near()
+    assert island._near
+
+
+def test_the_greeting_shows_its_content_once_open(island, monkeypatch):
+    _clock(monkeypatch)
+    _mouse_at(monkeypatch, island, 20)
+    for _ in range(120):
+        island._animate()
+    assert (island._w, island._h) == island.GREET
+    assert island._fade_greet == 1.0
+    island.grab()  # paints the buddy, "Clixy here." and the keys
+
+
+def test_no_greeting_while_it_is_busy(island, monkeypatch):
+    _clock(monkeypatch)
+    _mouse_at(monkeypatch, island, 20)
+    island.listening()
+    for _ in range(120):
+        island._animate()
+    assert not island._near and island._fade_greet == 0.0
+    assert island._target() == island.CAPSULE
+
+
+def test_the_greeting_names_your_shortcut(island):
+    assert island.hotkey == "Ctrl + Win"  # the default
+    island.hotkey = "Ctrl + Shift + Space"
+    island._near = True
+    for _ in range(120):
+        island._w, island._h = island.GREET
+        island._animate()
+    island.grab()  # a long shortcut still paints (the hint drops if there's no room)
 
 
 def test_a_new_question_clears_the_last_answer(island):
@@ -81,11 +153,17 @@ def test_spring_settles_on_the_target(island):
     assert island._fade_voice == 1.0
 
 
-def test_it_can_live_on_the_left_edge(qapp):
+def test_it_can_live_on_the_left_edge(qapp, monkeypatch):
     from island import SideIsland
     widget = SideIsland(side="left")
     try:
         assert widget._shape_rect().left() == 0
+        _clock(monkeypatch)
+        _mouse_at(monkeypatch, widget, 20)
+        for _ in range(120):
+            widget._animate()
+        assert widget._near and widget._shape_rect().left() == 0
+        widget.grab()
     finally:
         widget.close()
 
