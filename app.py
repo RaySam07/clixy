@@ -620,6 +620,8 @@ class ClickyApp(QObject):
             )
             self._hotkey.start()
             _log(f"Listening for {describe_hotkey(combo)}...")
+        if getattr(self._overlay, "island", None) is not None:
+            self._overlay.island.hotkey = describe_hotkey(combo)
         if self._overlay is not None and hasattr(self._overlay, "apply_look"):
             self._overlay.apply_look(
                 glow_enabled=resolve_setting("EDGE_GLOW", default="on").lower() == "on",
