@@ -18,6 +18,7 @@ Clixy is Rayan Sameer's Windows AI buddy (PyQt6). This folder is the local dev c
   `explainer/web`.
 
 ## What's next
-- `docs/plans/guide-mode.md`: exact marks from Windows UI Automation, and guidance one
-  step at a time. This comes first.
+- `docs/plans/guide-mode.md`: exact marks from Windows UI Automation and guidance one
+  step at a time. Built; verify it on real Windows first (UIA listing in `snap.py`, the
+  pynput input watch in `guide.py`) and fix what doesn't hold up.
 - `docs/plans/explainers.md`: 3D explainers (built). Next for them: the AI designs any topic.

@@ -391,7 +391,7 @@ class TestClickyApp:
         app._press_captures = [fake_cap]
         app._press_memory = ""
         app._press_cursor_pos = (100, 100)
-        app._stt.stop_recording.return_value = "how do I make my repo public"
+        app._stt.stop_recording.return_value = "where is the setting to make my repo public"
 
         # Stream that yields sentences one delta at a time + a [POINT:...] tag at the end.
         def fake_deltas():
@@ -461,7 +461,7 @@ class TestClickyApp:
         app._press_captures = [fake_cap]
         app._press_memory = ""
         app._press_cursor_pos = (100, 100)
-        app._stt.stop_recording.return_value = "how do I reset my password"
+        app._stt.stop_recording.return_value = "where is the reset password link"
 
         def fake_deltas():
             yield "click reset. "

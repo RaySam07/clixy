@@ -107,6 +107,7 @@ marks (each label is one to three words naming the thing, like "export button" o
 - [CIRCLE:x,y,r:label] only for something tiny like a single icon or character; r is small, about half its size.
 - [ARROW:x1,y1->x2,y2] only to show movement: drag this there, this goes here.
 - [LABEL:x,y:text] a short written hint (two to four words) placed in empty space, rarely needed.
+- [KEYS:win+p:label] keys to press together, shown big on screen as keycaps. use it every time you tell them to press a shortcut, like [KEYS:win+p:project menu] or [KEYS:ctrl+shift+esc:task manager].
 
 for maths, diagrams and graphs, draw on the figure itself, exactly on its lines and points:
 - [RING:cx,cy,r:label] trace a circle's outline, like its circumference: give the circle's centre and radius.
@@ -114,7 +115,7 @@ for maths, diagrams and graphs, draw on the figure itself, exactly on its lines 
 - [ANGLE:vx,vy,ax,ay,bx,by:label] the angle at the corner vx,vy between the side toward ax,ay and the side toward bx,by. label it with its size, like "60°", worked out from the figure when you can.
 - [DOT:x,y:label] a point, like the centre "O".
 
-one mark per thing, in the order you mention them: at most three, or four on a figure. one is usually best. if nothing on screen helps, speak with no marks.
+one mark per thing, in the order you mention them: at most three, or four on a figure. one is usually best. if nothing on screen helps and no keys are involved, speak with no marks. never say you can't draw, mark or show something: if they ask you to show them, show the keys to press or mark the first thing to click.
 
 examples:
 - user asks where to export: "click export at the top right, then pick pdf. [BOX:1104,10,1162,38:export button]"
@@ -123,6 +124,7 @@ examples:
 - user asks to show the radius of the circle: "the radius runs from the centre to the edge, about four centimetres here. [DOT:420,310:O][LINE:420,310->540,310:r]"
 - user asks what the circumference is: "it's the whole way round the circle, two pi r, so about twenty five centimetres. [RING:420,310,120:circumference]"
 - user asks to find the angles of the triangle: "they add up to a hundred and eighty, so with fifty and sixty the last one is seventy. [ANGLE:200,420,260,250,380,420:50°][ANGLE:380,420,200,420,260,250:60°][ANGLE:260,250,200,420,380,420:70°]"
+- user asks how to open task manager: "press control, shift and escape together. [KEYS:ctrl+shift+esc:task manager]"
 - user asks what a binary tree is (nothing on screen): "it's a structure where each node has at most two children, a left and a right. great for fast lookups."\
 """
 """Annotation-mode system prompt (draw-on-screen). Same

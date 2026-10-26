@@ -64,6 +64,7 @@ class Mark:
     acked_at: float | None = None   # when you hovered what it marks
     armed: bool = False              # the mouse has been outside it
     leader: tuple[QPointF, QPointF] | None = None  # line from a pill that sits apart
+    keys: list[str] = field(default_factory=list)  # a keys mark: the keycaps, e.g. ["Win", "P"]
 
     @property
     def length(self) -> float:
@@ -428,7 +429,7 @@ def build_marks(annotations: list, area: QRectF, *, avoid: list[QRectF] | None =
     them concise: at most MAX_MARKS, none that repeat another, none that
     swallow half the screen, none that make no sense (an arrow 5 px long).
     Labels go where they read best (see place_label)."""
-    from annotations import Angle, Arrow, Box, Circle, Dot, Highlight, Label, Line, Ring, Underline
+    from annotations import Angle, Arrow, Box, Circle, Dot, Highlight, Keys, Label, Line, Ring, Underline
 
     marks: list[Mark] = []
     for a in annotations:
@@ -532,6 +533,15 @@ def build_marks(annotations: list, area: QRectF, *, avoid: list[QRectF] | None =
             pill = QRectF(x, y, w, h)
             raw = [(pill.left() + 4, pill.bottom() + 2), (pill.right() - 4, pill.bottom() + 2)]
             marks.append(Mark("label", *_resample(raw), target=pill, label=text, pill=pill))
+        elif isinstance(a, Keys):
+            caps = a.caps
+            if not caps:
+                continue
+            w, h = keys_size(caps, a.label)
+            # Low and centred, where the eye goes after reading the answer.
+            panel = QRectF(area.center().x() - w / 2, area.bottom() - 120 - h, w, h)
+            raw = [(panel.left() + 6, panel.bottom() + 2), (panel.right() - 6, panel.bottom() + 2)]
+            marks.append(Mark("keys", *_resample(raw), target=panel, label=a.label, pill=panel, keys=caps))
 
     marks = _constrain(marks, area)
     if busy is not None and area.width() > 0 and area.height() > 0:
@@ -550,7 +560,7 @@ def build_marks(annotations: list, area: QRectF, *, avoid: list[QRectF] | None =
     taken += [(None, m.badge_rect()) for m in marks if m.badge]
     taken += [(None, m.pill) for m in marks if m.kind == "label" and m.pill is not None]
     for m in marks:
-        if m.label and m.kind not in ("label", "highlight", "underline"):
+        if m.label and m.kind not in ("label", "keys", "highlight", "underline"):
             others = [r for owner, r in taken if r is not None and owner is not m]
             m.pill, m.leader = place_label(m, area, others, list(avoid or []), busy)
             taken.append((None, m.pill))
@@ -563,7 +573,7 @@ def _constrain(marks: list[Mark], area: QRectF) -> list[Mark]:
     screen = area.width() * area.height() or 1.0
     kept: list[Mark] = []
     for m in marks:
-        if m.kind != "label" and not m.exact and m.target.width() * m.target.height() > 0.5 * screen:
+        if m.kind not in ("label", "keys") and not m.exact and m.target.width() * m.target.height() > 0.5 * screen:
             continue
         if m.exact:
             # Geometry repeats only when it's the same kind in the same place
@@ -574,8 +584,8 @@ def _constrain(marks: list[Mark], area: QRectF) -> list[Mark]:
             continue
         kept.append(m)
     geometry = [m for m in kept if m.exact][:MAX_GEOMETRY]
-    shapes = [m for m in kept if m.kind != "label" and not m.exact][:MAX_MARKS]
-    labels = [m for m in kept if m.kind == "label"][:1]
+    shapes = [m for m in kept if m.kind not in ("label", "keys") and not m.exact][:MAX_MARKS]
+    labels = [m for m in kept if m.kind == "label"][:1] + [m for m in kept if m.kind == "keys"][:1]
     return [m for m in kept if m in geometry or m in shapes or m in labels]
 
 
@@ -595,6 +605,8 @@ def _smoothstep(u: float) -> float:
 def draw_time(mark: Mark) -> float:
     if mark.kind == "label":
         return 0.34
+    if mark.kind == "keys":
+        return 0.45
     if mark.kind == "dot":
         return 0.18
     if mark.kind == "angle":
@@ -804,6 +816,8 @@ def paint_marks(painter: QPainter, marks: list[Mark], t: float, *, now: float = 
             painter.drawPath(_path(shown))
         elif m.kind == "label":
             _paint_pill(painter, m.pill, m.label, reveal=u)
+        elif m.kind == "keys":
+            _paint_keys(painter, m.pill, m.keys, m.label, reveal=u)
         else:
             path = _path(shown)
             head = None
@@ -828,7 +842,7 @@ def paint_marks(painter: QPainter, marks: list[Mark], t: float, *, now: float = 
             o, s = _pop(t - m.start)
             if o > 0:
                 _paint_badge(painter, m.points[0], m.badge, o * alpha, s)
-        if m.pill is not None and m.kind != "label" and done > -0.08:
+        if m.pill is not None and m.kind not in ("label", "keys") and done > -0.08:
             o, s = _pop(done + 0.08)
             if o > 0:
                 painter.save()
@@ -859,6 +873,83 @@ def _paint_pill(painter: QPainter, rect: QRectF, text: str, reveal: float = 1.0)
     painter.setPen(theme.INK)
     painter.setFont(theme.ui_font(_LABEL_PT, QFont.Weight.DemiBold))
     painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, text)
+    painter.restore()
+
+
+# Keycaps for a shortcut: big coral keys on an ink panel, like the ones in Settings.
+_CAP_H, _CAP_PAD, _CAP_PLUS, _PANEL_PAD = 46.0, 17.0, 26.0, 14.0
+
+
+def _cap_font() -> QFont:
+    return theme.ui_font(15, QFont.Weight.DemiBold)
+
+
+def _cap_width(cap: str, metrics: QFontMetricsF) -> float:
+    logo = metrics.capHeight() * 1.05 + 8 if cap == "Win" else 0.0
+    return max(_CAP_H, metrics.horizontalAdvance(cap) + logo + 2 * _CAP_PAD)
+
+
+def keys_size(caps: list[str], label: str = "") -> tuple[float, float]:
+    """Width and height of a keys panel."""
+    metrics = QFontMetricsF(_cap_font())
+    w = sum(_cap_width(c, metrics) for c in caps) + _CAP_PLUS * (len(caps) - 1)
+    if label:
+        w += 18 + QFontMetricsF(theme.ui_font(12.5)).horizontalAdvance(label)
+    return w + 2 * _PANEL_PAD, _CAP_H + 2 * _PANEL_PAD
+
+
+def _paint_keys(painter: QPainter, panel: QRectF, caps: list[str], label: str, reveal: float = 1.0) -> None:
+    from widgets import _paint_windows_logo
+
+    painter.save()
+    o, s = _pop(reveal * 0.3, 0.3)
+    painter.setOpacity(painter.opacity() * o)
+    c = panel.center()
+    painter.translate(c)
+    painter.scale(s, s)
+    painter.translate(-c)
+    r = panel.height() / 2
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(QColor(0, 0, 0, 70))
+    painter.drawRoundedRect(panel.translated(0, 4), r, r)
+    painter.setBrush(theme.INK)
+    painter.drawRoundedRect(panel, r, r)
+    font = _cap_font()
+    metrics = QFontMetricsF(font)
+    x, y = panel.left() + _PANEL_PAD, panel.top() + _PANEL_PAD
+    lip, radius = 4.0, 11.0
+    white = QColor(255, 255, 255)
+    for i, cap in enumerate(caps):
+        w = _cap_width(cap, metrics)
+        body = QRectF(x, y, w, _CAP_H - lip)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(190, 60, 36))
+        painter.drawRoundedRect(body.translated(0, lip), radius, radius)
+        painter.setBrush(theme.CORAL)
+        painter.setPen(QPen(QColor(255, 130, 100), 1.2))
+        painter.drawRoundedRect(body.adjusted(0.6, 0.6, -0.6, -0.6), radius, radius)
+        painter.setFont(font)
+        painter.setPen(white)
+        if cap == "Win":
+            size = metrics.capHeight() * 1.05
+            left = body.center().x() - (size + 8 + metrics.horizontalAdvance(cap)) / 2
+            _paint_windows_logo(painter, QRectF(left, body.center().y() - size / 2, size, size), white)
+            painter.setPen(white)
+            painter.drawText(QRectF(left + size + 8, body.top(), body.width(), body.height()),
+                             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, cap)
+        else:
+            painter.drawText(body, Qt.AlignmentFlag.AlignCenter, cap)
+        x += w
+        if i < len(caps) - 1:
+            painter.setPen(QColor(255, 255, 255, 150))
+            painter.setFont(theme.ui_font(15))
+            painter.drawText(QRectF(x, y, _CAP_PLUS, _CAP_H - lip), Qt.AlignmentFlag.AlignCenter, "+")
+            x += _CAP_PLUS
+    if label:
+        painter.setPen(theme.BUTTER)
+        painter.setFont(theme.ui_font(12.5))
+        painter.drawText(QRectF(x + 18, y, panel.right() - x - 18, _CAP_H - lip),
+                         Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, label)
     painter.restore()
 
 

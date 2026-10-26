@@ -31,7 +31,9 @@ from PyQt6.QtCore import QCoreApplication, QObject, Qt, pyqtSignal
 from PyQt6.QtWidgets import QApplication
 
 import explainer
+import guide
 import kb
+import sysinfo
 from ai import (
     _CLICKY_ANNOTATION_SYSTEM_PROMPT,
     OllamaClient,
@@ -182,7 +184,7 @@ def _annotations_to_physical(annotations: list, cursor_capture) -> list:
     Lengths (circle radius, underline width) only scale by scale_x (they're
     sizes, not positions: no origin, no clamp). Returns NEW annotation objects.
     """
-    from annotations import Angle, Arrow, Box, Circle, Dot, Highlight, Label, Line, Ring, Underline
+    from annotations import Angle, Arrow, Box, Circle, Dot, Highlight, Keys, Label, Line, Ring, Underline
 
     if not annotations:
         return []
@@ -235,6 +237,8 @@ def _annotations_to_physical(annotations: list, cursor_capture) -> list:
         elif isinstance(a, Dot):
             x, y = pt(a.x, a.y)
             out.append(Dot(x, y, a.label))
+        elif isinstance(a, Keys):
+            out.append(a)  # keys have no position
     return out
 
 
@@ -485,6 +489,8 @@ class ClickyApp(QObject):
     sig_point_label = pyqtSignal(str)
     # Open a 3D explainer (a topic from explainer.ORDER) over the screen.
     sig_explain = pyqtSignal(str)
+    # Guide mode: the step being shown (its sentence, number and the total).
+    sig_guide_step = pyqtSignal(str, int, int, object)
 
     def __init__(
         self,
@@ -571,6 +577,7 @@ class ClickyApp(QObject):
         self.sig_point_label.connect(lambda label: self._island("point_label", label))
         self.explainers = explainer.available()
         self.sig_explain.connect(self._on_explain)
+        self.sig_guide_step.connect(lambda text, n, total, where: self._island("island_step", text, n, total, where))
 
     def start(self) -> None:
         """Initialize overlay + hotkey and begin listening.
@@ -1165,6 +1172,9 @@ class ClickyApp(QObject):
                 return
 
             user_text = transcript
+            about = sysinfo.profile()
+            if about:
+                user_text = f"[this computer, use silently: {about}]\n{user_text}"
             if memory_context:
                 user_text = (
                     f"[context from past sessions — use silently, don't summarize or reference it:]\n"
@@ -1202,6 +1212,13 @@ class ClickyApp(QObject):
             cursor_capture = captures[0]
 
             if cancel.is_set():
+                return
+
+            # "How do I project my screen": one step at a time, each shown
+            # exactly, the next one as soon as this one is done.
+            if guide.wants_guide(transcript):
+                stage = "AI"
+                self._run_guide(transcript, cursor_capture, cancel, dbg)
                 return
 
             dbg.log("LLM: streaming started...")
@@ -1532,6 +1549,51 @@ class ClickyApp(QObject):
     def _island(self, method: str, *args) -> None:
         if self._overlay is not None and hasattr(self._overlay, method):
             getattr(self._overlay, method)(*args)
+
+    def _run_guide(self, goal: str, capture, cancel: threading.Event, dbg) -> None:
+        """Guide toward ``goal`` one step at a time (guide.py), on this worker thread."""
+        import snap
+
+        dbg.log(f"GUIDE: {goal!r}")
+
+        def ask(cap, text: str) -> str:
+            with self._ai.ask_stream(images=[(cap.image, cap.label)], transcript=text, history=[],
+                                     system_prompt=guide.SYSTEM_PROMPT) as stream:
+                return "".join(stream.text_deltas())
+
+        def fresh_capture():
+            self.sig_hide_overlay.emit()
+            threading.Event().wait(0.05)
+            try:
+                captures = capture_all_screens()
+            finally:
+                self.sig_show_overlay.emit()
+            return next((c for c in captures if c.is_cursor_screen), captures[0] if captures else None)
+
+        def say(text: str, n: int, total: int, where=None) -> None:
+            self._tts.speak_sentence(text)
+            self.sig_guide_step.emit(text, n, total, where)
+
+        session = guide.Guide(
+            ask=ask,
+            capture=fresh_capture,
+            list_elements=lambda monitor: snap.elements(monitor),
+            show=lambda marks, monitor: self.sig_show_annotations.emit(marks, monitor, None),
+            clear=lambda: self.sig_clear_annotations.emit(),
+            say=say,
+            note=self.sig_island_note.emit,
+            cancelled=cancel.is_set,
+            foreground=snap.foreground,
+            about=sysinfo.profile(),
+            refine=snap.refine,
+            dbg=dbg,
+        )
+        last = session.run(goal, capture)
+        if not cancel.is_set():
+            self.sig_clear_annotations.emit()
+            self._history.append({"role": "user", "content": [{"type": "text", "text": goal}]})
+            self._history.append({"role": "assistant", "content": [{"type": "text", "text": last or "(guided step by step)"}]})
+        dbg.log("GUIDE: finished")
 
     def _on_explain(self, topic: str) -> None:
         try:

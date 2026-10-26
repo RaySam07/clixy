@@ -1,7 +1,9 @@
 # Guide mode: exact marks, one step at a time
 
-**Status:** plan, next to build (on the laptop, with Clixy dev running so every
-change can be tried on real Windows straight away).
+**Status:** built, first version (`guide.py`, `snap.elements`, `sysinfo.py`,
+the `KEYS` keycaps mark, `island.step`). Tested with fakes; the UI Automation
+listing and the input watch still need trying on real Windows. Run Clixy dev,
+ask the "Try" questions below, and check the debug log's `GUIDE:` lines.
 
 ## The problem
 

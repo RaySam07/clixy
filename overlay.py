@@ -321,7 +321,7 @@ def annotations_to_local(annotations: list, screen) -> list:
     QApplication. The per-screen ratio is never cached globally: mixed-DPI
     setups have a different ratio per screen.
     """
-    from annotations import Angle, Arrow, Box, Circle, Dot, Highlight, Label, Line, Ring, Underline
+    from annotations import Angle, Arrow, Box, Circle, Dot, Highlight, Keys, Label, Line, Ring, Underline
 
     ratio = screen.devicePixelRatio() or 1.0
     out: list = []
@@ -358,6 +358,8 @@ def annotations_to_local(annotations: list, screen) -> list:
         elif isinstance(a, Dot):
             lx, ly = physical_to_local_logical(a.x, a.y, screen)
             out.append(Dot(lx, ly, a.label))
+        elif isinstance(a, Keys):
+            out.append(a)  # keys have no position
     return out
 
 
@@ -510,7 +512,7 @@ class OverlayWindow(QWidget):
         self._marks_rect = rect.toAlignedRect()
         self._pointer_visible = True
         self.point_label = ""
-        self._annotation_clear_timer.start(60_000)
+        self._annotation_clear_timer.start(180_000)  # a guide step waits for you; answers fade sooner on their own
         self._speed_up()
 
     def fade_annotations(self) -> None:
@@ -851,7 +853,7 @@ _MARKS_FADE_S = 0.45
 def _hoverable(mark) -> bool:
     """Marks that fade when you move onto what they mark. Not written
     labels, and not geometry: you study a figure, you don't click it."""
-    return mark.kind != "label" and not mark.exact
+    return mark.kind not in ("label", "keys") and not mark.exact
 
 
 # --- Thinking phase ------------------------------------------------------------
@@ -1251,6 +1253,24 @@ class OverlayController:
         if self.island is not None:
             self.island.note(text)
 
+    def island_step(self, text: str, n: int, total: int, where=None) -> None:
+        """Guide mode: this step, and only this step, in the island.
+        ``where`` is (rect, monitor) in PHYSICAL px for the thing to click,
+        which the island keeps clear of."""
+        if self.island is None:
+            return
+        keep_clear = None
+        if where:
+            from annotations import Box
+            rect, monitor = where
+            screen = screen_for_monitor(monitor, QGuiApplication.screens())
+            if screen is not None:
+                local = annotations_to_local([Box(*rect)], screen)[0]
+                origin = screen.geometry().topLeft()
+                keep_clear = QRect(origin.x() + local.x1, origin.y() + local.y1,
+                                   max(1, local.x2 - local.x1), max(1, local.y2 - local.y1))
+        self.island.step(text, n, total, keep_clear)
+
     def island_done(self) -> None:
         """The turn is over; the island tucks itself away after a pause, and
         the marks fade a few seconds later."""
@@ -1270,6 +1290,7 @@ class OverlayController:
             overlay.update()
         if self.island is not None:
             side = "left" if island_side == "left" else "right"
+            self.island.home_side = side
             if side != self.island.side:
                 self.island.side = side
                 if self.island._screen is not None:

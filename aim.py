@@ -178,11 +178,12 @@ def aim_one(ai_client, capture, shape, context: str = "", dbg=None):
 def aim(ai_client, capture, shapes: list, *, question: str = "", dbg=None, timeout_s: float = 6.0) -> list:
     """Aim the turn's marks (screenshot pixels), in parallel. At most
     MAX_MARKS marks are kept; written labels ride along."""
-    from annotations import GEOMETRY, Label
+    from annotations import GEOMETRY, Keys, Label
 
     geometry = [s for s in shapes if isinstance(s, GEOMETRY)][:MAX_GEOMETRY]
-    marks = [s for s in shapes if not isinstance(s, (Label, *GEOMETRY))][:MAX_MARKS]
+    marks = [s for s in shapes if not isinstance(s, (Label, Keys, *GEOMETRY))][:MAX_MARKS]
     labels = [s for s in shapes if isinstance(s, Label)][:1]
+    labels += [s for s in shapes if isinstance(s, Keys)][:1]  # keys have no position to aim
     if type(ai_client).__name__ == "OllamaClient":
         return marks + geometry + labels  # small local models can't box reliably
     context = f' the user asked: "{question.strip()[:160]}".' if question.strip() else ""

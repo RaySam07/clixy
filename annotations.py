@@ -14,6 +14,7 @@ Grammar (coords are integer screenshot pixels, origin top-left):
     [UNDERLINE:x,y,w:text]  horizontal underline at (x,y), width w
     [ARROW:x1,y1->x2,y2]    arrow from (x1,y1) to (x2,y2)
     [LABEL:x,y:text]        floating text at (x,y)
+    [KEYS:win+p:label]      keys to press together, shown as keycaps on screen
 
 Geometry, drawn exactly on a figure rather than around it:
     [RING:cx,cy,r:label]    trace a circle's outline (circumference)
@@ -112,6 +113,44 @@ class Dot:
     label: str = ""
 
 
+@dataclass(frozen=True)
+class Keys:
+    """Keys to press together ("win+p"), shown as keycaps; no position."""
+    keys: str
+    label: str = ""
+
+    @property
+    def caps(self) -> list[str]:
+        return key_names(self.keys)
+
+
+_KEY_NAMES = {
+    "win": "Win", "windows": "Win", "windows key": "Win", "super": "Win", "cmd": "Win", "meta": "Win",
+    "ctrl": "Ctrl", "control": "Ctrl", "alt": "Alt", "option": "Alt", "shift": "Shift",
+    "esc": "Esc", "escape": "Esc", "enter": "Enter", "return": "Enter", "tab": "Tab", "space": "Space",
+    "spacebar": "Space", "del": "Delete", "delete": "Delete", "backspace": "Backspace", "home": "Home",
+    "end": "End", "pgup": "Page Up", "pageup": "Page Up", "pgdn": "Page Down", "pagedown": "Page Down",
+    "up": "↑", "down": "↓", "left": "←", "right": "→", "prtsc": "PrtSc", "printscreen": "PrtSc",
+    "print screen": "PrtSc", "insert": "Insert", "fn": "Fn",
+}
+
+
+def key_names(keys: str) -> list[str]:
+    """"win+p" -> ["Win", "P"]: the names printed on the keycaps."""
+    out = []
+    for part in re.split(r"\s*\+\s*", (keys or "").strip()):
+        token = part.strip().lower()
+        if not token:
+            continue
+        if token in _KEY_NAMES:
+            out.append(_KEY_NAMES[token])
+        elif re.fullmatch(r"f\d{1,2}", token):
+            out.append(token.upper())
+        else:
+            out.append(token.upper() if len(token) == 1 else token.title())
+    return out
+
+
 GEOMETRY = (Ring, Line, Angle, Dot)
 """Marks drawn exactly on a figure (aimed and fitted, never clamped)."""
 
@@ -152,8 +191,9 @@ _RING_RE = re.compile(r"\[\s*RING\s*:" + _N + "," + _N + "," + _N + _LABEL_TAIL,
 _LINE_RE = re.compile(r"\[\s*LINE\s*:" + _N + "," + _N + "->" + _N + "," + _N + _LABEL_TAIL, re.IGNORECASE)
 _ANGLE_RE = re.compile(r"\[\s*ANGLE\s*:" + ",".join([_N] * 6) + _LABEL_TAIL, re.IGNORECASE)
 _DOT_RE = re.compile(r"\[\s*DOT\s*:" + _N + "," + _N + _LABEL_TAIL, re.IGNORECASE)
+_KEYS_RE = re.compile(r"\[\s*KEYS\s*:\s*([^\]:]+?)\s*(?::([^\]]*))?\]", re.IGNORECASE)
 
-_KEYWORDS = r"(?:ARROW|CIRCLE|UNDERLINE|LABEL|BOX|HIGHLIGHT|RING|LINE|ANGLE|DOT)"
+_KEYWORDS = r"(?:ARROW|CIRCLE|UNDERLINE|LABEL|BOX|HIGHLIGHT|RING|LINE|ANGLE|DOT|KEYS)"
 _ANY_TAG_RE = re.compile(r"\[\s*" + _KEYWORDS + r"\s*:[^\]]*\]", re.IGNORECASE)
 
 # Fail-closed strip: removes an UNTERMINATED shape tag (and everything after
@@ -226,6 +266,9 @@ def parse_annotations(text: str) -> tuple[str, list]:
         found.append((m.start(), Angle(*(int(m.group(i)) for i in range(1, 7)), (m.group(7) or "").strip())))
     for m in _DOT_RE.finditer(text):
         found.append((m.start(), Dot(int(m.group(1)), int(m.group(2)), (m.group(3) or "").strip())))
+    for m in _KEYS_RE.finditer(text):
+        if key_names(m.group(1)):
+            found.append((m.start(), Keys(m.group(1).strip().lower(), (m.group(2) or "").strip())))
 
     found.sort(key=lambda pair: pair[0])
     annotations = [ann for _, ann in found]

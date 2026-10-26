@@ -30,7 +30,7 @@ import math
 import re
 import time
 
-from PyQt6.QtCore import QPointF, QRectF, Qt, QTimer
+from PyQt6.QtCore import QPointF, QRect, QRectF, Qt, QTimer
 from PyQt6.QtGui import QColor, QCursor, QFont, QFontMetricsF, QGuiApplication, QPainter, QPainterPath, QPen, QScreen
 from PyQt6.QtWidgets import QWidget
 
@@ -73,6 +73,8 @@ class SideIsland(QWidget):
             except Exception:
                 side = "right"
         self.side = "left" if side == "left" else "right"
+        self.home_side = self.side
+        """The side Settings chose; a guide step may borrow the other one."""
 
         self._state = "idle"
         self._transcript = ""
@@ -139,6 +141,7 @@ class SideIsland(QWidget):
     # --- States --------------------------------------------------------------
 
     def listening(self, screen: QScreen | None = None) -> None:
+        self._move_to(self.home_side)
         if screen is not None:
             self.dock(screen)
         self._collapse_timer.stop()
@@ -179,6 +182,21 @@ class SideIsland(QWidget):
             self._highlights.append(label)
             self.update()
 
+    def step(self, text: str, n: int, total: int = 0, keep_clear: QRect | None = None) -> None:
+        """Guide mode: show just this step ("step 2 of 3") until the next one.
+        ``keep_clear`` (global coords) is what you have to click: if the card
+        would cover it, the island moves to the other edge for this step."""
+        side = self.home_side
+        if keep_clear is not None and self.geometry().adjusted(-24, -24, 24, 24).intersects(keep_clear):
+            side = "left" if self.home_side == "right" else "right"
+        self._move_to(side)
+        self._collapse_timer.stop()
+        self._state = "answer"
+        self._sentences = [text.strip()] if text.strip() else []
+        self._highlights = []
+        self._meta = f"step {n} of {total}" if total >= n > 0 else (f"step {n}" if n > 0 else "")
+        self.update()
+
     def set_meta(self, text: str) -> None:
         self._meta = text
         self.update()
@@ -202,7 +220,15 @@ class SideIsland(QWidget):
 
     def _collapse(self) -> None:
         self._state = "idle"
+        self._move_to(self.home_side)
         self.update()
+
+    def _move_to(self, side: str) -> None:
+        if side != self.side:
+            self.side = side
+            if self._screen is not None:
+                self.dock(self._screen)
+            self.update()
 
     # --- Geometry ------------------------------------------------------------
 
