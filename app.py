@@ -27,10 +27,9 @@ import threading
 import time
 from ctypes import wintypes
 
-from PyQt6.QtCore import QCoreApplication, QObject, Qt, pyqtSignal
+from PyQt6.QtCore import QObject, pyqtSignal
 from PyQt6.QtWidgets import QApplication
 
-import explainer
 import guide
 import kb
 import sysinfo
@@ -487,8 +486,6 @@ class ClickyApp(QObject):
     sig_island_done = pyqtSignal()
     # Name of what the next point_at points at (the [POINT] tag's label).
     sig_point_label = pyqtSignal(str)
-    # Open a 3D explainer (a topic from explainer.ORDER) over the screen.
-    sig_explain = pyqtSignal(str)
     # Guide mode: the step being shown (its sentence, number and the total).
     sig_guide_step = pyqtSignal(str, int, int, object)
 
@@ -575,8 +572,6 @@ class ClickyApp(QObject):
         self.sig_island_note.connect(lambda text: self._island("island_note", text))
         self.sig_island_done.connect(lambda: self._island("island_done"))
         self.sig_point_label.connect(lambda label: self._island("point_label", label))
-        self.explainers = explainer.available()
-        self.sig_explain.connect(self._on_explain)
         self.sig_guide_step.connect(lambda text, n, total, where: self._island("island_step", text, n, total, where))
 
     def start(self) -> None:
@@ -638,7 +633,7 @@ class ClickyApp(QObject):
         if self._overlay is not None and hasattr(self._overlay, "apply_look"):
             self._overlay.apply_look(
                 glow_enabled=resolve_setting("EDGE_GLOW", default="on").lower() == "on",
-                island_side=resolve_setting("ISLAND_SIDE", default="right").lower(),
+                island_side=resolve_setting("ISLAND_SIDE", default="top").lower(),
             )
 
     def stop(self) -> None:
@@ -1115,17 +1110,6 @@ class ClickyApp(QObject):
             if cancel.is_set():
                 return
 
-            # "Show me how a 2-stroke engine works": build it in 3D on screen.
-            topic = explainer.match(transcript) if self.explainers else None
-            if topic:
-                dbg.log(f"EXPLAINER: {topic}")
-                _log(f"Opening the {topic} explainer.")
-                self.sig_explain.emit(topic)
-                line = explainer.intro(topic)
-                self._tts.speak_sentence(line)
-                self.sig_island_say.emit(line)
-                return
-
             # Read capture result from the worker that's been running in
             # parallel with stt.stop_recording above. Timeout is 5s (far
             # above any realistic capture time, ~300ms worst case), so if
@@ -1595,14 +1579,6 @@ class ClickyApp(QObject):
             self._history.append({"role": "assistant", "content": [{"type": "text", "text": last or "(guided step by step)"}]})
         dbg.log("GUIDE: finished")
 
-    def _on_explain(self, topic: str) -> None:
-        try:
-            from explainer.window import open_explainer
-            open_explainer(topic)
-        except Exception as exc:
-            _log(f"ERROR: 3D explainer failed: {type(exc).__name__}: {exc}")
-            self.sig_notify.emit("The 3D view couldn't open on this PC.")
-
     def _on_hide_overlay(self) -> None:
         if self._overlay:
             self._overlay.hide_for_capture()
@@ -2016,9 +1992,6 @@ if __name__ == "__main__":
     print("=" * 70)
 
     set_dpi_awareness()
-    # The 3D explainers' web view (explainer/window.py) loads later; Qt needs
-    # this before the app exists for that to work.
-    QCoreApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts)
     qt_app = QApplication(sys.argv)
     # Fonts, the app-wide stylesheet and the window icon all follow the
     # chosen avatar's theme, and switch with it. clixy.spec's `icon=` embeds
@@ -2198,7 +2171,6 @@ if __name__ == "__main__":
         tray = ClickyTray(
             on_quit=_quit_via_tray,
             on_settings=_show_settings,
-            on_explain=clicky.sig_explain.emit if clicky.explainers else None,
         )
     except RuntimeError as exc:
         from PyQt6.QtWidgets import QMessageBox

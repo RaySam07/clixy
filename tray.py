@@ -6,7 +6,6 @@ must reach for Task Manager (Ctrl+Shift+Esc) to kill ``Clicky.exe``.
 
 Menu structure (right-click the tray icon):
     - Settings...                   ← reopen the BYOK keyring dialog
-    - Show me in 3D >               ← open a 3D explainer (when this build has them)
     - Avatar >                      ← switch buddy (and theme) instantly
     - Open Knowledge Folder         ← jump to ~/Documents/Clixy Wiki/
     - Open Memory Folder            ← jump to ~/.clixy/memory/
@@ -57,7 +56,6 @@ class ClickyTray(QObject):
         *,
         on_quit: Callable[[], None],
         on_settings: Callable[[], None],
-        on_explain: Callable[[str], None] | None = None,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
@@ -80,7 +78,6 @@ class ClickyTray(QObject):
 
         self._on_quit = on_quit
         self._on_settings = on_settings
-        self._on_explain = on_explain
 
         self._icon = QSystemTrayIcon(parent=self)
         from hotkey import DEFAULT_COMBO, describe
@@ -109,16 +106,6 @@ class ClickyTray(QObject):
         act_settings = QAction("Settings...", self)
         act_settings.triggered.connect(self._on_settings)
         self._menu.addAction(act_settings)
-
-        if self._on_explain is not None:
-            import explainer
-            shows = self._menu.addMenu("Show me in 3D")
-            shows.setWindowFlags(self._menu.windowFlags())
-            shows.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
-            for topic, name in explainer.topics():
-                action = QAction(name, self)
-                action.triggered.connect(lambda _checked=False, t=topic: self._on_explain(t))
-                shows.addAction(action)
 
         avatars = self._menu.addMenu("Buddy")
         avatars.setWindowFlags(self._menu.windowFlags())

@@ -763,15 +763,16 @@ class SettingsDialog(QDialog):
         self._glow.toggled.connect(self._look_preview.set_glow)
         self._glow.setChecked(resolve_setting("EDGE_GLOW", default="on").lower() == "on")
         self._look_preview.set_glow(self._glow.isChecked())
-        self._side = Segmented([("left", "Left"), ("right", "Right")])
+        self._side = Segmented([("top", "Top"), ("left", "Left"), ("right", "Right")])
         self._side.changed.connect(self._look_preview.set_side)
-        side = "left" if resolve_setting("ISLAND_SIDE", default="right").lower() == "left" else "right"
+        side = resolve_setting("ISLAND_SIDE", default="top").lower()
+        side = side if side in ("top", "left", "right") else "top"
         self._side.set_value(side)
         self._look_preview.set_side(side)
-        self._look_preview._side = self._look_preview._side_target  # start there, no slide
+        self._look_preview.jump()  # start there, no slide
         v.addWidget(_rows(
             _row("Edge glow", "Your buddy's colors flow around the screen while you talk.", self._glow),
-            _row("Island side", "Which edge of the screen the notch lives on.", self._side),
+            _row("Where Clixy sits", "The top of the screen like a laptop's notch, or a side edge.", self._side),
         ))
         v.addStretch(1)
         return page
@@ -1282,7 +1283,7 @@ class SettingsDialog(QDialog):
         self._store("HOTKEY", self._hotkey)
         self._store("MIC_DEVICE", self._mic_box.currentData() or "")
         self._store("EDGE_GLOW", "on" if self._glow.isChecked() else "off")
-        self._store("ISLAND_SIDE", self._side.value() or "right")
+        self._store("ISLAND_SIDE", self._side.value() or "top")
         self._store("KEEP_HISTORY", "on" if self._keep_history.isChecked() else "off")
         theme.set_avatar(theme.current_avatar_id())  # persists the picked avatar
         self._avatar_at_open = theme.current_avatar_id()

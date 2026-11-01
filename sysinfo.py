@@ -9,7 +9,9 @@ the question.
 """
 from __future__ import annotations
 
+import os
 import platform
+import re
 import sys
 from functools import lru_cache
 
@@ -84,3 +86,60 @@ def profile() -> str:
     """One line about this computer, for the model."""
     bits = [windows_version(), form_factor(), screens()]
     return ", ".join(b for b in bits if b)
+
+
+_NOT_NAMES = {"user", "admin", "administrator", "owner", "pc", "root", "guest", "default", "home", "laptop"}
+
+
+@lru_cache(maxsize=1)
+def first_name() -> str:
+    """The first name to greet ("Rayan"), or "" when there's no real one.
+    Settings' USER_NAME wins; then the account's full name in Windows; then
+    the sign-in name."""
+    candidates = []
+    try:
+        from config import resolve_setting
+        candidates.append(resolve_setting("USER_NAME", default=""))
+    except Exception:
+        pass
+    if sys.platform == "win32":
+        candidates += [_windows_full_name(), _windows_display_name()]
+    candidates.append(os.environ.get("USERNAME") or os.environ.get("USER") or "")
+    for name in candidates:
+        word = next((w for w in re.split(r"[\s._\-@\\]+", (name or "").strip()) if w.isalpha()), "")
+        if word and word.lower() not in _NOT_NAMES:
+            return word[0].upper() + word[1:]
+    return ""
+
+
+def _windows_full_name() -> str:
+    """The "Full name" on this Windows account (set from a Microsoft account too)."""
+    try:
+        import ctypes
+
+        class _UserInfo10(ctypes.Structure):
+            _fields_ = [("name", ctypes.c_wchar_p), ("comment", ctypes.c_wchar_p),
+                        ("usr_comment", ctypes.c_wchar_p), ("full_name", ctypes.c_wchar_p)]
+
+        netapi = ctypes.windll.netapi32
+        buf = ctypes.c_void_p()
+        if netapi.NetUserGetInfo(None, os.environ.get("USERNAME", ""), 10, ctypes.byref(buf)) != 0 or not buf:
+            return ""
+        try:
+            return ctypes.cast(buf, ctypes.POINTER(_UserInfo10)).contents.full_name or ""
+        finally:
+            netapi.NetApiBufferFree(buf)
+    except Exception:
+        return ""
+
+
+def _windows_display_name() -> str:
+    try:
+        import ctypes
+        size = ctypes.c_ulong(256)
+        buf = ctypes.create_unicode_buffer(256)
+        if ctypes.windll.secur32.GetUserNameExW(3, buf, ctypes.byref(size)):  # NameDisplay
+            return buf.value
+    except Exception:
+        pass
+    return ""

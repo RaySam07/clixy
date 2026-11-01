@@ -283,7 +283,6 @@ def test_the_pipeline_sends_how_tos_to_the_guide(mocker):
     app = ClickyApp(ai_client=mocker.MagicMock(), stt_client=mocker.MagicMock(), tts_client=mocker.MagicMock(),
                     memory_store=mocker.MagicMock(), overlay_controller=mocker.MagicMock(),
                     hotkey_instance=mocker.MagicMock())
-    app.explainers = False
     run = mocker.patch.object(ClickyApp, "_run_guide")
     cap = mocker.MagicMock()
     cap.image = Image.new("RGB", (1280, 800))

@@ -538,8 +538,9 @@ class MicMeter(QWidget):
 # --- Look preview --------------------------------------------------------------------
 
 class LookPreview(QWidget):
-    """A small live screen showing the edge glow and the notch on the chosen
-    side, with your buddy listening in it. Slides when the side changes."""
+    """A small live screen showing the edge glow and where Clixy sits: a
+    notch at the top, or the capsule on a side edge, with your buddy
+    listening in it. Moves when the choice changes."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -548,6 +549,8 @@ class LookPreview(QWidget):
         self._glow = True
         self._side = 1.0          # 0 = left edge, 1 = right edge
         self._side_target = 1.0
+        self._top = 1.0           # 1 = the notch at the top, 0 = a side edge
+        self._top_target = 1.0
         self._t0 = time.monotonic()
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)
@@ -557,7 +560,13 @@ class LookPreview(QWidget):
         self.update()
 
     def set_side(self, side: str) -> None:
-        self._side_target = 0.0 if side == "left" else 1.0
+        self._top_target = 1.0 if side == "top" else 0.0
+        if side in ("left", "right"):
+            self._side_target = 0.0 if side == "left" else 1.0
+
+    def jump(self) -> None:
+        """Be at the chosen place now, without moving there."""
+        self._side, self._top = self._side_target, self._top_target
 
     def showEvent(self, event) -> None:  # noqa: N802
         self._timer.start(33)
@@ -568,9 +577,10 @@ class LookPreview(QWidget):
         super().hideEvent(event)
 
     def _tick(self) -> None:
-        self._side += (self._side_target - self._side) * 0.18
-        if abs(self._side_target - self._side) < 0.002:
-            self._side = self._side_target
+        for attr in ("_side", "_top"):
+            value, target = getattr(self, attr), getattr(self, attr + "_target")
+            value += (target - value) * 0.18
+            setattr(self, attr, target if abs(target - value) < 0.002 else value)
         self.update()
 
     def paintEvent(self, _event) -> None:
@@ -611,7 +621,30 @@ class LookPreview(QWidget):
                 p.drawRoundedRect(screen, 18, 18)
             p.setOpacity(1.0)
 
-        # The notch, grown into its listening capsule.
+        # At the top: the notch, grown into its listening pill.
+        if self._top > 0.01:
+            p.setOpacity(self._top)
+            pw, ph = 168.0, 30.0
+            pill = QRectF(screen.center().x() - pw / 2, screen.top() - 14, pw, ph + 14)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor(0, 0, 0))
+            p.drawRoundedRect(pill, 14, 14)
+            cy = screen.top() + ph / 2
+            theme.paint_avatar_in(p, QRectF(pill.left() + 6, cy - 12, 24, 24), t=t, mood="listening",
+                                  scale=0.5, device_pixel_ratio=self.devicePixelRatioF())
+            for i in range(11):
+                weight = 1 - abs(i - 5) / 5
+                bar_h = 3 + 14 * (0.35 + 0.65 * weight) * (0.55 + 0.45 * math.sin(t * 8 + i * 1.3))
+                p.setBrush(theme.BUTTER)
+                p.drawRoundedRect(QRectF(pill.left() + 40 + i * 9, cy - bar_h / 2, 4, bar_h), 2, 2)
+            p.setBrush(theme.CORAL)
+            p.drawEllipse(QPointF(pill.right() - 16, cy), 3.5, 3.5)
+            p.setOpacity(1.0)
+        if self._top > 0.99:
+            return
+        p.setOpacity(1.0 - self._top)
+
+        # On a side edge: the notch, grown into its listening capsule.
         # It runs 20 px past the screen edge, so only its inner corners show
         # rounded; sliding sides, it crosses the screen as a free capsule.
         w, h, past = 40.0, 132.0, 20.0

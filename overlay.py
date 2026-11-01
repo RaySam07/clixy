@@ -1283,19 +1283,13 @@ class OverlayController:
             self._marks_fade_timer.start(self._FIGURE_LINGER_MS if figure else self._MARKS_LINGER_MS)
 
     def apply_look(self, *, glow_enabled: bool, island_side: str) -> None:
-        """Settings that change without a restart: the edge glow and which
-        side of the screen the island lives on."""
+        """Settings that change without a restart: the edge glow and where
+        the island lives (the top of the screen, or a side edge)."""
         for overlay in self.overlays:
             overlay.glow_enabled = glow_enabled
             overlay.update()
         if self.island is not None:
-            side = "left" if island_side == "left" else "right"
-            self.island.home_side = side
-            if side != self.island.side:
-                self.island.side = side
-                if self.island._screen is not None:
-                    self.island.dock(self.island._screen)
-                self.island.update()
+            self.island.set_home(island_side)
 
     def _pick_overlay_for_point(
         self, physical_x: int, physical_y: int, monitor: dict,

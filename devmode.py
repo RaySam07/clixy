@@ -20,14 +20,8 @@ from typing import Callable
 
 from PyQt6.QtCore import QObject, QTimer
 
-WATCHED = (
-    "*.py",
-    "explainer/*.py",
-    "explainer/recipes/*.json",
-    "explainer/web/index.html",
-    "explainer/web/clixy3d.js",
-)
-"""What a change restarts Clixy for (tests and docs don't)."""
+WATCHED = ("*.py",)
+"""What a change restarts Clixy for: the app's own code (tests and docs don't)."""
 
 SETTLE_S = 1.2
 """Quiet time after the last edit before restarting, so a save of several files is one restart."""

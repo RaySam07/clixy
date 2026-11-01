@@ -89,20 +89,21 @@ def test_broken_code_is_reported_not_loaded(qapp, tmp_path, clock):
     assert calls["change"] == 1
 
 
-def test_recipes_and_the_3d_page_count_but_tests_do_not(qapp, tmp_path, clock):
-    (tmp_path / "explainer" / "recipes").mkdir(parents=True)
+def test_tests_and_docs_dont_restart_it(qapp, tmp_path, clock):
     (tmp_path / "tests").mkdir()
-    recipe = tmp_path / "explainer" / "recipes" / "engine.json"
-    recipe.write_text("{}", encoding="utf-8")
+    (tmp_path / "app.py").write_text("x = 1\n", encoding="utf-8")
     test_file = tmp_path / "tests" / "test_x.py"
     test_file.write_text("", encoding="utf-8")
+    readme = tmp_path / "README.md"
+    readme.write_text("", encoding="utf-8")
     w, calls = _watcher(tmp_path)
     _touch(test_file, "x = 1\n")
+    _touch(readme, "# hi")
     w.poll()
     clock[0] += 10
     w.poll()
     assert calls["change"] == 0
-    _touch(recipe, '{"title": "x"}')
+    _touch(tmp_path / "app.py", "x = 2\n")
     w.poll()
     clock[0] += 10
     w.poll()

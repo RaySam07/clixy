@@ -287,7 +287,7 @@ records it by having you press it; takes effect on the next start."""
 EDGE_GLOW: bool = resolve_setting("EDGE_GLOW", default="on").lower() == "on"
 """Light the screen edges in the buddy's colors while you talk."""
 
-ISLAND_SIDE: str = resolve_setting("ISLAND_SIDE", default="right").lower()
+ISLAND_SIDE: str = resolve_setting("ISLAND_SIDE", default="top").lower()
 """Which screen edge the notch lives on: "right" or "left"."""
 
 KEEP_HISTORY: bool = resolve_setting("KEEP_HISTORY", default="on").lower() == "on"

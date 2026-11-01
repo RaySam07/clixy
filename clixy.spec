@@ -102,10 +102,6 @@ a = Analysis(
         # Nunito (UI) and Silkscreen (pixel titles), both SIL OFL; theme.py
         # loads them from assets/fonts at startup.
         ("assets/fonts", "assets/fonts"),
-        # 3D explainers: the page, its bundled engine and the recipes.
-        ("explainer/web/index.html", "explainer/web"),
-        ("explainer/web/clixy3d.js", "explainer/web"),
-        ("explainer/recipes", "explainer/recipes"),
     ],
     hiddenimports=[
         # Look and feel: imported lazily by overlay.py / app.py.
@@ -118,17 +114,11 @@ a = Analysis(
         "snap",
         "mic",
         "version",
-        "explainer",
-        "explainer.window",
         # Qt 6 sub-modules: PyInstaller's hook misses some by default.
         "PyQt6.QtCore",
         "PyQt6.QtGui",
         "PyQt6.QtWidgets",
         "PyQt6.QtMultimedia",
-        # 3D explainers; PyInstaller's WebEngine hook brings QtWebEngineProcess
-        # and its resources along.
-        "PyQt6.QtWebEngineCore",
-        "PyQt6.QtWebEngineWidgets",
         # Audio I/O
         "sounddevice",
         "numpy",

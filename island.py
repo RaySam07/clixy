@@ -1,9 +1,15 @@
-"""Side notch: Clicky's status island on the edge of the screen.
+"""Clixy's status island: a notch at the top of the screen (the default),
+like a laptop's notch, or a sliver on the left or right edge.
 
-A pure-black shape that grows out of the right (or left) screen edge, like
-the Dynamic Island turned on its side:
+At the top it's a small black notch with your buddy and soft audio lines.
+It says hello ("Hey Rayan!") when Clixy starts and the first time each day,
+shows the keys to hold only when the mouse rests on it, widens into a pill
+while you talk, and drops the answer down as a card.
 
-- Idle: a thin sliver on the edge. When the mouse comes near it springs
+On a side edge, a pure-black shape grows out of the edge, like the Dynamic
+Island turned on its side:
+
+- Idle: a thin sliver on the edge. When the mouse rests on it, it springs
   out into a pill that says hello: your buddy, "Clixy here." and the keys to
   hold. It lingers a moment after the mouse leaves, then tucks back in.
 - Listening: stretches down the edge into a tall capsule with a coral
@@ -26,6 +32,7 @@ controller's island_* methods via pyqtSignal slots.
 """
 from __future__ import annotations
 
+import datetime
 import math
 import re
 import time
@@ -38,6 +45,17 @@ import theme
 
 
 class SideIsland(QWidget):
+    # At the top of the screen, like a laptop's notch.
+    NOTCH = (132.0, 30.0)
+    HELLO = (214.0, 34.0)
+    HINT = (262.0, 34.0)
+    PILL = (330.0, 46.0)
+    TOP_CARD_W = 430.0
+    _TOP_WIN = (480, 360)
+    _HELLO_S = 3.2
+    _DWELL = 0.5                 # s the mouse rests on it before it shows anything
+
+    # On a side edge.
     SLIVER = (8.0, 58.0)
     GREET = (256.0, 78.0)
     CAPSULE = (60.0, 214.0)
@@ -48,7 +66,7 @@ class SideIsland(QWidget):
     _PAD = 24.0
     _TOP = 0.34    # vertical centre, as a fraction of the screen's height
     _STIFF, _DAMP = 0.16, 0.70   # per 60 Hz frame: slight overshoot, settles in ~0.5 s
-    _PEEK_REACH = 70             # px from the edge where the sliver opens to greet you
+    _PEEK_REACH = 16             # px from the edge: the mouse has to be on the sliver
     _LINGER = 0.6                # s it stays open after the mouse leaves
     _BARS = 13
     _HEAD = 36.0   # card header: the buddy, its name and your question
@@ -64,17 +82,16 @@ class SideIsland(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
-        self.resize(self._WIN_W, self._WIN_H)
-
         if side is None:
             try:
                 from config import ISLAND_SIDE
                 side = ISLAND_SIDE
             except Exception:
-                side = "right"
-        self.side = "left" if side == "left" else "right"
+                side = "top"
+        self.side = side if side in ("left", "right", "top") else "top"
         self.home_side = self.side
-        """The side Settings chose; a guide step may borrow the other one."""
+        """Where Settings put it; a guide step may borrow another edge."""
+        self._fit_window()
 
         self._state = "idle"
         self._transcript = ""
@@ -88,16 +105,23 @@ class SideIsland(QWidget):
         """Shown in the chip while listening; app.py sets it, e.g. 'Haiku 5.5'."""
         self.hotkey = _hotkey_text()
         """The keys to hold, as shown when it greets you, e.g. 'Ctrl + Win'."""
+        self.name = _first_name()
+        """Who it says hello to ("Rayan"); empty says "Hey there!"."""
         self._t0 = time.monotonic()
+        self._hello_until = self._t0 + self._HELLO_S
+        self._greeted_on = datetime.date.today()
+        self._hover_since: float | None = None
+        self._frame = 0
         self._last_tick = self._t0
         self._layout_cache: dict = {}
 
         # Spring state: width, height (the shape is centred in the window).
-        self._w, self._h = self.SLIVER
+        self._w, self._h = self.NOTCH if self.side == "top" else self.SLIVER
         self._vw = self._vh = 0.0
         self._fade_voice = 0.0
         self._fade_card = 0.0
         self._fade_greet = 0.0
+        self._fade_notch = 0.0
         self._near = False
         self._near_until = 0.0
 
@@ -117,12 +141,18 @@ class SideIsland(QWidget):
     # --- Placement -----------------------------------------------------------
 
     def dock(self, screen: QScreen) -> None:
-        """Sit on ``screen``'s edge, clear of the taskbar."""
+        """Sit on ``screen``'s top edge (centred) or side edge, clear of the taskbar."""
         self._screen = screen
         area = screen.availableGeometry()
+        if self.side == "top":
+            self.move(area.x() + (area.width() - self.width()) // 2, area.y())
+            return
         x = area.x() + area.width() - self.width() if self.side == "right" else area.x()
         y = area.y() + int(area.height() * self._TOP) - self.height() // 2
         self.move(x, y)
+
+    def _fit_window(self) -> None:
+        self.resize(*(self._TOP_WIN if self.side == "top" else (self._WIN_W, self._WIN_H)))
 
     def _apply_clickthrough(self) -> None:
         try:
@@ -188,7 +218,11 @@ class SideIsland(QWidget):
         would cover it, the island moves to the other edge for this step."""
         side = self.home_side
         if keep_clear is not None and self.geometry().adjusted(-24, -24, 24, 24).intersects(keep_clear):
-            side = "left" if self.home_side == "right" else "right"
+            if self.home_side == "top":  # the far side from what you have to click
+                screen = self._screen.geometry() if self._screen is not None else self.geometry()
+                side = "left" if keep_clear.center().x() > screen.center().x() else "right"
+            else:
+                side = "left" if self.home_side == "right" else "right"
         self._move_to(side)
         self._collapse_timer.stop()
         self._state = "answer"
@@ -223,35 +257,59 @@ class SideIsland(QWidget):
         self._move_to(self.home_side)
         self.update()
 
+    def set_home(self, side: str) -> None:
+        """Live there from now on: "top", "left" or "right" (Settings)."""
+        self.home_side = side if side in ("left", "right", "top") else "top"
+        self._move_to(self.home_side)
+
     def _move_to(self, side: str) -> None:
         if side != self.side:
+            was_top = self.side == "top"
             self.side = side
+            if was_top != (side == "top"):
+                self._fit_window()
             if self._screen is not None:
                 self.dock(self._screen)
             self.update()
 
     # --- Geometry ------------------------------------------------------------
 
+    @property
+    def top(self) -> bool:
+        return self.side == "top"
+
+    def _card_w(self) -> float:
+        return self.TOP_CARD_W if self.top else self.CARD_W
+
+    def _hello(self) -> bool:
+        return self.top and self._state == "idle" and time.monotonic() < self._hello_until
+
     def _target(self) -> tuple[float, float]:
         if self._state in ("listening", "thinking"):
-            return self.CAPSULE
+            return self.PILL if self.top else self.CAPSULE
         if self._state == "answer":
-            return self.CARD_W, self._card_height()
+            return self._card_w(), self._card_height()
         if self._state == "note":
-            return self.CARD_W, min(self.MAX_CARD_H, 2 * self._PAD + self._HEAD + 14.0 + self._note_height())
+            return self._card_w(), min(self.MAX_CARD_H, 2 * self._PAD + self._HEAD + 14.0 + self._note_height())
+        if self.top:
+            if self._hello():
+                return self.HELLO
+            return self.HINT if self._near else self.NOTCH
         return self.GREET if self._near else self.SLIVER
 
     def _card_height(self) -> float:
-        body = self._captions_layout(self.CARD_W - 2 * self._PAD)[1]
+        body = self._captions_layout(self._card_w() - 2 * self._PAD)[1]
         return min(self.MAX_CARD_H, self._PAD + self._HEAD + 14.0 + body + self._PAD)
 
     def _note_height(self) -> float:
         metrics = QFontMetricsF(theme.display_font(13.5))
-        return metrics.boundingRect(QRectF(0, 0, self.CARD_W - 2 * self._PAD, 10_000),
+        return metrics.boundingRect(QRectF(0, 0, self._card_w() - 2 * self._PAD, 10_000),
                                     Qt.TextFlag.TextWordWrap, self._note).height()
 
     def _shape_rect(self) -> QRectF:
         """The visible black shape, flush with the screen edge."""
+        if self.top:
+            return QRectF((self.width() - self._w) / 2.0, 0.0, self._w, self._h)
         cy = self.height() / 2.0
         if self.side == "right":
             return QRectF(self.width() - self._w, cy - self._h / 2.0, self._w, self._h)
@@ -259,6 +317,13 @@ class SideIsland(QWidget):
 
     def _shape_path(self) -> QPainterPath:
         rect = self._shape_rect()
+        if self.top:
+            # Flush with the top edge: only the lower corners are rounded.
+            radius = min(15.0, self._h / 2.0) if self._h < 52 else min(26.0, self._h / 2.0)
+            path = QPainterPath()
+            path.addRoundedRect(QRectF(rect.x(), rect.y() - radius, rect.width(), rect.height() + radius),
+                                radius, radius)
+            return path
         radius = 10.0 if self._w < 24 else min(32.0, self._h / 2.0, self._w / 2.0 + 12.0)
         # Extend past the edge so only the inner corners are rounded.
         if self.side == "right":
@@ -272,20 +337,31 @@ class SideIsland(QWidget):
     # --- Animation -----------------------------------------------------------
 
     def _update_near(self) -> None:
+        """Open only for a mouse that rests on the shape itself for a moment,
+        never for one passing by."""
         if self._state != "idle" or self._screen is None:
             self._near = False
             self._near_until = 0.0
+            self._hover_since = None
             return
         pos = QCursor.pos()
         geo = self.geometry()
-        edge = geo.right() if self.side == "right" else geo.left()
-        # Once it's open the whole pill counts, so it stays while you look at it.
-        reach = max(self._PEEK_REACH, self._w + 24) if self._near else self._PEEK_REACH
-        close_x = abs(pos.x() - edge) < reach
-        close_y = abs(pos.y() - geo.center().y()) < max(160.0, self._h / 2 + 40)
         now = time.monotonic()
-        if close_x and close_y:
-            self._near_until = now + self._LINGER
+        if self.top:
+            shape = self._shape_rect().translated(geo.x(), geo.y())
+            on = shape.adjusted(-4, -4, 4, 6).contains(QPointF(pos))
+        else:
+            edge = geo.right() if self.side == "right" else geo.left()
+            # Once it's open the whole pill counts, so it stays while you look at it.
+            reach = max(self._PEEK_REACH, self._w + 24) if self._near else self._PEEK_REACH
+            on = abs(pos.x() - edge) < reach and abs(pos.y() - geo.center().y()) < self._h / 2 + 12
+        if on:
+            if self._hover_since is None:
+                self._hover_since = now
+            if self._near or now - self._hover_since >= self._DWELL:
+                self._near_until = now + (0.3 if self.top else self._LINGER)
+        else:
+            self._hover_since = None
         self._near = now < self._near_until
 
     def _animate(self) -> None:
@@ -293,6 +369,9 @@ class SideIsland(QWidget):
         frames = max(1, min(4, round((now - self._last_tick) * 60)))
         self._last_tick = now
         self._update_near()
+        if self.top and self._state == "idle" and datetime.date.today() != self._greeted_on:
+            self._greeted_on = datetime.date.today()  # first time each day: say hello again
+            self._hello_until = now + self._HELLO_S
         tw, th = self._target()
         moving = False
         for _ in range(frames):
@@ -305,11 +384,16 @@ class SideIsland(QWidget):
         else:
             moving = True
 
-        voice_on = self._state in ("listening", "thinking") and self._h > 150 and self._w > 44
+        if self.top:
+            voice_on = self._state in ("listening", "thinking") and self._w > self.PILL[0] * 0.8
+            greet_on = False
+        else:
+            voice_on = self._state in ("listening", "thinking") and self._h > 150 and self._w > 44
+            greet_on = self._state == "idle" and self._near and self._w > self.GREET[0] * 0.8
         card_on = self._state in ("answer", "note") and self._w > tw * 0.85
-        greet_on = self._state == "idle" and self._near and self._w > self.GREET[0] * 0.8
+        notch_on = self.top and self._state == "idle" and self._h < 44
         for attr, on, rate in (("_fade_voice", voice_on, 0.22), ("_fade_card", card_on, 0.18),
-                               ("_fade_greet", greet_on, 0.3)):
+                               ("_fade_greet", greet_on, 0.3), ("_fade_notch", notch_on, 0.25)):
             value = getattr(self, attr)
             target = 1.0 if on else 0.0
             if abs(value - target) > 0.005:
@@ -320,8 +404,12 @@ class SideIsland(QWidget):
             setattr(self, attr, value)
         self._smooth_level += (self._level - self._smooth_level) * 0.25
 
+        self._frame += 1
         if moving or self._state in ("listening", "thinking"):
             self.update()
+        elif self.top and self._state == "idle" and self._frame % 3 == 0:
+            # The resting notch's audio lines breathe: repaint just the notch.
+            self.update(self._shape_rect().toAlignedRect().adjusted(-4, 0, 4, 4))
 
     # --- Painting ------------------------------------------------------------
 
@@ -335,8 +423,8 @@ class SideIsland(QWidget):
         # faint black, darkest at the shape's edge, fading out over ~16 px.
         strength = max(0.0, min(1.0, (self._w - 16.0) / 40.0))
         if strength > 0:
-            direction = -1 if self.side == "right" else 1
-            shadow = path.translated(direction * 3.0, 6.0)
+            direction = 0 if self.top else (-1 if self.side == "right" else 1)
+            shadow = path.translated(direction * 3.0, 4.0 if self.top else 6.0)
             painter.setBrush(Qt.BrushStyle.NoBrush)
             for i in range(1, 9):
                 pen = QPen(QColor(0, 0, 0, round(8 * strength)), i * 4.0)
@@ -346,11 +434,19 @@ class SideIsland(QWidget):
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(theme.NOTCH)
         painter.drawPath(path)
+        if self.top:
+            # A faint edge, so a black notch still reads on a dark page.
+            painter.setPen(QPen(QColor(255, 255, 255, 26), 1.0))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawPath(path)
+            painter.setPen(Qt.PenStyle.NoPen)
 
         painter.setClipPath(path)
         t = time.monotonic() - self._t0
+        if self._fade_notch > 0.01:
+            self._paint_notch(painter, rect, t)
         if self._fade_voice > 0.01:
-            self._paint_voice(painter, rect, t)
+            (self._paint_pill if self.top else self._paint_voice)(painter, rect, t)
         if self._fade_card > 0.01:
             self._paint_card(painter, rect)
         if self._fade_greet > 0.01:
@@ -359,11 +455,14 @@ class SideIsland(QWidget):
     def _scaled(self, painter: QPainter, rect: QRectF, fade: float) -> None:
         """Fade in with a little grow, from the edge the shape grows out of."""
         painter.setOpacity(fade)
-        anchor_x = rect.right() if self.side == "right" else rect.left()
+        if self.top:
+            anchor = QPointF(rect.center().x(), rect.top())
+        else:
+            anchor = QPointF(rect.right() if self.side == "right" else rect.left(), rect.center().y())
         scale = 0.94 + 0.06 * fade
-        painter.translate(anchor_x, rect.center().y())
+        painter.translate(anchor)
         painter.scale(scale, scale)
-        painter.translate(-anchor_x, -rect.center().y())
+        painter.translate(-anchor)
 
     def _paint_voice(self, painter: QPainter, rect: QRectF, t: float) -> None:
         painter.save()
@@ -406,6 +505,86 @@ class SideIsland(QWidget):
         theme.paint_avatar_in(painter, QRectF(rect.left(), rect.bottom() - 62, rect.width(), 52), t=t,
                               mood="listening" if listening else "thinking", scale=1.0,
                               device_pixel_ratio=self.devicePixelRatioF(), glow=True)
+        painter.restore()
+
+    def _paint_notch(self, painter: QPainter, rect: QRectF, t: float) -> None:
+        """The resting notch: your buddy and soft audio lines; while saying
+        hello, "Hey Rayan!"; while the mouse rests on it, the keys to hold."""
+        painter.save()
+        painter.setOpacity(self._fade_notch)
+        band = min(rect.height(), self.HINT[1])
+        cy = rect.top() + band / 2.0
+        hello, hint = self._hello(), self._near and not self._hello()
+        size = 24.0 if hello else 22.0
+        theme.paint_avatar_in(painter, QRectF(rect.left() + 10, cy - size / 2, size, size), t=t,
+                              mood="happy" if hello else "idle", scale=size / 48.0,
+                              device_pixel_ratio=self.devicePixelRatioF(), glow=True)
+        # How far the shape has opened toward its wider form, for the words in the middle.
+        wide = self.HELLO[0] if hello else self.HINT[0]
+        k = max(0.0, min(1.0, (rect.width() - self.NOTCH[0]) / (wide - self.NOTCH[0])))
+        if not hint:
+            painter.setPen(Qt.PenStyle.NoPen)
+            n = 5 if hello else 6
+            x = rect.right() - 14 - n * 6.0
+            for i in range(n):
+                weight = 1 - abs(i - (n - 1) / 2) / ((n - 1) / 2 + 0.5)
+                h = 3.5 + 9.0 * weight * (0.55 + 0.45 * math.sin(t * 2.3 + i * 1.15))
+                painter.setBrush(theme.SUN)
+                painter.drawRoundedRect(QRectF(x + i * 6.0, cy - h / 2, 3.0, h), 1.5, 1.5)
+        if k > 0.02 and (hello or hint):
+            painter.setOpacity(self._fade_notch * k)
+            x = rect.left() + 42
+            if hello:
+                words = f"Hey {self.name}" if self.name else "Hey there"
+                painter.setFont(theme.display_font(13.5))
+                painter.setPen(theme.NOTCH_TEXT)
+                painter.drawText(QPointF(x, cy + 5.5), words)
+                painter.setPen(theme.current_palette().flood)
+                painter.drawText(QPointF(x + painter.fontMetrics().horizontalAdvance(words), cy + 5.5), "!")
+            else:
+                x = self._paint_mini_keys(painter, x, cy - 9.0, 18.0)
+                painter.setFont(theme.ui_font(8.8, QFont.Weight.Light))
+                painter.setPen(theme.NOTCH_MUTED)
+                painter.drawText(QRectF(x + 7, cy - 9.0, rect.right() - x - 14, 16), Qt.AlignmentFlag.AlignVCenter,
+                                 "hold to ask")
+        painter.restore()
+
+    def _paint_pill(self, painter: QPainter, rect: QRectF, t: float) -> None:
+        """Top of the screen, listening or thinking: the buddy, a row of audio
+        lines that move with your voice, and the recording dot."""
+        painter.save()
+        self._scaled(painter, rect, self._fade_voice)
+        listening = self._state == "listening"
+        cy = rect.top() + rect.height() / 2.0
+        theme.paint_avatar_in(painter, QRectF(rect.left() + 12, cy - 15, 30, 30), t=t,
+                              mood="listening" if listening else "thinking", scale=30 / 48.0,
+                              device_pixel_ratio=self.devicePixelRatioF(), glow=True)
+        n, bar_w, gap = 21, 4.0, 4.0
+        x0 = rect.center().x() - (n * (bar_w + gap) - gap) / 2 + 4
+        mid = (n - 1) / 2
+        painter.setPen(Qt.PenStyle.NoPen)
+        for i in range(n):
+            weight = 1 - abs(i - mid) / mid
+            if listening:
+                h = 4 + 24 * self._smooth_level * (0.35 + 0.65 * weight) * (0.7 + 0.3 * math.sin(t * 9 + i * 1.3))
+                color = QColor(theme.BUTTER)
+            else:
+                h = 4.0
+                color = QColor(255, 255, 255)
+                color.setAlphaF(0.2 + 0.8 * (0.5 + 0.5 * math.sin(t * 5.7 - i * 0.55)))
+            painter.setBrush(color)
+            painter.drawRoundedRect(QRectF(x0 + i * (bar_w + gap), cy - h / 2, bar_w, h), 2, 2)
+        dot = QPointF(rect.right() - 24, cy)
+        if listening:
+            pulse = (t % 1.4) / 1.4
+            ring = QColor(theme.CORAL)
+            ring.setAlphaF(0.55 * (1 - pulse))
+            painter.setBrush(ring)
+            painter.drawEllipse(dot, 4 + 7 * pulse, 4 + 7 * pulse)
+            painter.setBrush(theme.CORAL)
+        else:
+            painter.setBrush(QColor(255, 255, 255, 110))
+        painter.drawEllipse(dot, 4, 4)
         painter.restore()
 
     def _paint_greet(self, painter: QPainter, rect: QRectF, t: float) -> None:
@@ -482,8 +661,10 @@ class SideIsland(QWidget):
         self._scaled(painter, rect, self._fade_card)
         # Content is laid out at full card width from the inner edge.
         x0 = (rect.right() - self.CARD_W if self.side == "right" else rect.left()) + self._PAD
+        if self.top:
+            x0 = rect.left() + self._PAD
         y = rect.top() + self._PAD
-        width = self.CARD_W - 2 * self._PAD
+        width = self._card_w() - 2 * self._PAD
 
         # Header: the buddy, its name and the meta on the first line, your
         # question under it.
@@ -582,6 +763,14 @@ class SideIsland(QWidget):
 
 
 _QUOTED = re.compile(r"[\"“‘']([^\"”’']{1,40})[\"”’']")
+
+
+def _first_name() -> str:
+    try:
+        import sysinfo
+        return sysinfo.first_name()
+    except Exception:
+        return ""
 
 
 def _hotkey_text() -> str:

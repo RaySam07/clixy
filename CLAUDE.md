@@ -14,11 +14,13 @@ Clixy is Rayan Sameer's Windows AI buddy (PyQt6). This folder is the local dev c
   itself within a couple of seconds whenever a watched file changes (`devmode.py`). A
   file that doesn't compile shows in the island instead.
 - Tests: `.venv\Scripts\python -m pytest tests -q`.
-- 3D engine: after changing `explainer/web/src/`, run `npm install` and `npm run build` in
-  `explainer/web`.
 
 ## What's next
 - `docs/plans/guide-mode.md`: exact marks from Windows UI Automation and guidance one
   step at a time. Built; verify it on real Windows first (UIA listing in `snap.py`, the
   pynput input watch in `guide.py`) and fix what doesn't hold up.
-- `docs/plans/explainers.md`: 3D explainers (built). Next for them: the AI designs any topic.
+- The island is a notch at the top centre by default (`island.py`, side "top"): resting
+  notch, "Hey <name>!" on start and once a day, a hint only when the mouse rests on it, a
+  listening pill, and the answer as a drop-down card. Left and right edges are still in
+  Settings. The 3D explainers were removed on purpose (too heavy); don't bring them back
+  unless Rayan asks.
