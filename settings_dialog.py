@@ -610,6 +610,24 @@ class SettingsDialog(QDialog):
             _row("Draw on screen", "Your buddy draws to show you. Off, it still draws when you ask it to.",
                  self._draw_checkbox),
         ))
+        # The notch's dashboard: today's classes and the weather.
+        import dashboard
+        self._tt_link = QLineEdit(resolve_setting("TIMETABLE_URL", default=""))
+        self._tt_link.setPlaceholderText("Paste your timetable link")
+        self._tt_link.setMinimumWidth(200)
+        choose = QPushButton("Choose file…")
+        choose.setObjectName("quiet")
+        choose.setCursor(Qt.CursorShape.PointingHandCursor)
+        choose.clicked.connect(self._choose_timetable)
+        self._tt_row = _row("School timetable", self._timetable_line(), self._tt_link, choose)
+        self._city = QLineEdit(resolve_setting("WEATHER_CITY", default=""))
+        self._city.setPlaceholderText(dashboard.city_from_calendar(dashboard._file_bytes()) or "Your city")
+        self._city.setMaximumWidth(200)
+        v.addWidget(_rows(
+            self._tt_row,
+            _row("Weather", "Your city, for the weather on the dashboard.", self._city),
+        ))
+
         hints = QHBoxLayout()
         self._voice_hint = QLabel("Cloud voice uses one Cartesia key for both. Add it in Advanced.")
         self._voice_hint.setObjectName("rowSub")
@@ -620,6 +638,35 @@ class SettingsDialog(QDialog):
         v.addLayout(hints)
         v.addStretch(1)
         return page
+
+    @staticmethod
+    def _timetable_line(note: str = "") -> str:
+        import dashboard
+        if note:
+            return note
+        if dashboard.TIMETABLE_FILE.exists():
+            return "Rest your mouse on the notch to see today's classes. Using your timetable."
+        return ("Rest your mouse on the notch to see today's classes. Paste your school's "
+                "calendar link (iCal) or choose an .ics file.")
+
+    def _choose_timetable(self) -> None:
+        from pathlib import Path
+
+        import dashboard
+        from PyQt6.QtWidgets import QFileDialog
+        path, _filter = QFileDialog.getOpenFileName(self, "Choose your timetable", str(Path.home() / "Downloads"),
+                                                    "Calendar (*.ics)")
+        if not path:
+            return
+        try:
+            count = dashboard.import_timetable(path)
+        except (OSError, ValueError) as exc:
+            self._tt_row.sub.setText(str(exc) if isinstance(exc, ValueError) else "That file couldn't be opened.")
+            return
+        self._tt_row.sub.setText(self._timetable_line(
+            f"Got it: {count} class{'es' if count != 1 else ''} coming up. Rest your mouse on the notch to see them."))
+        if not self._city.text().strip():
+            self._city.setPlaceholderText(dashboard.city_from_calendar(dashboard._file_bytes()) or "Your city")
 
     def _on_mic_changed(self, _index: int) -> None:
         self._test_mic.set_device(self._mic_box.currentData() or "")
@@ -1284,6 +1331,8 @@ class SettingsDialog(QDialog):
         self._store("MIC_DEVICE", self._mic_box.currentData() or "")
         self._store("EDGE_GLOW", "on" if self._glow.isChecked() else "off")
         self._store("ISLAND_SIDE", self._side.value() or "top")
+        self._store("TIMETABLE_URL", self._tt_link.text().strip())
+        self._store("WEATHER_CITY", self._city.text().strip())
         self._store("KEEP_HISTORY", "on" if self._keep_history.isChecked() else "off")
         theme.set_avatar(theme.current_avatar_id())  # persists the picked avatar
         self._avatar_at_open = theme.current_avatar_id()

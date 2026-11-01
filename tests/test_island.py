@@ -196,7 +196,10 @@ def test_the_notch_only_opens_for_a_mouse_that_rests_on_it(notch, monkeypatch):
     _wait(notch, now, notch._DWELL / 2)
     assert notch._target() == notch.NOTCH, "passing over it doesn't open it"
     _wait(notch, now, notch._DWELL)
-    assert notch._target() == notch.HINT
+    assert notch._near and notch._target()[0] == notch.DASH_W, "resting on it opens the dashboard"
+    notch.dashboard = False
+    assert notch._target() == notch.HINT, "or just the keys, with the dashboard off"
+    notch.dashboard = True
     _mouse_on_notch(monkeypatch, notch, dy=200)
     _wait(notch, now, 0.5)
     assert notch._target() == notch.NOTCH, "and it closes as soon as you move away"

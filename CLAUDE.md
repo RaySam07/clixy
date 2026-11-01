@@ -24,3 +24,7 @@ Clixy is Rayan Sameer's Windows AI buddy (PyQt6). This folder is the local dev c
   listening pill, and the answer as a drop-down card. Left and right edges are still in
   Settings. The 3D explainers were removed on purpose (too heavy); don't bring them back
   unless Rayan asks.
+- Resting the mouse on the notch drops down the dashboard (`dashboard.py`): greeting, time,
+  date, weather (Open-Meteo, city from Settings or the timetable's time zone) and today's
+  classes from an iCal timetable (link or .ics file in Settings > General), on frosted glass.
+  Rayan's timetable is a University of Birmingham Dubai MyTimetable export; never commit it.

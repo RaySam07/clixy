@@ -287,8 +287,24 @@ records it by having you press it; takes effect on the next start."""
 EDGE_GLOW: bool = resolve_setting("EDGE_GLOW", default="on").lower() == "on"
 """Light the screen edges in the buddy's colors while you talk."""
 
-ISLAND_SIDE: str = resolve_setting("ISLAND_SIDE", default="top").lower()
-"""Which screen edge the notch lives on: "right" or "left"."""
+def _island_side() -> str:
+    """Where the island lives: the top notch by default. Before the notch,
+    every Save stored the old default ("right"), so a stored side moves to
+    the top once, on the update that brings the notch; after that, whatever
+    Settings says."""
+    side = resolve_setting("ISLAND_SIDE", default="top").lower()
+    try:
+        if not keyring.get_password(KEYRING_SERVICE, "ISLAND_NOTCH_V1"):
+            keyring.set_password(KEYRING_SERVICE, "ISLAND_SIDE", "top")
+            keyring.set_password(KEYRING_SERVICE, "ISLAND_NOTCH_V1", "1")
+            side = "top"
+    except Exception:
+        pass
+    return side
+
+
+ISLAND_SIDE: str = _island_side()
+"""Where the island lives: "top" (the notch), "left" or "right"."""
 
 KEEP_HISTORY: bool = resolve_setting("KEEP_HISTORY", default="on").lower() == "on"
 """Keep a short note per app of what you asked, so follow-ups have context.

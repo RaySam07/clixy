@@ -12,6 +12,9 @@ assemblyai>=0.59,<1.0     # Streaming STT. Below 1.0: 1.x drops slow handshakes 
 cartesia>=4.2,<5            # Voice (Sonic-3, streamed over HTTP) and default listening (ink-2)
 elevenlabs>=2.0            # Optional voice: ElevenLabs Flash v2.5
 Pillow>=10.4.0             # Image resize with LANCZOS, base64 encoding
+icalendar>=6.0             # The notch dashboard: reads your school timetable (.ics)
+recurring-ical-events>=3.0 # ...including classes that repeat every week
+tzdata>=2024.1             # Time zones for the timetable (Windows has no zone database of its own)
 python-dotenv>=1.0.1       # Optional .env for keys when running from source
 keyring>=25.0              # Keys in Windows Credential Manager (DPAPI, per user); migrates a .env on first launch
 comtypes>=1.4; sys_platform == "win32"  # UI Automation: snap drawn marks to the real button's edges (snap.py)

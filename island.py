@@ -2,9 +2,11 @@
 like a laptop's notch, or a sliver on the left or right edge.
 
 At the top it's a small black notch with your buddy and soft audio lines.
-It says hello ("Hey Rayan!") when Clixy starts and the first time each day,
-shows the keys to hold only when the mouse rests on it, widens into a pill
-while you talk, and drops the answer down as a card.
+It says hello ("Hey Rayan!") when Clixy starts and the first time each day.
+Rest the mouse on it and it drops down your dashboard (the time, the date,
+the weather, today's classes; see dashboard.py), and tucks back up when the
+mouse leaves. It widens into a pill while you talk and drops the answer
+down as a card.
 
 On a side edge, a pure-black shape grows out of the edge, like the Dynamic
 Island turned on its side:
@@ -38,7 +40,7 @@ import re
 import time
 
 from PyQt6.QtCore import QPointF, QRect, QRectF, Qt, QTimer
-from PyQt6.QtGui import QColor, QCursor, QFont, QFontMetricsF, QGuiApplication, QPainter, QPainterPath, QPen, QScreen
+from PyQt6.QtGui import QColor, QCursor, QFont, QFontMetricsF, QGuiApplication, QImage, QPainter, QPainterPath, QPen, QScreen
 from PyQt6.QtWidgets import QWidget
 
 import theme
@@ -51,7 +53,8 @@ class SideIsland(QWidget):
     HINT = (262.0, 34.0)
     PILL = (330.0, 46.0)
     TOP_CARD_W = 430.0
-    _TOP_WIN = (480, 360)
+    DASH_W = 470.0
+    _TOP_WIN = (520, 380)
     _HELLO_S = 3.2
     _DWELL = 0.5                 # s the mouse rests on it before it shows anything
 
@@ -107,6 +110,10 @@ class SideIsland(QWidget):
         """The keys to hold, as shown when it greets you, e.g. 'Ctrl + Win'."""
         self.name = _first_name()
         """Who it says hello to ("Rayan"); empty says "Hey there!"."""
+        self.dashboard = True
+        """Resting the mouse on the top notch shows the dashboard (else just the keys)."""
+        if self.side == "top":
+            _refresh_dashboard()  # ready for the first time you rest on it
         self._t0 = time.monotonic()
         self._hello_until = self._t0 + self._HELLO_S
         self._greeted_on = datetime.date.today()
@@ -122,6 +129,9 @@ class SideIsland(QWidget):
         self._fade_card = 0.0
         self._fade_greet = 0.0
         self._fade_notch = 0.0
+        self._fade_dash = 0.0
+        self._glass: QImage | None = None
+        """A blur of the screen behind, taken as the dashboard opens."""
         self._near = False
         self._near_until = 0.0
 
@@ -294,8 +304,15 @@ class SideIsland(QWidget):
         if self.top:
             if self._hello():
                 return self.HELLO
-            return self.HINT if self._near else self.NOTCH
+            if self._near:
+                return (self.DASH_W, self._dash_height()) if self.dashboard else self.HINT
+            return self.NOTCH
         return self.GREET if self._near else self.SLIVER
+
+    def _dash_height(self) -> float:
+        import dashboard
+        _label, classes = dashboard.day_view(datetime.datetime.now().astimezone(), dashboard.snapshot().classes)
+        return 14 + 92 + 26 + 42 * max(1, len(classes)) + 8 + 30 + 10
 
     def _card_height(self) -> float:
         body = self._captions_layout(self._card_w() - 2 * self._PAD)[1]
@@ -359,10 +376,14 @@ class SideIsland(QWidget):
             if self._hover_since is None:
                 self._hover_since = now
             if self._near or now - self._hover_since >= self._DWELL:
-                self._near_until = now + (0.3 if self.top else self._LINGER)
+                self._near_until = now + (0.4 if self.top else self._LINGER)
         else:
             self._hover_since = None
+        was_near = self._near
         self._near = now < self._near_until
+        if self._near and not was_near and self.top and self.dashboard:
+            _refresh_dashboard()  # fresh weather and classes while it opens
+            self._glass = self._frosted_backdrop()
 
     def _animate(self) -> None:
         now = time.monotonic()
@@ -392,8 +413,11 @@ class SideIsland(QWidget):
             greet_on = self._state == "idle" and self._near and self._w > self.GREET[0] * 0.8
         card_on = self._state in ("answer", "note") and self._w > tw * 0.85
         notch_on = self.top and self._state == "idle" and self._h < 44
+        dash_on = (self.top and self.dashboard and self._state == "idle" and self._near
+                   and self._w > self.DASH_W * 0.85 and self._h > 90)
         for attr, on, rate in (("_fade_voice", voice_on, 0.22), ("_fade_card", card_on, 0.18),
-                               ("_fade_greet", greet_on, 0.3), ("_fade_notch", notch_on, 0.25)):
+                               ("_fade_greet", greet_on, 0.3), ("_fade_notch", notch_on, 0.25),
+                               ("_fade_dash", dash_on, 0.22)):
             value = getattr(self, attr)
             target = 1.0 if on else 0.0
             if abs(value - target) > 0.005:
@@ -407,6 +431,8 @@ class SideIsland(QWidget):
         self._frame += 1
         if moving or self._state in ("listening", "thinking"):
             self.update()
+        elif self._fade_dash > 0.01 and self._frame % 20 == 0:
+            self.update()  # the dashboard's clock
         elif self.top and self._state == "idle" and self._frame % 3 == 0:
             # The resting notch's audio lines breathe: repaint just the notch.
             self.update(self._shape_rect().toAlignedRect().adjusted(-4, 0, 4, 4))
@@ -432,11 +458,20 @@ class SideIsland(QWidget):
                 painter.setPen(pen)
                 painter.drawPath(shadow)
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(theme.NOTCH)
+        glass = self._fade_dash if self._glass is not None else 0.0
+        if glass > 0.01:
+            # Frosted glass: a blur of what's behind, darkened enough to read on.
+            painter.save()
+            painter.setClipPath(path)
+            painter.drawImage(QRectF(self.rect()), self._glass)
+            painter.restore()
+        tint = QColor(theme.NOTCH)
+        tint.setAlphaF(1.0 - 0.3 * glass)
+        painter.setBrush(tint)
         painter.drawPath(path)
         if self.top:
-            # A faint edge, so a black notch still reads on a dark page.
-            painter.setPen(QPen(QColor(255, 255, 255, 26), 1.0))
+            # A faint edge, so a black notch still reads on a dark page; brighter on glass.
+            painter.setPen(QPen(QColor(255, 255, 255, round(26 + 30 * glass)), 1.0))
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawPath(path)
             painter.setPen(Qt.PenStyle.NoPen)
@@ -445,6 +480,8 @@ class SideIsland(QWidget):
         t = time.monotonic() - self._t0
         if self._fade_notch > 0.01:
             self._paint_notch(painter, rect, t)
+        if self._fade_dash > 0.01:
+            self._paint_dash(painter, rect)
         if self._fade_voice > 0.01:
             (self._paint_pill if self.top else self._paint_voice)(painter, rect, t)
         if self._fade_card > 0.01:
@@ -547,6 +584,125 @@ class SideIsland(QWidget):
                 painter.setPen(theme.NOTCH_MUTED)
                 painter.drawText(QRectF(x + 7, cy - 9.0, rect.right() - x - 14, 16), Qt.AlignmentFlag.AlignVCenter,
                                  "hold to ask")
+        painter.restore()
+
+    def _frosted_backdrop(self) -> QImage | None:
+        """What's on screen behind the island, blurred; None if it can't be read."""
+        screen = self.screen() or self._screen
+        if screen is None:
+            return None
+        try:
+            origin = screen.geometry().topLeft()
+            geo = self.geometry()
+            shot = screen.grabWindow(0, geo.x() - origin.x(), geo.y() - origin.y(), geo.width(), geo.height())
+        except Exception:
+            return None
+        return None if shot.isNull() else frost(shot.toImage())
+
+    def _paint_dash(self, painter: QPainter, rect: QRectF) -> None:
+        """The dashboard: the time and date, the weather, and today's classes
+        (or the next day's), with the class on now in your buddy's colour."""
+        import dashboard
+        painter.save()
+        self._scaled(painter, rect, self._fade_dash)
+        snap = dashboard.snapshot()
+        now = datetime.datetime.now().astimezone()
+        flood = theme.current_palette().flood
+        x0, right = rect.left() + 24, rect.right() - 24
+        y = rect.top() + 14
+
+        # Your buddy and a hello, then the time, big and thin, and the date.
+        theme.paint_avatar_in(painter, QRectF(x0 - 3, y, 18, 18), t=time.monotonic() - self._t0, mood="happy",
+                              scale=18 / 48.0, device_pixel_ratio=self.devicePixelRatioF(), glow=True)
+        part = "morning" if now.hour < 12 else "afternoon" if now.hour < 17 else "evening"
+        painter.setFont(theme.ui_font(9.5))
+        painter.setPen(theme.NOTCH_MUTED)
+        painter.drawText(QPointF(x0 + 20, y + 13), f"Good {part}" + (f", {self.name}" if self.name else ""))
+        y += 22
+        painter.setPen(theme.NOTCH_TEXT)
+        painter.setFont(theme.ui_font(26, QFont.Weight.ExtraLight))
+        painter.drawText(QPointF(x0 - 2, y + 36), dashboard.clock(now))
+        painter.setPen(theme.NOTCH_MUTED)
+        painter.setFont(theme.ui_font(10))
+        painter.drawText(QPointF(x0, y + 58), f"{now:%A}, {now.day} {now:%B}")
+
+        # The weather, on the right.
+        weather = snap.weather
+        if weather is not None:
+            painter.setFont(theme.ui_font(20, QFont.Weight.Light))
+            temp = f"{round(weather.temp)}°"
+            tw = painter.fontMetrics().horizontalAdvance(temp)
+            painter.setPen(theme.NOTCH_TEXT)
+            painter.drawText(QPointF(right - tw, y + 32), temp)
+            _paint_weather_icon(painter, QPointF(right - tw - 24, y + 24), 15.0, weather.icon)
+            painter.setFont(theme.ui_font(9))
+            painter.setPen(theme.NOTCH_MUTED)
+            line = f"{weather.text} · {weather.place}"
+            if weather.high is not None and weather.low is not None:
+                line += f" · {round(weather.high)}°/{round(weather.low)}°"
+            line = painter.fontMetrics().elidedText(line, Qt.TextElideMode.ElideRight, 230)
+            painter.drawText(QRectF(right - 230, y + 44, 230, 18),
+                             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, line)
+        elif not snap.city:
+            painter.setFont(theme.ui_font(9))
+            painter.setPen(theme.NOTCH_MUTED)
+            painter.drawText(QRectF(right - 230, y + 20, 230, 18),
+                             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+                             "Add your city in Settings for the weather")
+        y += 70
+        painter.setPen(QPen(QColor(255, 255, 255, 30), 1.0))
+        painter.drawLine(QPointF(x0, y), QPointF(right, y))
+
+        # Today's classes, or the next day's.
+        label, classes = dashboard.day_view(now, snap.classes)
+        y += 8
+        painter.setFont(theme.ui_font(8.6, QFont.Weight.DemiBold))
+        painter.setPen(theme.NOTCH_MUTED)
+        painter.drawText(QRectF(x0, y, 200, 16), Qt.AlignmentFlag.AlignVCenter, (label or "Classes").upper())
+        note = dashboard.status(now, classes) if label == "Today" else ""
+        if note:
+            painter.setPen(flood)
+            painter.drawText(QRectF(right - 220, y, 220, 16),
+                             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, note)
+        y += 22
+        if not classes:
+            painter.setFont(theme.ui_font(10, QFont.Weight.Light))
+            painter.setPen(theme.NOTCH_TEXT)
+            text = ("No classes in the next two weeks." if snap.timetable
+                    else "Add your school timetable in Settings > General.")
+            painter.drawText(QRectF(x0, y, right - x0, 26), Qt.AlignmentFlag.AlignVCenter, text)
+            y += 30
+        tx = x0 + 70
+        for k in classes:
+            ongoing = k.start <= now < k.end
+            base = painter.opacity()
+            if k.end <= now:
+                painter.setOpacity(base * 0.4)  # already over today
+            if ongoing:
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(flood)
+                painter.drawRoundedRect(QRectF(x0 - 12, y + 4, 3, 30), 1.5, 1.5)
+            painter.setFont(theme.mono_font(8.6))
+            painter.setPen(flood if ongoing else theme.NOTCH_MUTED)
+            painter.drawText(QRectF(x0, y + 1, 66, 20), Qt.AlignmentFlag.AlignVCenter, dashboard.clock(k.start))
+            painter.setFont(theme.ui_font(10.4, QFont.Weight.Medium if ongoing else QFont.Weight.Normal))
+            painter.setPen(theme.NOTCH_TEXT)
+            title = painter.fontMetrics().elidedText(k.title, Qt.TextElideMode.ElideRight, int(right - tx))
+            painter.drawText(QRectF(tx, y, right - tx, 22), Qt.AlignmentFlag.AlignVCenter, title)
+            painter.setFont(theme.ui_font(8.8))
+            painter.setPen(theme.NOTCH_MUTED)
+            where = " · ".join(b for b in (k.room, k.kind, f"until {dashboard.clock(k.end)}") if b)
+            where = painter.fontMetrics().elidedText(where, Qt.TextElideMode.ElideRight, int(right - tx))
+            painter.drawText(QRectF(tx, y + 19, right - tx, 18), Qt.AlignmentFlag.AlignVCenter, where)
+            painter.setOpacity(base)
+            y += 42
+
+        # The keys to ask.
+        y += 6
+        x = self._paint_mini_keys(painter, x0, y + 2, 18.0)
+        painter.setFont(theme.ui_font(8.8, QFont.Weight.Light))
+        painter.setPen(theme.NOTCH_MUTED)
+        painter.drawText(QRectF(x + 7, y + 2, 160, 16), Qt.AlignmentFlag.AlignVCenter, "hold to ask")
         painter.restore()
 
     def _paint_pill(self, painter: QPainter, rect: QRectF, t: float) -> None:
@@ -763,6 +919,76 @@ class SideIsland(QWidget):
 
 
 _QUOTED = re.compile(r"[\"“‘']([^\"”’']{1,40})[\"”’']")
+
+
+def _refresh_dashboard() -> None:
+    try:
+        import dashboard
+        dashboard.refresh()
+    except Exception:
+        pass
+
+
+def frost(image: QImage, radius: int = 12) -> QImage:
+    """A soft blur, cheaply: shrink a lot, then grow back smoothly, twice."""
+    if image.isNull():
+        return image
+    w, h = image.width(), image.height()
+    smooth = Qt.TransformationMode.SmoothTransformation
+    small = image.scaled(max(1, w // radius), max(1, h // radius), Qt.AspectRatioMode.IgnoreAspectRatio, smooth)
+    mid = small.scaled(max(1, w // 3), max(1, h // 3), Qt.AspectRatioMode.IgnoreAspectRatio, smooth)
+    return mid.scaled(w, h, Qt.AspectRatioMode.IgnoreAspectRatio, smooth)
+
+
+def _round_pen(color: QColor, width: float) -> QPen:
+    pen = QPen(color, width)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    return pen
+
+
+def _paint_weather_icon(painter: QPainter, c: QPointF, r: float, kind: str) -> None:
+    """A small weather glyph centred on ``c``: sun, partly, cloud, rain, snow, storm, fog."""
+    painter.save()
+    painter.setPen(Qt.PenStyle.NoPen)
+    sun = kind in ("sun", "partly")
+    if sun:
+        centre = QPointF(c.x() + (r * 0.35 if kind == "partly" else 0), c.y() - (r * 0.3 if kind == "partly" else 0))
+        rad = r * (0.42 if kind == "partly" else 0.5)
+        painter.setPen(_round_pen(theme.SUN, 1.6))
+        for i in range(8):
+            a = math.pi * i / 4
+            painter.drawLine(QPointF(centre.x() + math.cos(a) * rad * 1.35, centre.y() + math.sin(a) * rad * 1.35),
+                             QPointF(centre.x() + math.cos(a) * rad * 1.75, centre.y() + math.sin(a) * rad * 1.75))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(theme.SUN)
+        painter.drawEllipse(centre, rad, rad)
+    if kind != "sun":
+        cloud = QColor(235, 238, 245) if kind != "storm" else QColor(150, 155, 170)
+        painter.setBrush(cloud)
+        base = QPointF(c.x() - r * 0.15, c.y() + r * 0.15)
+        for dx, dy, cr in ((-0.45, 0.1, 0.38), (0.0, -0.15, 0.5), (0.45, 0.1, 0.36)):
+            painter.drawEllipse(QPointF(base.x() + dx * r, base.y() + dy * r), cr * r, cr * r)
+        painter.drawRoundedRect(QRectF(base.x() - 0.8 * r, base.y(), 1.6 * r, 0.48 * r), 0.24 * r, 0.24 * r)
+        below = base.y() + 0.75 * r
+        if kind == "rain":
+            painter.setPen(_round_pen(QColor(110, 180, 255), 1.6))
+            for dx in (-0.4, 0.0, 0.4):
+                painter.drawLine(QPointF(base.x() + dx * r, below), QPointF(base.x() + dx * r - 3, below + 6))
+        elif kind == "snow":
+            painter.setBrush(QColor(255, 255, 255))
+            for dx in (-0.4, 0.0, 0.4):
+                painter.drawEllipse(QPointF(base.x() + dx * r, below + 3), 1.6, 1.6)
+        elif kind == "storm":
+            painter.setBrush(theme.SUN)
+            bolt = [QPointF(base.x() + 1, below - 2), QPointF(base.x() - 4, below + 5), QPointF(base.x(), below + 5),
+                    QPointF(base.x() - 3, below + 11), QPointF(base.x() + 5, below + 2), QPointF(base.x() + 1, below + 2)]
+            from PyQt6.QtGui import QPolygonF
+            painter.drawPolygon(QPolygonF(bolt))
+        elif kind == "fog":
+            painter.setPen(_round_pen(QColor(200, 205, 215), 1.6))
+            for i in range(2):
+                painter.drawLine(QPointF(base.x() - 0.7 * r, below + i * 4), QPointF(base.x() + 0.7 * r, below + i * 4))
+    painter.restore()
 
 
 def _first_name() -> str:

@@ -60,6 +60,8 @@ for _pkg in (
     # NOT needed and is excluded below so jsonschema skips it cleanly.
     "segments", "csvw", "language_tags",
     "jsonschema", "jsonschema_specifications", "referencing",
+    # The notch dashboard's timetable reader, and the time-zone data it needs.
+    "icalendar", "recurring_ical_events", "x_wr_timezone", "tzdata",
 ):
     try:
         _d, _b, _h = collect_all(_pkg)

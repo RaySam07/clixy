@@ -28,6 +28,20 @@ def _no_real_audio(monkeypatch):
     monkeypatch.setattr(mic, "_sounddevice", _no_audio)
 
 
+@pytest.fixture(autouse=True)
+def _dashboard_offline(tmp_path, monkeypatch):
+    """The notch dashboard never reaches the network or the real timetable in tests."""
+    import dashboard
+
+    def _no_network(_url):
+        raise OSError("no network in tests")
+
+    monkeypatch.setattr(dashboard, "_fetch", _no_network)
+    monkeypatch.setattr(dashboard, "TIMETABLE_FILE", tmp_path / "timetable.ics")
+    monkeypatch.setattr(dashboard, "_state", {"snapshot": dashboard.Snapshot(), "weather_at": 0.0,
+                                              "timetable_at": 0.0, "busy": False, "places": {}})
+
+
 _QT_APP = []
 
 
