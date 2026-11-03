@@ -388,6 +388,90 @@ class MemoryStore:
         finally:
             conn.close()
 
+
+# --- Guide routes ------------------------------------------------------------
+
+_ROUTE_STOP = frozenset("""a an and are at be can could do for from get go help how i in into is it its me my need of
+on or please show the this to up want what where with would you your""".split())
+
+
+def _route_words(goal: str) -> frozenset[str]:
+    import re
+    words = re.findall(r"[a-z0-9][a-z0-9+.-]*", (goal or "").lower())
+    return frozenset(w[:-1] if len(w) > 4 and w.endswith("s") else w
+                     for w in words if len(w) > 1 and w not in _ROUTE_STOP)
+
+
+class RouteBook:
+    """The routes that worked in guide mode, so a similar goal next time can
+    go straight there: one small JSON file (``~/.clixy/memory/guide-routes.json``),
+    readable and safe to delete. Each route is the goal in the user's words,
+    the app it ended in, the steps that got there and the quick way to do it
+    ("win+p"), if there is one.
+
+    app.py only makes one when Settings keeps history (KEEP_HISTORY).
+    Thread-safe: the guide records on its worker thread."""
+
+    def __init__(self, path: Path | str | None = None, limit: int = 80) -> None:
+        import threading
+        self.path = Path(path) if path is not None else Path(MEMORY_DIR) / "guide-routes.json"
+        self.limit = limit
+        self._lock = threading.Lock()
+
+    def _read(self) -> list[dict]:
+        import json
+        try:
+            rows = json.loads(self.path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return []
+        return [r for r in rows if isinstance(r, dict) and r.get("goal") and isinstance(r.get("steps"), list)]
+
+    @staticmethod
+    def likeness(a: str, b: str) -> float:
+        """0..1: how alike two goals are, by their words."""
+        wa, wb = _route_words(a), _route_words(b)
+        if not wa or not wb:
+            return 0.0
+        return len(wa & wb) / len(wa | wb)
+
+    def recall(self, goal: str, app: str = "", least: float = 0.5) -> dict | None:
+        """The best remembered route for a goal like this one, or None."""
+        with self._lock:
+            rows = self._read()
+        best, best_score = None, least
+        for r in rows:
+            score = self.likeness(goal, r["goal"]) + (0.1 if app and r.get("app", "").lower() == app.lower() else 0)
+            if score >= best_score:
+                best, best_score = r, score
+        return best
+
+    def record(self, goal: str, steps: list[str], app: str = "", shortcut: str = "") -> None:
+        """Keep the route for ``goal`` (replacing the one for a goal that's
+        nearly the same), newest last, at most ``limit``."""
+        import json
+        steps = [" ".join(str(s).split())[:160] for s in steps if str(s).strip()][:12]
+        if not goal.strip() or not steps:
+            return
+        now = datetime.now().strftime("%Y-%m-%d %H:%M")
+        with self._lock:
+            rows = self._read()
+            uses = 1
+            kept = []
+            for r in rows:
+                if self.likeness(goal, r["goal"]) >= 0.8:
+                    uses += int(r.get("uses", 1))
+                    shortcut = shortcut or r.get("shortcut", "")
+                else:
+                    kept.append(r)
+            kept.append({"goal": " ".join(goal.split())[:200], "app": app, "steps": steps,
+                         "shortcut": shortcut, "uses": uses, "last": now})
+            kept = kept[-self.limit:]
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = self.path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(kept, indent=1, ensure_ascii=False), encoding="utf-8")
+            tmp.replace(self.path)
+
+
 # --- Manual verification entry point -----------------------------------------
 
 if __name__ == "__main__":

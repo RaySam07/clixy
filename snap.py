@@ -345,3 +345,396 @@ def _serve(jobs: queue.Queue) -> None:
             reply.put_nowait(result)
         except queue.Full:
             pass
+
+
+# --- The open windows, and bringing one forward ---------------------------------------
+#
+# Guide mode tells the model which windows are open (front first), so a window
+# that opened behind another gets brought forward instead of opened again, and
+# it can put two windows side by side. Plain Win32 calls through private DLL
+# handles (argtypes set here never leak into other modules); no UI Automation,
+# so this is quick and works on any thread.
+
+# Friendly names for common apps, by .exe (what the model and the know-how packs call them).
+FRIENDLY = {
+    "systemsettings.exe": "settings", "taskmgr.exe": "task manager", "explorer.exe": "file explorer",
+    "chrome.exe": "chrome", "msedge.exe": "edge", "firefox.exe": "firefox", "brave.exe": "brave",
+    "winword.exe": "word", "excel.exe": "excel", "powerpnt.exe": "powerpoint", "outlook.exe": "outlook",
+    "olk.exe": "outlook", "ms-teams.exe": "teams", "teams.exe": "teams", "code.exe": "vs code",
+    "spotify.exe": "spotify", "whatsapp.exe": "whatsapp", "snippingtool.exe": "snipping tool",
+    "screenclippinghost.exe": "snipping tool", "notepad.exe": "notepad", "windowsterminal.exe": "terminal",
+    "mmc.exe": "management console", "control.exe": "control panel", "msinfo32.exe": "system information",
+    "calculatorapp.exe": "calculator", "photos.exe": "photos", "onenote.exe": "onenote",
+}
+_SKIP_CLASSES = {"Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd", "Windows.UI.Core.CoreWindow"}
+_BROWSERS = {"chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.exe", "vivaldi.exe"}
+
+
+@dataclass(frozen=True)
+class Window:
+    """An open top-level window, as Alt+Tab would list it."""
+    hwnd: int
+    title: str
+    exe: str             # "Taskmgr.exe" (for a Store app, the app's own .exe, not its frame host)
+    app: str             # friendly: "task manager"
+    minimized: bool = False
+    front: bool = False
+    admin: bool = False  # runs as administrator: its buttons and your clicks in it are hidden from Clixy
+    rect: Rect = (0, 0, 0, 0)
+
+    def matches(self, name: str) -> bool:
+        """Is this the window someone calls ``name`` ("task manager", "settings", "spotify")?"""
+        want = " ".join((name or "").lower().split())
+        if not want:
+            return False
+        exe = self.exe.lower()
+        # A browser's title is whatever page is open ("Task Manager - Google Search"): never match on it.
+        by_title = exe not in _BROWSERS and want in self.title.lower()
+        return (by_title or want in (self.app, exe, exe.removesuffix(".exe"))
+                or (len(self.app) > 2 and self.app in want))
+
+
+def windows(limit: int = 10) -> list[Window]:
+    """The open windows, front first (z-order), like Alt+Tab: titled, not
+    tool windows, not cloaked, never Clixy's own. Empty off Windows."""
+    if sys.platform != "win32":
+        return []
+    try:
+        return _list_windows(limit)
+    except Exception:
+        return []
+
+
+def focus(hwnd: int) -> bool:
+    """Bring a window to the front (restoring it if minimised). True when it's
+    in front afterwards. Clixy only ever brings windows forward; it never
+    clicks or types into them."""
+    if sys.platform != "win32" or not hwnd:
+        return False
+    try:
+        return _focus(int(hwnd))
+    except Exception:
+        return False
+
+
+def side_by_side(first: int, second: int, monitor: dict | None = None) -> str:
+    """Put two windows side by side on ``monitor``'s work area, ``first`` on
+    the left and in front. Returns what happened in a few words for the model
+    ("" when nothing could be moved). A window running as administrator can't
+    be moved from here; the other one then takes the half away from it."""
+    if sys.platform != "win32" or not first or not second:
+        return ""
+    try:
+        return _side_by_side(int(first), int(second), monitor)
+    except Exception:
+        return ""
+
+
+def halves(area: Rect) -> tuple[Rect, Rect]:
+    """The left and right halves of a work area."""
+    l, t, r, b = area
+    mid = l + (r - l) // 2
+    return (l, t, mid, b), (mid, t, r, b)
+
+
+_W32: dict = {}
+
+
+def _win32() -> dict:
+    """user32, kernel32, advapi32 and dwmapi with argtypes set, made once."""
+    if _W32:
+        return _W32
+    import ctypes
+    import ctypes.wintypes as wt
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
+    dwmapi = ctypes.WinDLL("dwmapi")
+    enum_proc = ctypes.WINFUNCTYPE(wt.BOOL, wt.HWND, wt.LPARAM)
+    p_dword = ctypes.POINTER(wt.DWORD)
+    sig = {
+        (user32, "EnumWindows"): (wt.BOOL, [enum_proc, wt.LPARAM]),
+        (user32, "EnumChildWindows"): (wt.BOOL, [wt.HWND, enum_proc, wt.LPARAM]),
+        (user32, "GetForegroundWindow"): (wt.HWND, []),
+        (user32, "IsWindowVisible"): (wt.BOOL, [wt.HWND]),
+        (user32, "IsIconic"): (wt.BOOL, [wt.HWND]),
+        (user32, "IsZoomed"): (wt.BOOL, [wt.HWND]),
+        (user32, "IsWindow"): (wt.BOOL, [wt.HWND]),
+        (user32, "GetWindow"): (wt.HWND, [wt.HWND, wt.UINT]),
+        (user32, "GetAncestor"): (wt.HWND, [wt.HWND, wt.UINT]),
+        (user32, "GetWindowLongW"): (wt.LONG, [wt.HWND, ctypes.c_int]),
+        (user32, "GetWindowTextW"): (ctypes.c_int, [wt.HWND, wt.LPWSTR, ctypes.c_int]),
+        (user32, "GetClassNameW"): (ctypes.c_int, [wt.HWND, wt.LPWSTR, ctypes.c_int]),
+        (user32, "GetWindowThreadProcessId"): (wt.DWORD, [wt.HWND, p_dword]),
+        (user32, "GetWindowRect"): (wt.BOOL, [wt.HWND, ctypes.POINTER(wt.RECT)]),
+        (user32, "ShowWindow"): (wt.BOOL, [wt.HWND, ctypes.c_int]),
+        (user32, "BringWindowToTop"): (wt.BOOL, [wt.HWND]),
+        (user32, "SetForegroundWindow"): (wt.BOOL, [wt.HWND]),
+        (user32, "SwitchToThisWindow"): (None, [wt.HWND, wt.BOOL]),
+        (user32, "AttachThreadInput"): (wt.BOOL, [wt.DWORD, wt.DWORD, wt.BOOL]),
+        (user32, "PeekMessageW"): (wt.BOOL, [ctypes.POINTER(wt.MSG), wt.HWND, wt.UINT, wt.UINT, wt.UINT]),
+        (user32, "SetWindowPos"): (wt.BOOL, [wt.HWND, wt.HWND, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+                                             ctypes.c_int, wt.UINT]),
+        (user32, "MonitorFromPoint"): (wt.HANDLE, [wt.POINT, wt.DWORD]),
+        (user32, "GetMonitorInfoW"): (wt.BOOL, [wt.HANDLE, ctypes.c_void_p]),
+        (kernel32, "GetCurrentThreadId"): (wt.DWORD, []),
+        (kernel32, "GetCurrentProcess"): (wt.HANDLE, []),
+        (kernel32, "OpenProcess"): (wt.HANDLE, [wt.DWORD, wt.BOOL, wt.DWORD]),
+        (kernel32, "CloseHandle"): (wt.BOOL, [wt.HANDLE]),
+        (kernel32, "QueryFullProcessImageNameW"): (wt.BOOL, [wt.HANDLE, wt.DWORD, wt.LPWSTR, p_dword]),
+        (advapi32, "OpenProcessToken"): (wt.BOOL, [wt.HANDLE, wt.DWORD, ctypes.POINTER(wt.HANDLE)]),
+        (advapi32, "GetTokenInformation"): (wt.BOOL, [wt.HANDLE, ctypes.c_int, ctypes.c_void_p, wt.DWORD,
+                                                      p_dword]),
+        (dwmapi, "DwmGetWindowAttribute"): (ctypes.c_long, [wt.HWND, wt.DWORD, ctypes.c_void_p, wt.DWORD]),
+    }
+    for (dll, name), (restype, argtypes) in sig.items():
+        fn = getattr(dll, name)
+        fn.restype, fn.argtypes = restype, argtypes
+    _W32.update(user32=user32, kernel32=kernel32, advapi32=advapi32, dwmapi=dwmapi, enum_proc=enum_proc,
+                ctypes=ctypes, wt=wt)
+    return _W32
+
+
+def _text(fn, hwnd) -> str:
+    buf = _win32()["ctypes"].create_unicode_buffer(512)
+    fn(hwnd, buf, 512)
+    return buf.value
+
+
+def _pid_of(hwnd) -> int:
+    w = _win32()
+    pid = w["wt"].DWORD()
+    w["user32"].GetWindowThreadProcessId(hwnd, w["ctypes"].byref(pid))
+    return int(pid.value)
+
+
+def _exe_of(pid: int) -> str:
+    w = _win32()
+    handle = w["kernel32"].OpenProcess(0x1000, False, pid)   # PROCESS_QUERY_LIMITED_INFORMATION
+    if not handle:
+        return ""
+    try:
+        buf = w["ctypes"].create_unicode_buffer(520)
+        size = w["wt"].DWORD(520)
+        if w["kernel32"].QueryFullProcessImageNameW(handle, 0, buf, w["ctypes"].byref(size)):
+            return os.path.basename(buf.value)
+        return ""
+    finally:
+        w["kernel32"].CloseHandle(handle)
+
+
+def _elevated(handle) -> bool | None:
+    """Does this process run elevated? None when Windows won't say."""
+    w = _win32()
+    token = w["wt"].HANDLE()
+    if not w["advapi32"].OpenProcessToken(handle, 0x0008, w["ctypes"].byref(token)):   # TOKEN_QUERY
+        return None
+    try:
+        value, size = w["wt"].DWORD(0), w["wt"].DWORD(0)
+        if w["advapi32"].GetTokenInformation(token, 20, w["ctypes"].byref(value), 4, w["ctypes"].byref(size)):
+            return bool(value.value)                                                    # TokenElevation
+        return None
+    finally:
+        w["kernel32"].CloseHandle(token)
+
+
+_SELF_ELEVATED: list = []
+
+
+def _is_admin(pid: int) -> bool:
+    """Does ``pid`` run as administrator while Clixy doesn't? Windows then
+    hides its controls, and your clicks in it, from Clixy."""
+    w = _win32()
+    if not _SELF_ELEVATED:
+        _SELF_ELEVATED.append(bool(_elevated(w["kernel32"].GetCurrentProcess())))
+    if _SELF_ELEVATED[0]:
+        return False
+    handle = w["kernel32"].OpenProcess(0x1000, False, pid)
+    if not handle:
+        return False
+    try:
+        state = _elevated(handle)
+        return True if state is None else state   # a token we can't even read belongs to someone above us
+    finally:
+        w["kernel32"].CloseHandle(handle)
+
+
+def _frame_app_pid(hwnd, frame_pid: int) -> int:
+    """A Store app's frame (ApplicationFrameHost) holds the app's own window
+    as a child; that child's process is the real app (SystemSettings.exe)."""
+    w = _win32()
+    found: list[int] = []
+
+    def visit(child, _l):
+        pid = _pid_of(child)
+        if pid and pid != frame_pid:
+            found.append(pid)
+            return False
+        return True
+
+    w["user32"].EnumChildWindows(hwnd, w["enum_proc"](visit), 0)
+    return found[0] if found else 0
+
+
+def _list_windows(limit: int) -> list[Window]:
+    w = _win32()
+    user32, ctypes, wt = w["user32"], w["ctypes"], w["wt"]
+    me = os.getpid()
+    fg = int(user32.GetForegroundWindow() or 0)
+    if fg:
+        fg = int(user32.GetAncestor(fg, 3) or fg)   # GA_ROOTOWNER: a dialog or popup in front stands for its window
+    order: list[int] = []
+    user32.EnumWindows(w["enum_proc"](lambda h, _l: order.append(int(h or 0)) or True), 0)
+    out: list[Window] = []
+    exes: dict[int, str] = {}
+    admins: dict[int, bool] = {}
+    for hwnd in order:
+        if not hwnd or not user32.IsWindowVisible(hwnd):
+            continue
+        ex = user32.GetWindowLongW(hwnd, -20) & 0xFFFFFFFF                    # GWL_EXSTYLE
+        app_window = bool(ex & 0x00040000)                                       # WS_EX_APPWINDOW
+        if (ex & 0x00000080 and not app_window) or ex & 0x08000000:              # TOOLWINDOW, NOACTIVATE
+            continue
+        if user32.GetWindow(hwnd, 4) and not app_window:                         # owned (a dialog's owner lists it)
+            continue
+        title = " ".join(_text(user32.GetWindowTextW, hwnd).split())
+        if not title or _text(user32.GetClassNameW, hwnd) in _SKIP_CLASSES or _cloaked(hwnd):
+            continue
+        pid = _pid_of(hwnd)
+        if pid == me:
+            continue
+        if pid not in exes:
+            exes[pid] = _exe_of(pid)
+        exe, real = exes[pid], pid
+        if exe.lower() == "applicationframehost.exe":
+            real = _frame_app_pid(hwnd, pid) or pid
+            if real not in exes:
+                exes[real] = _exe_of(real)
+            exe = exes[real] or exe
+        if real not in admins:
+            admins[real] = _is_admin(real)
+        rect = wt.RECT()
+        user32.GetWindowRect(hwnd, ctypes.byref(rect))
+        friendly = FRIENDLY.get(exe.lower(), "")
+        if not friendly and exe.lower() == "applicationframehost.exe":
+            friendly = title.lower()   # a Store app whose own window is away (minimised): its title names it
+        out.append(Window(hwnd=hwnd, title=title[:90], exe=exe or "?",
+                          app=friendly or exe.lower().removesuffix(".exe"),
+                          minimized=bool(user32.IsIconic(hwnd)), front=hwnd == fg,
+                          admin=admins[real], rect=(rect.left, rect.top, rect.right, rect.bottom)))
+        if len(out) >= limit:
+            break
+    if out and not fg:
+        # Windows names no front window while focus is changing hands: the top one is it.
+        out[0] = Window(**{**out[0].__dict__, "front": True})
+    return out
+
+
+def _focus(hwnd: int) -> bool:
+    w = _win32()
+    user32, kernel32, ctypes, wt = w["user32"], w["kernel32"], w["ctypes"], w["wt"]
+    if not user32.IsWindow(hwnd):
+        return False
+    if user32.IsIconic(hwnd):
+        user32.ShowWindow(hwnd, 9)                                               # SW_RESTORE
+    if int(user32.GetForegroundWindow() or 0) == hwnd:
+        return True
+    # Windows only lets the app you're using hand over the front. Sharing its
+    # input state for a moment (AttachThreadInput) lets Clixy pass it on.
+    msg = wt.MSG()
+    user32.PeekMessageW(ctypes.byref(msg), None, 0, 0, 0)                       # gives this thread a queue
+    mine = kernel32.GetCurrentThreadId()
+    fg = user32.GetForegroundWindow()
+    theirs = user32.GetWindowThreadProcessId(fg, None) if fg else 0
+    attached = bool(theirs and theirs != mine and user32.AttachThreadInput(mine, theirs, True))
+    try:
+        user32.BringWindowToTop(hwnd)
+        user32.SetForegroundWindow(hwnd)
+    finally:
+        if attached:
+            user32.AttachThreadInput(mine, theirs, False)
+    if int(user32.GetForegroundWindow() or 0) != hwnd:
+        user32.SwitchToThisWindow(hwnd, True)                                   # what Alt+Tab does
+    return int(user32.GetForegroundWindow() or 0) == hwnd
+
+
+def _work_area(monitor: dict | None, hwnd: int) -> Rect | None:
+    w = _win32()
+    user32, ctypes, wt = w["user32"], w["ctypes"], w["wt"]
+    if monitor:
+        cx = monitor.get("left", 0) + monitor.get("width", 0) // 2
+        cy = monitor.get("top", 0) + monitor.get("height", 0) // 2
+    else:
+        r = wt.RECT()
+        user32.GetWindowRect(hwnd, ctypes.byref(r))
+        cx, cy = (r.left + r.right) // 2, (r.top + r.bottom) // 2
+
+    class _MonitorInfo(ctypes.Structure):
+        _fields_ = [("cbSize", wt.DWORD), ("rcMonitor", wt.RECT), ("rcWork", wt.RECT), ("dwFlags", wt.DWORD)]
+
+    info = _MonitorInfo()
+    info.cbSize = ctypes.sizeof(info)
+    handle = user32.MonitorFromPoint(wt.POINT(cx, cy), 2)                        # MONITOR_DEFAULTTONEAREST
+    if not handle or not user32.GetMonitorInfoW(handle, ctypes.byref(info)):
+        return None
+    a = info.rcWork
+    return a.left, a.top, a.right, a.bottom
+
+
+def _place(hwnd: int, rect: Rect) -> bool:
+    """Move a window so its visible frame fills ``rect`` (Windows 10 and 11
+    put an invisible resize border around it). True when it really moved."""
+    w = _win32()
+    user32, ctypes, wt = w["user32"], w["ctypes"], w["wt"]
+    if user32.IsZoomed(hwnd) or user32.IsIconic(hwnd):
+        user32.ShowWindow(hwnd, 9)                                               # SW_RESTORE
+    outer, frame = wt.RECT(), wt.RECT()
+    user32.GetWindowRect(hwnd, ctypes.byref(outer))
+    dl = dt = dr = db = 0
+    if w["dwmapi"].DwmGetWindowAttribute(hwnd, 9, ctypes.byref(frame), ctypes.sizeof(frame)) == 0:
+        dl, dt = frame.left - outer.left, frame.top - outer.top                  # DWMWA_EXTENDED_FRAME_BOUNDS
+        dr, db = outer.right - frame.right, outer.bottom - frame.bottom
+    l, t, r, b = rect
+    x, y, cx, cy = l - dl, t - dt, (r - l) + dl + dr, (b - t) + dt + db
+    if not user32.SetWindowPos(hwnd, None, x, y, cx, cy, 0x0004 | 0x0010):      # NOZORDER | NOACTIVATE
+        return False
+    user32.GetWindowRect(hwnd, ctypes.byref(outer))
+    return abs(outer.left - x) <= 4 and abs(outer.top - y) <= 4
+
+
+def _side_by_side(first: int, second: int, monitor: dict | None) -> str:
+    area = _work_area(monitor, first)
+    if area is None:
+        return ""
+    left, right = halves(area)
+    listed = {win.hwnd: win for win in windows(30)}
+    a = listed[first].app if first in listed else "the first"
+    b = listed[second].app if second in listed else "the second"
+    first_admin = first in listed and listed[first].admin
+    second_admin = second in listed and listed[second].admin
+    moved_first = _place(first, left)
+    if moved_first:
+        moved_second = _place(second, right)
+    else:
+        # The first can't move (it runs as administrator): the second takes the half away from it.
+        w = _win32()
+        r = w["wt"].RECT()
+        w["user32"].GetWindowRect(first, w["ctypes"].byref(r))
+        on_left = (r.left + r.right) // 2 < (area[0] + area[2]) // 2
+        moved_second = _place(second, right if on_left else left)
+    # The first ends in front, unless only it runs as administrator: while an
+    # admin window has the keyboard, Windows hides your keys (Clixy's hotkey
+    # too), so the other one stays in front until you click into it.
+    if first_admin and not second_admin:
+        _focus(first)
+        _focus(second)
+    else:
+        _focus(second)
+        _focus(first)
+    if moved_first and moved_second:
+        return f"{a} on the left, {b} on the right"
+    if moved_second:
+        return f"{b} beside {a} ({a} couldn't be moved: it runs as administrator)"
+    if moved_first:
+        return f"{a} on the left; {b} couldn't be moved"
+    return ""

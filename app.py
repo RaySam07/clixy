@@ -1635,10 +1635,11 @@ class ClickyApp(QObject):
 
         dbg.log(f"GUIDE: {goal!r}")
 
-        def ask(cap, text: str) -> str:
+        def ask(cap, text: str):
+            # Streams: the guide speaks each sentence the moment it's in, before the tags arrive.
             with self._smart_ai.ask_stream(images=[(cap.image, cap.label)], transcript=text, history=[],
                                            system_prompt=guide.system_prompt()) as stream:
-                return "".join(stream.text_deltas())
+                yield from stream.text_deltas()
 
         def fresh_capture():
             self.sig_hide_overlay.emit()
@@ -1650,9 +1651,10 @@ class ClickyApp(QObject):
             return next((c for c in captures if c.is_cursor_screen), captures[0] if captures else None)
 
         def say(text: str, n: int, total: int, where=None) -> None:
-            self._tts.speak_sentence(text)
-            self.sig_guide_step.emit(text, n, total, where)
+            self.sig_guide_step.emit(text, n, total, where)   # the voice already went out through speak=
 
+        from memory import RouteBook
+        keep = resolve_setting("KEEP_HISTORY", default="on").lower() == "on"
         session = guide.Guide(
             ask=ask,
             capture=fresh_capture,
@@ -1666,6 +1668,12 @@ class ClickyApp(QObject):
             about=sysinfo.profile(),
             refine=snap.refine,
             open=apps.open_target,
+            speak=self._tts.speak_sentence,
+            windows=snap.windows,
+            focus=snap.focus,
+            arrange=snap.side_by_side,
+            knowhow=kb.knowhow,
+            routes=RouteBook() if keep else None,   # history off in Settings: no routes kept
             dbg=dbg,
         )
         last = session.run(goal, capture)
@@ -2245,9 +2253,13 @@ if __name__ == "__main__":
         dlg = SettingsDialog()
         if dlg.exec() != dlg.DialogCode.Accepted:
             return
+        _settings_saved(dlg.needs_restart())
+
+    def _settings_saved(restart: bool) -> None:
+        """After Save, in the Settings window or the panel's own Settings."""
         _log("Settings saved.")
         clicky.apply_live_settings()
-        if not dlg.needs_restart():
+        if not restart:
             return
         # Providers and models are built once at startup, so a new AI or voice
         # provider needs a fresh start. No auto-relaunch: it pops a stray
@@ -2279,6 +2291,13 @@ if __name__ == "__main__":
         clicky.stop()
         sys.exit(1)
     clicky.sig_notify.connect(tray.notify)
+
+    # Click the notch: the Clixy panel (panel.py) for typed questions and Settings.
+    _island = getattr(clicky._overlay, "island", None)
+    if _island is not None:
+        _island.on_ask = clicky.ask_text
+        _island.on_settings = _show_settings          # if the panel's own Settings can't open
+        _island.on_settings_saved = _settings_saved
 
     # Dev mode (tools/dev/Start-Clixy-Dev.bat): restart by itself when the code changes.
     import devmode

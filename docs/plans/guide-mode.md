@@ -118,3 +118,42 @@ Example, "how do I project my screen":
 - "take me to display settings"
 - "how do I change my wallpaper"
 - "where do I turn on dark mode in Chrome"
+
+## Faster and smarter navigation (4 Nov 2026)
+
+From Rayan's "battery performance and CPU load" log: 3.7 s to the first word,
+4 to 6 s a step, Task Manager "didn't show up" (it was behind Chrome, or still
+drawing), and bouncing between Settings and Task Manager. Now:
+
+- **Speaks sooner.** The step reply streams; each sentence is spoken the
+  moment it's complete, before the tags arrive (`guide._EarlySpeech`,
+  `Guide.speak`). `say(text, n, total, where)` still fires once per step.
+- **Looks when the screen has settled** (`Guide._settle`), not after fixed
+  sleeps: the window it opened is up and in front, or the front window changed
+  and held still for 0.3 s, or 0.45 s passed with no change (a click inside the
+  same window). Capped at 3 s. A window that opened behind is brought forward.
+  The element list is made while the screenshot is taken (`Guide._look`).
+- **Knows what's open.** `snap.windows()` lists the open windows front first
+  (app, minimised, admin), resolving Store apps through their frame host.
+  `[FOCUS:window]` brings one forward (`snap.focus`); `[OPEN:a][OPEN:b]` opens
+  two and puts them side by side (`snap.side_by_side`).
+- **Know-how packs** in `knowhow/` (windows, taskmgr, settings, explorer,
+  chrome, edge, whatsapp, teams, outlook, word, excel, powerpoint, vscode,
+  spotify, snipping). `kb.knowhow(goal, front_exe)` picks the packs the goal is
+  about (or the app in front) and keeps only matching bullets. A file in the KB
+  folder named after the app's .exe goes first; `replace: yes` drops the pack.
+- **OPEN can open more**: Windows tools by run name (`taskmgr`, `msinfo32`,
+  `devmgmt.msc`...), `control /name ...`, app links (`spotify:search:...`,
+  `ms-screenclip:`, `mailto:`), folders (`shell:startup`, `%temp%`) and
+  `battery report` (powercfg's battery health report, no admin needed).
+- **Remembers routes** (`memory.RouteBook`, `~/.clixy/memory/guide-routes.json`,
+  only when KEEP_HISTORY is on). A similar goal gets "last time this worked: ...";
+  `[FASTER:win+i]` on the last step is kept as the quick way (`progress()["shortcut"]`).
+
+Admin windows: Task Manager often runs elevated. Windows then hides its
+controls (UIA) and the user's clicks and keys (pynput) from Clixy, and the
+push-to-talk hotkey too while it's in front. The prompt points with a box and
+finishes with `[DONE]`; the last mark stays up 8 s; a step there nudges after 12 s.
+
+Still to try live: `snap.focus` (AttachThreadInput + SwitchToThisWindow) and
+`snap.side_by_side` on real windows, including an elevated Task Manager.

@@ -7,9 +7,21 @@ When you click that button, press those keys, or the window changes, it
 looks at the screen again and shows the next step, until the task is done.
 It never clicks or types for you.
 
-Each step is one small model call (the screen, the goal, what's done so far
-and the list of clickable things with ids). The model answers with one
-spoken sentence and one action tag; ids make the marks exact.
+Each step is one small model call (the screen, the goal, what's done so far,
+the open windows, know-how for the apps involved, a route that worked
+before, and the list of clickable things with ids). The model answers with
+one spoken sentence and one action tag; ids make the marks exact.
+
+Fast, so it feels like a friend beside you:
+- the sentence is spoken the moment it has streamed in, before the tags;
+- after each action it looks again as soon as the screen has settled (the
+  front window changed and held still, or the window it opened is up),
+  not after a fixed sleep; a window that opened behind is brought forward;
+- it knows the open windows, so it brings one forward ([FOCUS:...]) rather
+  than opening it again, and opens two side by side when a goal needs both;
+- know-how packs (knowhow/, through kb.knowhow) give it real shortcuts,
+  settings pages and run commands; routes that worked are remembered
+  (memory.RouteBook) so a similar goal goes straight there.
 
 Threading: ``Guide.run`` runs on the pipeline's worker thread. The input
 watch listens on pynput's threads and hands events over in a queue.
@@ -18,6 +30,7 @@ from __future__ import annotations
 
 import queue
 import re
+import threading
 import time
 from dataclasses import dataclass, field
 
@@ -39,45 +52,58 @@ def wants_guide(question: str) -> bool:
 
 
 SYSTEM_PROMPT = """\
-you're clixy, guiding the user through a task on their windows computer one step at a time, like a friend sitting beside them who knows windows inside out. you see their screen as it is right now. you're told the goal, what's been done so far, what this computer is, its installed apps, and the clickable things windows itself lists on screen, each with an id and its box.
+you're clixy, guiding the user through a task on their windows computer one step at a time, like a friend beside them who knows windows and every common app inside out: the shortcuts, the direct links, the little tricks. you see their screen as it is right now. each turn you're told the goal, what's been done so far, this computer, the open windows (front first), know-how for the apps involved, sometimes the route that worked last time, and the clickable things windows lists on screen, each with an id and its box.
 
-before you answer, think about the goal and the screen: what is the shortest real route from here, on windows 11 or 10 as this computer runs it? never invent a menu, button or setting that isn't on screen or that doesn't exist in this version of windows. if you're unsure where something lives, open the settings page or app that certainly has it, then look.
+think first: what's the fastest real route from here? in this order:
+1. open it directly with [OPEN:...]: a settings page, a windows tool, an app, a website, an app link or the battery report, straight to the right place. the know-how and the lists give real addresses: use them, never guess one.
+2. what they need is already open (check the open windows)? bring it forward with [FOCUS:...]. never open again what's already open, and never say something didn't open when the open windows show it: it may be behind another window or still drawing.
+3. a keyboard shortcut with [KEYS:...] when it gets there faster than clicking.
+4. a click on a listed element with [CLICK:#id:...].
+5. a [BOX:...] only for what isn't listed.
+a goal with parts that live in different places (cpu load and battery, say) is one move: open both side by side.
+the know-how is accurate: prefer its routes. never invent a menu, button, setting or address that isn't on screen, in the know-how, or real in this version of windows. if unsure, open the page or app that certainly has it, then look.
 
 reply with the single next step only:
-- one or two short spoken sentences, warm and natural, like you're sitting next to them: say what to do and, in a few words, why. all lowercase. it's read aloud: no lists, no markdown, no symbols, no ids or coordinates.
-- then exactly one action tag:
-  [OPEN:ms-settings:display] or [OPEN:app name] or [OPEN:https://site.com] you open it for them, straight away. the best first step whenever a settings page, an app or a website gets there directly: it skips clicking through menus.
-  [CLICK:#id:label] they click that element from the list. read the names carefully and pick the one that matches; prefer it to a box, it's exact.
-  [KEYS:win+p:label] they press these keys together, when a shortcut is the quickest way: win+p projects to another screen or projector, win+k casts to a wireless display, win+a quick settings, win+shift+s a screenshot, win+v clipboard history, win+. emoji.
+- first, one or two short spoken sentences, warm and natural: what to do and, in a few words, why. all lowercase. they're spoken aloud and never shown as captions, so no lists, markdown, symbols, ids, coordinates or addresses (say "your battery settings", not the link). your first sentence is spoken while you're still writing, so make it the instruction itself.
+- then one action tag:
+  [OPEN:x] clixy opens it at once. [OPEN:a][OPEN:b] opens two side by side, a on the left.
+  [FOCUS:window] clixy brings that open window to the front, restoring it if it's minimised. name it as the open windows list does.
+  [KEYS:ctrl+shift+esc:label] they press these keys together.
+  [CLICK:#id:label] they click that element. read the names carefully; prefer it to a box, it's exact.
   [TYPE:#id:text] they type this into that field.
-  [BOX:x1,y1,x2,y2:label] only when what they need isn't in the list: its box in screenshot pixels, hugging it tightly.
+  [BOX:x1,y1,x2,y2:label] what to click when it isn't listed: its box in screenshot pixels, hugging it tightly.
+  a label is one to three words naming the thing, never your sentence.
 - then [STEP:n/total]: this step's number and your best guess at the total.
 
-when the goal is reached on screen, say so in one short, happy sentence and add [DONE].
-if the goal isn't something to do on this computer (a general question), answer it fully, the way a sharp expert would, in natural speech, then [DONE].
+windows marked admin (task manager often is) hide their buttons and the user's clicks from clixy: point with a box from the screenshot and say any next click in the same sentence; when that click is the last thing to do, add [DONE] after the box.
+when the goal is reached on screen, say so in one short, happy sentence and add [DONE]. if there's a quicker way for next time than the route taken (a shortcut, a run command, a direct page), add it in a few words, like "faster next time, press windows and i", and tag it [FASTER:win+i] (the keys, or what to open).
+if the goal isn't something to do on this computer (a general question), answer it fully, in natural speech, then [DONE].
 if the last step didn't do what you expected, say so kindly and give the step that fixes it.
-never refuse and never say you can't draw or point: there is always something to open, a key to press or a thing to click. apart from opening things, never click or type for them; they do each step and you see the result.
+never refuse and never say you can't point: there's always something to open, bring forward, press or click. apart from opening things and bringing windows forward, never click or type for them; they do each step and you see the result.
 
 examples:
 - goal "project my laptop to the projector", nothing done yet: "press the windows key and p together, that opens the project menu. [KEYS:win+p:project menu][STEP:1/2]"
 - then the list has #4 button "Duplicate": "pick duplicate, so the projector shows exactly what's on your laptop. [CLICK:#4:duplicate][STEP:2/2]"
 - then: "that's it, you're projecting. [DONE]"
-- goal "turn on dark mode", nothing done yet: "let's go straight to your colour settings, i'll open them for you. [OPEN:ms-settings:personalization-colors][STEP:1/2]"
-- then the list has #9 dropdown "Choose your mode": "open choose your mode and pick dark. [CLICK:#9:choose your mode][STEP:2/2]"
-- goal "open spotify and play my liked songs": "opening spotify for you. [OPEN:spotify][STEP:1/3]"\
+- goal "turn on dark mode": "let's go straight to your colour settings, i'll open them for you. [OPEN:ms-settings:personalization-colors][STEP:1/2]"
+- goal "show my battery and cpu load": "i'll open task manager and your battery settings side by side, so you can see both at once. [OPEN:taskmgr][OPEN:ms-settings:batterysaver][STEP:1/2]"
+- then task manager, marked admin, is on the left on its processes page: "click performance on the left of task manager for the live cpu graph; your battery's already on the right. [BOX:14,182,60,214:performance][DONE]"
+- goal "open spotify", the open windows show spotify minimised: "spotify's already open, i'll bring it up for you. [FOCUS:spotify][STEP:1/1]"\
 """
 
 
 def system_prompt() -> str:
-    """The guide's instructions, with the Settings pages and this PC's apps."""
+    """The guide's instructions, with every page, tool and app it can open."""
     import apps
-    return SYSTEM_PROMPT + apps.prompt_block()
+    return SYSTEM_PROMPT + apps.prompt_block(guide=True)
 
 _CLICK_RE = re.compile(r"\[\s*CLICK\s*:\s*#?\s*(\d+)\s*(?::([^\]]*))?\]", re.IGNORECASE)
 _TYPE_RE = re.compile(r"\[\s*TYPE\s*:\s*#?\s*(\d+)\s*:([^\]]*)\]", re.IGNORECASE)
 _STEP_RE = re.compile(r"\[\s*STEP\s*:\s*(\d+)\s*(?:/\s*(\d+))?\s*\]", re.IGNORECASE)
 _DONE_RE = re.compile(r"\[\s*DONE\s*\]", re.IGNORECASE)
-_CUT_OFF_RE = re.compile(r"\[\s*(?:CLICK|TYPE|STEP|DONE)\b[^\]]*$", re.IGNORECASE | re.DOTALL)
+_FOCUS_RE = re.compile(r"\[\s*FOCUS\s*:\s*([^\]]+?)\s*\]", re.IGNORECASE)
+_FASTER_RE = re.compile(r"\[\s*FASTER\s*:\s*([^\]]+?)\s*\]", re.IGNORECASE)
+_CUT_OFF_RE = re.compile(r"\[\s*(?:CLICK|TYPE|STEP|DONE|FOCUS|FASTER)\b[^\]]*$", re.IGNORECASE | re.DOTALL)
 # Anything else tag-shaped ([POINT:...], a half-written tag) is never read aloud.
 _STRAY_TAG_RE = re.compile(r"\[\s*[A-Za-z_]+\s*:[^\]]*(?:\]|$)", re.DOTALL)
 
@@ -86,15 +112,17 @@ _STRAY_TAG_RE = re.compile(r"\[\s*[A-Za-z_]+\s*:[^\]]*(?:\]|$)", re.DOTALL)
 class Step:
     """One step as the model gave it."""
     say: str
-    action: str = "none"        # open, click, keys, type, box, or none
+    action: str = "none"        # open, focus, click, keys, type, box, or none
     target: int | None = None   # element id, for click and type
     keys: str = ""
     box: Box | None = None      # screenshot px, when nothing in the list fits
     label: str = ""
-    text: str = ""              # what to type, or what to open
+    text: str = ""              # what to type, what to open (the first), or the window to bring forward
     n: int = 0
     total: int = 0
     done: bool = False
+    opens: list = field(default_factory=list)   # everything to open (two go side by side)
+    faster: str = ""            # the quick way for next time ("win+i"), on the last step
 
 
 def parse_step(reply: str) -> Step:
@@ -104,15 +132,20 @@ def parse_step(reply: str) -> Step:
     if m := _STEP_RE.search(text):
         step.n, step.total = int(m.group(1)), int(m.group(2) or 0)
     step.done = bool(_DONE_RE.search(text))
+    if m := _FASTER_RE.search(text):
+        step.faster = m.group(1).strip()
     import apps
     text, opens = apps.parse_open(text)
+    focus = _FOCUS_RE.search(text)
     if opens:
-        step.action, step.text = "open", opens[0]
+        step.action, step.text, step.opens = "open", opens[0], opens[:2]
+    elif focus:
+        step.action, step.text = "focus", focus.group(1).strip()
     elif m := _CLICK_RE.search(text):
         step.action, step.target, step.label = "click", int(m.group(1)), (m.group(2) or "").strip()
     elif m := _TYPE_RE.search(text):
         step.action, step.target, step.text = "type", int(m.group(1)), m.group(2).strip()
-    for pattern in (_CLICK_RE, _TYPE_RE, _STEP_RE, _DONE_RE):
+    for pattern in (_CLICK_RE, _TYPE_RE, _STEP_RE, _DONE_RE, _FOCUS_RE, _FASTER_RE):
         text = pattern.sub("", text)
     text = _CUT_OFF_RE.sub("", text)
     spoken, shapes = parse_annotations(text)
@@ -164,6 +197,61 @@ def _to_physical(box: Box, capture) -> Box:
     x1, y1 = pt(box.x1, box.y1)
     x2, y2 = pt(box.x2, box.y2)
     return Box(x1, y1, x2, y2, box.label)
+
+
+# --- The open windows ---------------------------------------------------------------
+
+def window_lines(wins: list, most: int = 8) -> list[str]:
+    """The open windows for the model, front first:
+    ``1. task manager "Task Manager" (in front, admin: ...)``."""
+    lines = []
+    for i, w in enumerate(wins[:most], 1):
+        flags = [text for text, on in (("in front", w.front), ("minimised", w.minimized),
+                                       ("admin: its buttons and clicks are hidden from clixy", w.admin)) if on]
+        title = (w.title or "")[:60].replace('"', "'")
+        lines.append(f'{i}. {w.app} "{title}"' + (f" ({', '.join(flags)})" if flags else ""))
+    return lines
+
+
+# --- Speaking before the reply is finished --------------------------------------------
+
+_SENTENCE_END = re.compile(r"[.!?](?=\s)")
+
+
+def _speakable(text: str) -> str:
+    return re.sub(r"\s+", " ", _STRAY_TAG_RE.sub("", text)).strip()
+
+
+class _EarlySpeech:
+    """Feeds a streaming reply and speaks each sentence the moment it's
+    complete, until the first tag starts (the rest is spoken once the whole
+    reply has been read). ``pos`` is how far into the reply was spoken."""
+
+    def __init__(self, speak, clock) -> None:
+        self.speak, self.clock = speak, clock
+        self.text = ""
+        self.pos = 0
+        self.first_at: float | None = None
+        self.off = speak is None
+
+    def feed(self, chunk: str) -> None:
+        self.text += chunk
+        if self.off:
+            return
+        head = self.text[self.pos:]
+        cut = head.find("[")
+        region = head if cut < 0 else head[:cut]
+        start = 0
+        for m in _SENTENCE_END.finditer(region):
+            sentence = _speakable(region[start:m.end()])
+            start = m.end()
+            if sentence:
+                if self.first_at is None:
+                    self.first_at = self.clock()
+                self.speak(sentence)
+        self.pos += start
+        if cut >= 0:
+            self.off = True   # the tags have begun
 
 
 # --- Watching what you do -----------------------------------------------------------
@@ -261,18 +349,53 @@ class InputWatch:
 
 # --- The guide ------------------------------------------------------------------------
 
+_current: "Guide | None" = None
+
+
+def current() -> "Guide | None":
+    """The guide running right now, if any (the Clixy panel shows its steps)."""
+    return _current
+
+
+def step_label(step: Step, ids: dict, *, past: bool = False) -> str:
+    """What a step asks of you in a few words, for the panel: "Press Win + P",
+    "Click Duplicate". Built from the action, never from the spoken sentence."""
+    if step.action == "keys":
+        return ("Pressed " if past else "Press ") + " + ".join(key_names(step.keys))
+    if step.action in ("click", "box"):
+        name = ids[step.target].name if step.action == "click" and step.target in ids else step.label
+        name = " ".join((name or "").split())
+        return ("Clicked " if past else "Click ") + (name or "the marked spot")
+    if step.action == "type":
+        return ("Typed " if past else "Type ") + f'"{step.text}"'
+    if step.action == "open":
+        names = ["Settings" if t.lower().startswith("ms-settings:") else t for t in (step.opens or [step.text])]
+        return ("Opened " if past else "Opening ") + " and ".join(names)
+    if step.action == "focus":
+        return ("Brought up " if past else "Bringing up ") + step.text
+    return ""
+
+
 @dataclass
 class Guide:
     """Runs a guide from the first step to done. Everything it touches is
     passed in, so tests drive it with fakes:
 
-    ask(capture, text) -> reply; capture() -> a fresh capture of the cursor's
-    screen; list_elements(monitor) -> [snap.Element]; show(annotations,
-    monitor) draws marks (physical px); clear() removes them; say(text, n,
-    total, where) speaks a step and shows it in the island, clear of
-    ``where`` ((rect, monitor) of the thing to click, or None); note(text) a short
-    note; cancelled() -> True once a new question or quit ends the guide;
-    foreground() -> something that changes when the window does."""
+    ask(capture, text) -> the reply, as a string or as text chunks while it
+    streams; capture() -> a fresh capture of the cursor's screen;
+    list_elements(monitor) -> [snap.Element]; show(annotations, monitor)
+    draws marks (physical px); clear() removes them; say(text, n, total,
+    where) shows a step in the island (and speaks it, unless ``speak`` is
+    given), clear of ``where`` ((rect, monitor) of the thing to click, or
+    None); note(text) a short note; cancelled() -> True once a new question
+    or quit ends the guide; foreground() -> something that changes when the
+    window does.
+
+    Optional: speak(sentence) speaks each sentence as soon as it has
+    streamed in; windows() -> [snap.Window] front first; focus(hwnd) brings
+    one forward; arrange(first, second, monitor) puts two side by side;
+    knowhow(goal, front_exe) -> the relevant know-how; routes, a
+    memory.RouteBook (None when history is off)."""
 
     ask: object
     capture: object
@@ -287,71 +410,190 @@ class Guide:
     about: str = ""
     refine: object = None            # snap.refine, for BOX steps
     open: object = None              # apps.open_target, for OPEN steps
+    speak: object = None             # tts.speak_sentence: the voice, sentence by sentence as it streams
+    windows: object = None           # snap.windows
+    focus: object = None             # snap.focus, for FOCUS (and windows that open behind)
+    arrange: object = None           # snap.side_by_side, for two OPENs
+    knowhow: object = None           # kb.knowhow
+    routes: object = None            # memory.RouteBook
     dbg: object = None
     clock: object = time.monotonic
     sleep: object = time.sleep
     max_steps: int = 12
-    settle_s: float = 0.7
+    settle_s: float = 0.45           # a click that changes nothing outside its window: look again after this
+    keys_settle_s: float = 0.9       # the same after a shortcut (menus and flyouts take a moment)
+    quiet_s: float = 0.3             # the front window has to hold still this long
+    settle_cap_s: float = 3.0        # never wait longer than this for the screen to settle
+    linger_s: float = 8.0            # a last mark stays up this long (or until you act)
     nudge_s: float = 40.0
     give_up_s: float = 150.0
+    # What the panel shows (read from the Qt thread through progress()).
+    _goal: str = field(default="", init=False, repr=False)
+    _done_labels: list = field(default_factory=list, init=False, repr=False)
+    _now: str = field(default="", init=False, repr=False)
+    _keys: str = field(default="", init=False, repr=False)
+    _n: int = field(default=0, init=False, repr=False)
+    _total: int = field(default=0, init=False, repr=False)
+    _confirmed: threading.Event = field(default_factory=threading.Event, init=False, repr=False)
+    _stopped: threading.Event = field(default_factory=threading.Event, init=False, repr=False)
+    _shortcut: str = field(default="", init=False, repr=False)   # the quick way next time ("win+i")
+    _know_cache: dict = field(default_factory=dict, init=False, repr=False)
+
+    # --- For the panel (any thread) -------------------------------------------------
+
+    def progress(self) -> dict:
+        """Where the guide is: the goal (your own words), the steps done, the
+        step now ("Press Win + P"), its keys if it is a shortcut, n and total.
+        Never the spoken sentences."""
+        return {"goal": self._goal, "done": list(self._done_labels), "now": self._now,
+                "keys": self._keys, "n": self._n, "total": self._total, "shortcut": self._shortcut}
+
+    def confirm(self) -> None:
+        """"I did it": count this step as done and look at the screen again."""
+        self._confirmed.set()
+
+    def stop(self) -> None:
+        """Stop guiding (the panel's Stop)."""
+        self._stopped.set()
+
+    def _halted(self) -> bool:
+        return self._stopped.is_set() or bool(self.cancelled())
 
     def run(self, goal: str, capture) -> str:
         """Guide toward ``goal`` from ``capture`` (the screen as it was asked
         on). Returns the last thing said."""
-        done: list[str] = []
+        global _current
+        done: list[str] = []     # what has happened, told to the model
+        route: list[str] = []    # the moves that worked, remembered for next time
         last = ""
         fix = ""
+        finished = False
+        self._goal = " ".join((goal or "").split())
+        _current = self
+        hint = self._route_hint(goal)
         self.watch.start()
         try:
+            found = self._elements(capture.monitor)
             n = 0
+            spoke = False        # this step's sentence is already out (a retry stays quiet)
             while n < self.max_steps:
-                if self.cancelled():
+                if self._halted():
                     return last
-                try:
-                    found = self.list_elements(capture.monitor)
-                except Exception:
-                    found = []
                 lines, ids = element_lines(found, capture)
-                reply = self.ask(capture, self._prompt(goal, done, lines, fix))
-                self._log(f"GUIDE: step {n + 1} reply {reply!r}")
-                if self.cancelled():
+                wins = self._windows()
+                prompt = self._prompt(goal, done, lines, fix, wins, hint, self._know(goal, wins))
+                asked = self.clock()
+                reply, spoken_to = self._ask(capture, prompt, speak=not spoke, n=n + 1)
+                self._log(f"GUIDE: step {n + 1} reply in {self._ms(asked)} ms {reply!r}")
+                if self._halted():
                     return last
                 step = parse_step(reply)
                 if step.action in ("click", "type") and step.target not in ids and not fix:
                     fix = f"#{step.target} isn't in the list. pick an id from the list, or use keys or a box."
+                    spoke = spoke or spoken_to > 0
                     continue  # one retry with that said
-                fix = ""
+                quiet, spoke, fix = spoke, False, ""
                 n += 1
                 total = max(step.total, step.n, n) if (step.total or step.n) else 0
                 marks, target = self._marks(step, ids, capture)
+                self._n, self._total = n, total
+                self._now = step_label(step, ids)
+                self._keys = step.keys if step.action == "keys" else ""
+                self._confirmed.clear()
+                if step.faster:
+                    self._shortcut = step.faster
+                rest = parse_step(reply[spoken_to:]).say if spoken_to else step.say
+                if self.speak is not None and rest and not quiet:
+                    self._speak(rest)
                 if step.say:
                     self.say(step.say, n, total, (target, capture.monitor) if target else None)
                     last = step.say
-                if step.action == "open" and not step.done:
-                    opened = self._open(step.text)
-                    if not opened:
-                        fix = f"{step.text} couldn't be opened on this computer. find another way."
-                    done.append(f"clixy opened {opened or step.text}" + ("" if opened else " (it failed)"))
-                    self.sleep(1.6)  # let it open before looking again
-                    fresh = self.capture()
-                    capture = fresh if fresh is not None else capture
+                if step.action in ("open", "focus"):
+                    if step.action == "open":
+                        notes, moved, failed = self._open_all(step.opens or [step.text], capture.monitor)
+                    else:
+                        notes, moved, failed = self._bring(step.text)
+                    done.extend(notes)
+                    if moved:
+                        route.append(moved)
+                        self._done_labels.append(step_label(step, ids, past=True))
+                    if failed:
+                        fix = failed
+                    if step.done and moved:
+                        finished = True
+                        return last
+                    capture, found = self._look(capture)
                     continue
-                if step.done or not marks:
+                if not marks:   # done, or an answer with nothing to point at
+                    finished = step.done
                     return last
                 self.watch.drain()
                 self.show(marks, capture.monitor)
-                outcome = self._wait(step, target)
+                before = self.foreground()
+                admin = next((w for w in wins if w.front and w.admin), None) if step.action == "box" else None
+                outcome = self._wait(step, target, limit=self.linger_s if step.done else None,
+                                     unseen=admin.app if admin is not None else "")
                 self._log(f"GUIDE: step {n} {outcome}")
+                if step.done:   # the last mark (a click Clixy can't watch, say) stayed up for a while
+                    finished = outcome != "cancel"
+                    route.append(self._move(step, ids))
+                    return last
                 if outcome != "done":
                     return last
                 done.append(self._describe(step, ids))
+                route.append(self._move(step, ids))
+                self._done_labels.append(step_label(step, ids, past=True))
                 self.clear()
-                self.sleep(self.settle_s)
-                fresh = self.capture()
-                capture = fresh if fresh is not None else capture
+                if step.action == "keys":
+                    import apps
+                    self._settle(before, apps.SHORTCUT_WINDOWS.get(combo_tokens(step.keys), ""),
+                                 grace=self.keys_settle_s)
+                else:
+                    self._settle(before, grace=self.settle_s)
+                capture, found = self._look(capture)
             return last
         finally:
             self.watch.stop()
+            if finished:
+                self._remember(goal, route)
+            if _current is self:
+                _current = None
+
+    # --- Asking, and speaking as the answer streams in ---------------------------------
+
+    def _ask(self, capture, prompt: str, *, speak: bool, n: int) -> tuple[str, int]:
+        """The model's reply. With ``speak``, each sentence is spoken the
+        moment it has streamed in, before the action tags arrive. Returns the
+        reply and how far into it was spoken."""
+        asked = self.clock()
+        result = self.ask(capture, prompt)
+        chunks = [result] if isinstance(result, str) else (result or [])
+        early = _EarlySpeech(self._speak if (speak and self.speak is not None) else None, self.clock)
+        try:
+            for chunk in chunks:
+                if chunk:
+                    early.feed(chunk)
+                if self._halted():
+                    break
+        finally:
+            close = getattr(chunks, "close", None)
+            if close is not None:
+                try:
+                    close()   # a stream left early is closed, not left running
+                except Exception:
+                    pass
+        if early.first_at is not None:
+            self._log(f"GUIDE: step {n} first words after {round((early.first_at - asked) * 1000)} ms")
+        return early.text, early.pos
+
+    def _speak(self, sentence: str) -> None:
+        self._log(f"GUIDE: speaking {sentence!r}")
+        try:
+            self.speak(sentence)
+        except Exception:
+            pass
+
+    # --- Opening things, bringing windows forward, waiting for the screen ----------------
 
     def _open(self, target: str) -> str:
         if self.open is None:
@@ -361,11 +603,225 @@ class Guide:
         except Exception:
             return ""
 
-    def _prompt(self, goal: str, done: list[str], lines: list[str], fix: str) -> str:
+    def _open_all(self, targets: list[str], monitor) -> tuple[list[str], str, str]:
+        """Open one thing, or two side by side. Each time, wait until its
+        window is there and in front (bringing it forward if it opened
+        behind). Returns notes for the model, the move to remember ("" if
+        nothing opened) and what to fix ("" if all went well)."""
+        import apps
+        notes: list[str] = []
+        opened_ok: list[tuple[str, object]] = []
+        failed = []
+        for target in targets[:2]:
+            before = self.foreground()
+            opened = self._open(target)
+            if not opened:
+                failed.append(target)
+                notes.append(f"clixy tried to open {target} but it failed")
+                continue
+            expect = apps.window_hint(target, opened)
+            self._settle(before, expect, grace=self.keys_settle_s)
+            win = self._find_window(expect) if expect else self._front_window()
+            opened_ok.append((target, win))
+            self._log(f"GUIDE: opened {opened!r}" + (f" -> {win.app} {win.title!r}" if win else ""))
+            notes.append(f"clixy opened {opened}" + (f" ({win.app}, in front)" if win is not None and win.front else ""))
+        if len(opened_ok) == 2 and self.arrange is not None:
+            a, b = opened_ok[0][1], opened_ok[1][1]
+            placed = ""
+            if a is not None and b is not None and a.hwnd != b.hwnd:
+                try:
+                    placed = self.arrange(a.hwnd, b.hwnd, monitor) or ""
+                except Exception:
+                    placed = ""
+            self._log(f"GUIDE: side by side: {placed or 'no'}")
+            notes.append(f"side by side: {placed}" if placed else
+                         "they couldn't be put side by side; the second may cover the first")
+            self._settle(self.foreground(), grace=0.2)
+        moved = ""
+        if opened_ok:
+            moved = "open " + " + ".join(t for t, _w in opened_ok) + (" side by side" if len(opened_ok) == 2 else "")
+        fix = (" and ".join(failed) + " couldn't be opened on this computer. find another way.") if failed else ""
+        return notes, moved, fix
+
+    def _bring(self, name: str) -> tuple[list[str], str, str]:
+        """FOCUS: bring an open window to the front."""
+        win = self._find_window(name)
+        if win is None:
+            return ([f"there's no open window called {name}"], "",
+                    f"no open window is called \"{name}\": open it instead, or pick one from the open windows.")
+        before = self.foreground()
+        ok = self._focus(win)
+        self._settle(before, name, grace=self.settle_s)
+        self._log(f"GUIDE: brought {win.app} {win.title!r} forward: {'ok' if ok else 'refused'}")
+        if not ok:
+            return ([f"clixy tried to bring {win.app} forward but windows refused (it may be flashing in the taskbar)"],
+                    "", f"bringing {win.app} forward didn't work: point them to it in the taskbar.")
+        return [f"clixy brought {win.app} to the front"], f"focus {win.app}", ""
+
+    def _focus(self, win) -> bool:
+        if self.focus is None or win is None:
+            return False
+        try:
+            return bool(self.focus(win.hwnd))
+        except Exception:
+            return False
+
+    def _windows(self) -> list:
+        if self.windows is None:
+            return []
+        try:
+            return list(self.windows() or [])
+        except Exception:
+            return []
+
+    def _find_window(self, name: str, wins: list | None = None):
+        """The open window someone calls ``name``: by app name first, then by title."""
+        wins = self._windows() if wins is None else wins
+        want = " ".join((name or "").lower().split())
+        if not want or not wins:
+            return None
+        if want.isdigit() and 0 < int(want) <= len(wins):
+            return wins[int(want) - 1]
+        for w in wins:
+            if want in (w.app, w.exe.lower(), w.exe.lower().removesuffix(".exe")):
+                return w
+        return next((w for w in wins if w.matches(want)), None)
+
+    def _front_window(self):
+        return next((w for w in self._windows() if w.front), None)
+
+    def _settle(self, before, expect: str = "", *, grace: float = 0.9) -> str:
+        """Wait for the screen to settle after an action, instead of a fixed
+        sleep. With ``expect`` (a window's name), until that window is in
+        front and the front has held still for ``quiet_s``, bringing it
+        forward if it opened behind another; otherwise until the front window
+        changed and held still, or ``grace`` passes with no change (a click
+        inside the same window). Never longer than ``settle_cap_s``."""
+        start = self.clock()
+        last = self.foreground()
+        changed_at = start if last != before else None
+        front = False
+        behind = focused = 0
+        next_scan = start
+        watch_windows = bool(expect) and self.windows is not None
+        reason = "timeout"
+        try:
+            while True:
+                if self._halted():
+                    reason = "cancel"
+                    return reason
+                now = self.clock()
+                if now - start >= self.settle_cap_s:
+                    return reason
+                fg = self.foreground()
+                if fg != last:
+                    last, changed_at = fg, now
+                if watch_windows:
+                    if now >= next_scan:
+                        next_scan = now + 0.15
+                        win = self._find_window(expect)
+                        front = win is not None and win.front
+                        if win is not None and not front:
+                            behind += 1
+                            if behind >= 2 and focused < 2:   # it opened behind another window
+                                focused += 1
+                                behind = 0
+                                ok = self._focus(win)
+                                self._log(f"GUIDE: {win.app} was behind; brought it forward ({'ok' if ok else 'refused'})")
+                                changed_at = now
+                    if front and now - (changed_at or start) >= self.quiet_s:
+                        reason = f"{expect} in front"
+                        return reason
+                    if not front and changed_at is not None and now - changed_at >= 4 * self.quiet_s \
+                            and now - start >= 1.5:
+                        reason = "changed (no window by that name)"
+                        return reason
+                else:
+                    if changed_at is not None and now - changed_at >= self.quiet_s:
+                        reason = "changed"
+                        return reason
+                    if changed_at is None and now - start >= grace:
+                        reason = "same window"
+                        return reason
+                self.sleep(0.05)
+        finally:
+            self._log(f"GUIDE: settled in {self._ms(start)} ms ({reason})")
+
+    def _elements(self, monitor) -> list:
+        try:
+            return list(self.list_elements(monitor) or [])
+        except Exception:
+            return []
+
+    def _look(self, capture):
+        """A fresh look once the screen has settled: the screenshot, with
+        Windows' element list made at the same time."""
+        monitor = capture.monitor
+        box: dict = {}
+        worker = threading.Thread(target=lambda: box.__setitem__("found", self._elements(monitor)),
+                                  name="clixy-guide-look", daemon=True)
+        worker.start()
+        fresh = self.capture()
+        worker.join(timeout=2.0)
+        found = box.get("found", [])
+        if fresh is None:
+            return capture, found
+        if fresh.monitor != monitor:
+            found = self._elements(fresh.monitor)
+        return fresh, found
+
+    # --- Know-how and remembered routes --------------------------------------------------
+
+    def _know(self, goal: str, wins: list) -> str:
+        front = next((w.exe for w in wins if w.front), "")
+        if self.knowhow is None:
+            return ""
+        if front not in self._know_cache:
+            try:
+                self._know_cache[front] = self.knowhow(goal, front) or ""
+            except Exception:
+                self._know_cache[front] = ""
+            self._log(f"GUIDE: know-how for {front or 'no app'}: {len(self._know_cache[front])} chars")
+        return self._know_cache[front]
+
+    def _route_hint(self, goal: str) -> str:
+        if self.routes is None:
+            return ""
+        try:
+            r = self.routes.recall(goal)
+        except Exception:
+            r = None
+        if not r:
+            return ""
+        self._shortcut = r.get("shortcut", "") or self._shortcut
+        self._log(f"GUIDE: remembered route from {r['goal']!r}")
+        text = f'last time, "{r["goal"]}" worked like this: ' + "; ".join(r["steps"])
+        if r.get("shortcut"):
+            text += f'. the quick way: {r["shortcut"]}'
+        return text + ". if the screen still fits, go straight there in fewer steps."
+
+    def _remember(self, goal: str, route: list[str]) -> None:
+        if self.routes is None or not route:
+            return
+        front = self._front_window()
+        try:
+            self.routes.record(goal, route, app=front.app if front is not None else "", shortcut=self._shortcut)
+            self._log(f"GUIDE: remembered the route: {route}")
+        except Exception:
+            pass
+
+    def _prompt(self, goal: str, done: list[str], lines: list[str], fix: str, wins: list | None = None,
+                hint: str = "", know: str = "") -> str:
         parts = [f'goal: "{goal.strip()}"']
         if self.about:
             parts.append(f"this computer: {self.about}")
+        if wins:
+            parts.append("open windows, front first:\n" + "\n".join(window_lines(wins)))
         parts.append("done so far: " + ("; ".join(f"{i}. {d}" for i, d in enumerate(done, 1)) if done else "nothing yet"))
+        if hint:
+            parts.append(hint)
+        if know:
+            parts.append("know-how (accurate; use the fastest route that fits):\n" + know)
         if lines:
             parts.append("clickable things on screen now (id, kind, name, box in screenshot pixels):\n" + "\n".join(lines))
         else:
@@ -374,6 +830,9 @@ class Guide:
             parts.append(fix)
         parts.append("what's the single next step?")
         return "\n\n".join(parts)
+
+    def _ms(self, since: float) -> int:
+        return round((self.clock() - since) * 1000)
 
     def _marks(self, step: Step, ids: dict, capture) -> tuple[list, tuple | None]:
         """What to draw (physical px) and the rectangle a click must land in."""
@@ -394,31 +853,43 @@ class Guide:
             return [box], (box.x1, box.y1, box.x2, box.y2)
         return [], None
 
-    def _wait(self, step: Step, target: tuple | None) -> str:
-        """Until you've done the step: "done", "cancel", or "gone" (no sign of you)."""
+    def _wait(self, step: Step, target: tuple | None, limit: float | None = None, unseen: str = "") -> str:
+        """Until you've done the step: "done", "cancel", or "gone" (no sign of
+        you, or ``limit`` seconds passed). It returns the moment you act; the
+        settling afterwards is ``_settle``'s job. ``unseen`` names an admin
+        window in front, whose clicks Windows hides: the nudge comes sooner."""
         start = self.clock()
+        nudge_s = min(self.nudge_s, 12.0) if unseen else self.nudge_s
         window = self.foreground()
         want = combo_tokens(step.keys) if step.action == "keys" else frozenset()
+        opens = ""
+        if step.action == "keys":
+            import apps
+            opens = apps.SHORTCUT_WINDOWS.get(want, "")
+            already = self._find_window(opens) if opens else None
+            if already is not None and already.front:
+                opens = ""   # it was in front before you pressed anything
         check_at = None
         nudged = False
         typed = 0
         acted = False   # you've clicked or pressed something since this step showed
-        next_look = start + 1.0
+        next_look = start + 0.3
         while True:
-            if self.cancelled():
+            if self._halted():
                 return "cancel"
-            event = self.watch.get(0.2)
+            if self._confirmed.is_set():   # "I did it" in the panel
+                self._confirmed.clear()
+                return "done"
+            event = self.watch.get(0.1)
             now = self.clock()
             if event is not None:
                 kind = event[0]
                 if kind == "click" and target is not None and _inside(event[1], event[2], target):
                     if step.action != "type":
-                        self.sleep(self.settle_s)
                         return "done"
                 elif kind == "combo":
                     keys = event[1]
                     if want and want <= keys:
-                        self.sleep(self.settle_s)
                         return "done"
                     if keys == frozenset({"esc"}) and step.action != "keys":
                         return "cancel"
@@ -427,7 +898,7 @@ class Guide:
                         if "enter" in keys or "tab" in keys:
                             return "done"
                 acted = True
-                check_at = now + self.settle_s
+                check_at = now + 0.4
             if check_at is not None and now >= check_at:
                 check_at = None
                 if self.foreground() != window:
@@ -435,14 +906,35 @@ class Guide:
                 if step.action == "type" and typed >= max(1, len(step.text) // 2):
                     return "done"
             if now >= next_look:
-                next_look = now + 1.0
+                next_look = now + 0.3
                 if (acted or step.action == "keys") and self.foreground() != window:
                     return "done"  # what you did (or the shortcut) opened something new
-            if not nudged and now - start >= self.nudge_s:
+                if opens:          # the shortcut's window is up (keys into an admin window go unseen)
+                    win = self._find_window(opens)
+                    if win is not None and win.front:
+                        return "done"
+            if limit is not None and now - start >= limit:
+                return "gone"
+            if not nudged and now - start >= nudge_s:
                 nudged = True
-                self.note("Still with me? Do the step, or hold the keys and ask something new.")
+                if unseen:
+                    self.note(f"I can't see clicks in {unseen.title()} (it runs as administrator). "
+                              "Click outside it, then hold the keys and say next.")
+                else:
+                    self.note("Still with me? Do the step, or hold the keys and ask something new.")
             if now - start >= self.give_up_s:
                 return "gone"
+
+    @staticmethod
+    def _move(step: Step, ids: dict) -> str:
+        """The step as a move to remember: "press win+p", 'click "Duplicate"'."""
+        if step.action == "keys":
+            return f"press {step.keys}"
+        if step.action == "type":
+            return f'type "{step.text}"'
+        if step.action == "click" and step.target in ids:
+            return f'click "{ids[step.target].name}"'
+        return f"click {step.label or 'the marked thing'}"
 
     @staticmethod
     def _describe(step: Step, ids: dict) -> str:

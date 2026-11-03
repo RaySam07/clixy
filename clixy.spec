@@ -104,6 +104,8 @@ a = Analysis(
         # Nunito (UI) and Silkscreen (pixel titles), both SIL OFL; theme.py
         # loads them from assets/fonts at startup.
         ("assets/fonts", "assets/fonts"),
+        # Guide mode's know-how packs (kb.knowhow reads them next to kb.py).
+        ("knowhow", "knowhow"),
     ],
     hiddenimports=[
         # Look and feel: imported lazily by overlay.py / app.py.
