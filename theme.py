@@ -835,11 +835,16 @@ def _load(files: dict[int, str], into: dict[int, str]) -> None:
             into[weight] = families[0]
 
 
+_HAND_FILES = {QFont.Weight.Normal.value: "PatrickHand-Regular.ttf"}
+_hand_families: dict[int, str] = {}
+
+
 def load_fonts() -> None:
     """Register the bundled fonts. Needs a QGuiApplication; safe to call more
     than once. A missing file just falls back to Segoe UI."""
     _load(_FONT_FILES, _families)
     _load(_MONO_FILES, _mono_families)
+    _load(_HAND_FILES, _hand_families)
 
 
 def _pick(families: dict[int, str], fallback: str, point_size: float, weight: QFont.Weight) -> QFont:
@@ -863,6 +868,15 @@ def display_font(point_size: float) -> QFont:
     """Manrope Light with tight tracking, for headings and the answer."""
     font = ui_font(point_size, QFont.Weight.Light)
     font.setLetterSpacing(QFont.SpacingType.PercentageSpacing, 97)
+    return font
+
+
+def hand_font(point_size: float, weight: QFont.Weight = QFont.Weight.Normal) -> QFont:
+    """Patrick Hand, the handwriting on sketch notes (bold is drawn, not a file)."""
+    _load(_HAND_FILES, _hand_families)
+    font = _pick(_hand_families, "Segoe Print", point_size, QFont.Weight.Normal)
+    font.setBold(weight.value >= QFont.Weight.DemiBold.value)
+    font.setHintingPreference(QFont.HintingPreference.PreferDefaultHinting)
     return font
 
 

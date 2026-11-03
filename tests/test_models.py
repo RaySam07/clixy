@@ -18,7 +18,7 @@ def test_old_saved_default_moves_to_the_new_default(stored):
     from app import _resolve_llm_credentials
     stored.update(LLM_PROVIDER="anthropic", ANTHROPIC_MODEL="claude-sonnet-4-6")
     model_id, _ = _resolve_llm_credentials()
-    assert model_id == "anthropic/claude-haiku-5-5"
+    assert model_id == "anthropic/claude-sonnet-5-5"
 
 
 def test_a_model_someone_picked_is_kept(stored):

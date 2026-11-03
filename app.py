@@ -33,6 +33,7 @@ from PyQt6.QtWidgets import QApplication
 import apps
 import guide
 import kb
+import sketch
 import sysinfo
 from ai import (
     _CLICKY_ANNOTATION_SYSTEM_PROMPT,
@@ -491,6 +492,8 @@ class ClickyApp(QObject):
     sig_point_label = pyqtSignal(str)
     # Guide mode: the step being shown (its sentence, number and the total).
     sig_guide_step = pyqtSignal(str, int, int, object)
+    # A sketch note to draw on the note card (sketch.py), as a dict.
+    sig_show_sketch = pyqtSignal(object)
 
     def __init__(
         self,
@@ -583,6 +586,8 @@ class ClickyApp(QObject):
         self.sig_island_done.connect(lambda: self._island("island_done"))
         self.sig_point_label.connect(lambda label: self._island("point_label", label))
         self.sig_guide_step.connect(lambda text, n, total, where: self._island("island_step", text, n, total, where))
+        self.sig_show_sketch.connect(self._on_show_sketch)
+        self._note_card = None
 
     def start(self) -> None:
         """Initialize overlay + hotkey and begin listening.
@@ -1083,8 +1088,10 @@ class ClickyApp(QObject):
         window_title: str,
         cancel: threading.Event,
         capture_queue: "queue.Queue",
+        question: str | None = None,
     ) -> None:
         """Sequential pipeline: STT → capture → recall → stream → TTS → overlay.
+        ``question`` skips listening (a follow-up button was clicked).
 
         ``capture_queue`` is populated in parallel by
         :meth:`_release_capture_worker` (launched in ``_handle_release``
@@ -1105,12 +1112,15 @@ class ClickyApp(QObject):
             if cancel.is_set():
                 return
 
-            if getattr(self._stt, "loading", False) is True:
-                self.sig_island_note.emit("Getting my ears ready: a one-time download, about 150 MB.")
-            dbg.log("STT: calling stop_recording()...")
-            transcript = self._stt.stop_recording()
-            dbg.log(f"STT: {self._stt._chunk_count} audio chunks captured")
-            dbg.log(f"STT: latest partial: {self._stt._latest_partial!r}")
+            if question is not None:
+                transcript = question
+            else:
+                if getattr(self._stt, "loading", False) is True:
+                    self.sig_island_note.emit("Getting my ears ready: a one-time download, about 150 MB.")
+                dbg.log("STT: calling stop_recording()...")
+                transcript = self._stt.stop_recording()
+                dbg.log(f"STT: {self._stt._chunk_count} audio chunks captured")
+                dbg.log(f"STT: latest partial: {self._stt._latest_partial!r}")
             dbg.log(f"STT: final transcript ({len(transcript)} chars): {transcript!r}")
             _log(f"Transcript: {transcript!r}")
             if not transcript.strip():
@@ -1220,6 +1230,11 @@ class ClickyApp(QObject):
                 stage = "AI"
                 self._run_guide(transcript, cursor_capture, cancel, dbg)
                 return
+
+            # Learning something: a sketch note draws itself while the voice explains.
+            if sketch.wants_sketch(transcript):
+                threading.Thread(target=self._make_sketch, args=(transcript, cursor_capture, cancel, dbg),
+                                 daemon=True, name="clixy-sketch").start()
 
             dbg.log("LLM: streaming started...")
             _log("Asking the model...")
@@ -1565,6 +1580,43 @@ class ClickyApp(QObject):
     def _island(self, method: str, *args) -> None:
         if self._overlay is not None and hasattr(self._overlay, method):
             getattr(self._overlay, method)(*args)
+
+    def _make_sketch(self, question: str, capture, cancel: threading.Event, dbg) -> None:
+        """Ask the thinking model for a sketch note and show it (worker thread)."""
+        try:
+            with self._smart_ai.ask_stream(images=[(capture.image, capture.label)], transcript=question,
+                                           history=[], system_prompt=sketch.PROMPT, max_tokens=2500) as stream:
+                reply = "".join(stream.text_deltas())
+        except Exception as exc:
+            dbg.log(f"SKETCH: failed: {type(exc).__name__}: {exc}")
+            return
+        note = sketch.parse_note(reply)
+        dbg.log(f"SKETCH: {'drawing ' + repr(note.get('title')) if note else 'none'} ({len(reply)} chars)")
+        if note is not None and not cancel.is_set():
+            self.sig_show_sketch.emit(note)
+
+    def _on_show_sketch(self, note: dict) -> None:
+        if self._note_card is None:
+            self._note_card = sketch.NoteCard()
+            self._note_card.followup.connect(self.ask_text)
+            self._note_card.cleared.connect(lambda: self.sig_clear_annotations.emit())
+        self._note_card.show_note(note)
+
+    def ask_text(self, question: str) -> None:
+        """Ask ``question`` as if it had been spoken (a sketch note's follow-up
+        buttons): the screen is looked at afresh and the answer is spoken."""
+        if self._worker_thread and self._worker_thread.is_alive():
+            self._cancel_event.set()
+            self._tts.stop()
+        self._cancel_event = threading.Event()
+        captured: queue.Queue = queue.Queue(maxsize=1)
+        threading.Thread(target=self._release_capture_worker, args=((0, 0), self._current_app, captured),
+                         daemon=True, name="clixy-ask-capture").start()
+        self._worker_thread = threading.Thread(
+            target=self._pipeline_worker,
+            args=(self._current_app, self._current_title, self._cancel_event, captured),
+            kwargs={"question": question}, daemon=True, name="clixy-pipeline")
+        self._worker_thread.start()
 
     def _run_guide(self, goal: str, capture, cancel: threading.Event, dbg) -> None:
         """Guide toward ``goal`` one step at a time (guide.py), on this worker thread."""

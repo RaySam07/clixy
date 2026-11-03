@@ -115,7 +115,7 @@ def test_the_connection_card_shows_claude_and_the_key_ending(qapp, stored):
     from settings_dialog import SettingsDialog
     dlg = SettingsDialog()
     model, key, cost, local = dlg._connection()
-    assert "Claude" in model and "Haiku 5.5" in model
+    assert "Claude" in model and "Sonnet 5.5" in model
     assert key == ANT_KEY and "1¢" in cost and not local
     assert dlg._conn_card.key.text().endswith("3f9a")
 
