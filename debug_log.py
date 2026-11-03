@@ -4,6 +4,7 @@ When DEBUG_LOG is on, each PTT interaction gets its own folder under
 ~/.clixy/debug/ containing a timestamped log file, plus the
 screenshot the model saw when DEBUG_SCREENSHOTS is on. With DEBUG_LOG off
 (the default) sessions write nothing, so questions and answers aren't kept.
+Dev mode (CLIXY_DEV=1) always keeps them: they hold each turn's timings.
 
 Usage:
     session = DebugSession.start("EXCEL.EXE", "Book1 - Excel")
@@ -15,6 +16,7 @@ Usage:
 """
 from __future__ import annotations
 
+import os
 import time
 from pathlib import Path
 
@@ -22,7 +24,7 @@ from config import DEBUG_LOG, DEBUG_SCREENSHOTS, MEMORY_DIR
 
 
 _DEBUG_DIR = Path(MEMORY_DIR).parent / "debug"
-_ENABLED = DEBUG_LOG
+_ENABLED = DEBUG_LOG or os.environ.get("CLIXY_DEV") == "1"
 _SAVE_SCREENSHOTS = DEBUG_SCREENSHOTS
 
 

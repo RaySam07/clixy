@@ -27,8 +27,18 @@ SETTLE_S = 1.2
 """Quiet time after the last edit before restarting, so a save of several files is one restart."""
 
 
+LOG = Path.home() / ".clixy" / "dev.log"
+"""Where dev mode's printed log goes: pythonw has no console to print to."""
+
+
 def enabled() -> bool:
     return os.environ.get("CLIXY_DEV") == "1" and not getattr(sys, "frozen", False)
+
+
+def log_to_file(path: Path = LOG) -> None:
+    """Send print output (the app's timeline, errors) to ``path``, appended."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    sys.stdout = sys.stderr = open(path, "a", encoding="utf-8", errors="replace", buffering=1)
 
 
 def snapshot(root: Path) -> dict[Path, float]:

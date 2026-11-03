@@ -47,6 +47,7 @@ items are drawn one by one in the note's own coordinates (the view's x and y). e
 {"type": "axes", "x_label": "time (s)", "y_label": "intensity", "ticks": true}
 {"type": "function", "expr": "sin(2*pi*3*x)", "from": 0, "to": 1, "color": "blue", "label": "3 Hz"}  (x is the variable; + - * / ** and sin cos tan exp log sqrt abs pi e)
 {"type": "curve", "points": [[x, y], ...], "color": "blue", "label": "..."}
+{"type": "parametric", "x": "(1 + 0.5*cos(3*t))*cos(t)", "y": "(1 + 0.5*cos(3*t))*sin(t)", "from": 0, "to": 6.283, "color": "blue", "label": "..."}  (t is the variable: anything wound, polar or orbiting, like a wave wrapped around a circle, a spiral, an ellipse)
 {"type": "dot", "at": [x, y], "label": "peak", "color": "red"}
 {"type": "line", "from": [x, y], "to": [x, y], "dashed": true, "color": "grey", "label": "..."}
 {"type": "arrow", "from": [x, y], "to": [x, y], "label": "..."}
@@ -74,7 +75,7 @@ when depth genuinely helps (vectors, 3d shapes, surfaces, orbits), use "view": {
 {"type": "surface", "expr": "sin(x)*cos(y)"}
 
 colors: ink, blue, red, green, orange, purple, grey.
-keep it clean and true: 3 to 10 items, labels of 1-4 words, exact maths (use "function" for real curves), nothing cluttered. text items are the key insight in a few words, like "peak = frequency present". followups are 2 or 3 natural next questions, under 6 words each.
+keep it clean and true: 3 to 10 items, labels of 1-4 words, exact maths (use "function" for real curves), nothing cluttered. text items are the key insight in a few words, like "peak = frequency present". draw what the idea really looks like: if it is wrapped, rotated or polar, draw it that way with "parametric", not a plain wave beside it. geometry stays round: circles and wound curves are drawn with equal x and y scales. leave room: no two labels in the same spot, and put text items in empty space, away from curves. followups are 2 or 3 natural next questions, under 6 words each.
 make a note for anything someone is trying to learn or understand. only for small talk, a yes or no, or "where do i click", reply {"skip": true}.\
 """
 
@@ -182,9 +183,10 @@ class Stroke:
 
     def __init__(self, kind: str, points: list[QPointF] | None = None, *, color: QColor = COLORS["ink"],
                  width: float = 2.2, dashed: bool = False, head: bool = False, text: str = "",
-                 at: QPointF | None = None, size: float = 13.0, align: str = "left") -> None:
+                 at: QPointF | None = None, size: float = 13.0, align: str = "left", movable: bool = False) -> None:
         self.kind, self.points, self.color, self.width = kind, points or [], color, width
         self.dashed, self.head, self.text, self.at, self.size, self.align = dashed, head, text, at, size, align
+        self.movable = movable  # a label that may move to a clear spot (_untangle)
         self.length = self._length()
         self.start = 0.0   # seconds into the drawing
         self.duration = 0.0
@@ -259,6 +261,13 @@ def build(note: dict, canvas: QRectF, angle: float = 0.0) -> list[Stroke]:
     axes = next((i for i in note["items"] if i.get("type") == "axes"), None)
     ticks = bool(axes and axes.get("ticks"))
     plot = canvas.adjusted(34 if axes else 10, 22 if axes else 10, -14, (-44 if ticks else -30) if axes else -10)
+    if view.get("equal") or any(i.get("type") in ("circle", "parametric") for i in note["items"]):
+        # Circles and wound curves stay round: one scale for both axes, and the
+        # roomier axis shows more of the view around the same centre.
+        k = min(plot.width() / (x1 - x0), plot.height() / (y1 - y0))
+        cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+        x0, x1 = cx - plot.width() / k / 2, cx + plot.width() / k / 2
+        y0, y1 = cy - plot.height() / k / 2, cy + plot.height() / k / 2
 
     def to(x: float, y: float) -> QPointF:
         return QPointF(plot.left() + (x - x0) / (x1 - x0) * plot.width(),
@@ -292,7 +301,7 @@ def build(note: dict, canvas: QRectF, angle: float = 0.0) -> list[Stroke]:
             if item.get("y_label"):
                 strokes.append(Stroke("text", text=str(item["y_label"])[:30], at=QPointF(plot.left() + 8, plot.top() - 6),
                                       size=13))
-        elif kind in ("function", "curve"):
+        elif kind in ("function", "curve", "parametric"):
             pts: list[QPointF] = []
             if kind == "function":
                 fn = compile_expr(item.get("expr", ""))
@@ -305,6 +314,20 @@ def build(note: dict, canvas: QRectF, angle: float = 0.0) -> list[Stroke]:
                     y = fn(x)
                     if not math.isnan(y):
                         pts.append(to(x, max(y0 - (y1 - y0), min(y1 + (y1 - y0), y))))
+            elif kind == "parametric":
+                fx, fy = compile_expr(item.get("x", ""), ("t",)), compile_expr(item.get("y", ""), ("t",))
+                if fx is None or fy is None:
+                    continue
+                try:
+                    a, b = float(item.get("from", 0)), float(item.get("to", 2 * math.pi))
+                except (TypeError, ValueError):
+                    continue
+                for k in range(481):
+                    t = a + (b - a) * k / 480
+                    x, y = fx(t), fy(t)
+                    if not (math.isnan(x) or math.isnan(y)):
+                        pts.append(to(max(x0 - (x1 - x0), min(x1 + (x1 - x0), x)),
+                                      max(y0 - (y1 - y0), min(y1 + (y1 - y0), y))))
             else:
                 pts = [to(*p) for p in (_pt(v) for v in (item.get("points") or [])[:400]) if p is not None]
                 pts = _resample(pts, 4.0)
@@ -312,9 +335,9 @@ def build(note: dict, canvas: QRectF, angle: float = 0.0) -> list[Stroke]:
                 continue
             strokes.append(Stroke("line", _wobble(pts, seed, 0.6), color=_color(item, "blue"), width=2.6))
             if label:
-                end = pts[-1] if kind == "curve" else max(pts, key=lambda q: -q.y())
+                end = max(pts, key=lambda q: -q.y()) if kind == "function" else pts[-1]
                 strokes.append(Stroke("text", text=label, at=QPointF(end.x() + 6, end.y() - 8), size=13,
-                                      color=_color(item, "blue")))
+                                      color=_color(item, "blue"), movable=True))
         elif kind == "dot":
             p = _pt(item.get("at"))
             if p is None:
@@ -322,7 +345,7 @@ def build(note: dict, canvas: QRectF, angle: float = 0.0) -> list[Stroke]:
             c = to(*p)
             strokes.append(Stroke("dot", at=c, color=_color(item, "ink")))
             if label:
-                strokes.append(Stroke("text", text=label, at=QPointF(c.x() + 9, c.y() - 9), size=14))
+                strokes.append(Stroke("text", text=label, at=QPointF(c.x() + 9, c.y() - 9), size=14, movable=True))
         elif kind in ("line", "arrow"):
             a, b = _pt(item.get("from")), _pt(item.get("to"))
             if a is None or b is None:
@@ -332,7 +355,7 @@ def build(note: dict, canvas: QRectF, angle: float = 0.0) -> list[Stroke]:
                                   dashed=bool(item.get("dashed")), head=kind == "arrow", width=2.0))
             if label:
                 mid = QPointF((pa.x() + pb.x()) / 2, (pa.y() + pb.y()) / 2 - 8)
-                strokes.append(Stroke("text", text=label, at=mid, size=12, align="center"))
+                strokes.append(Stroke("text", text=label, at=mid, size=12, align="center", movable=True))
         elif kind == "box":
             a, b = _pt(item.get("from")), _pt(item.get("to"))
             if a is None or b is None:
@@ -342,7 +365,8 @@ def build(note: dict, canvas: QRectF, angle: float = 0.0) -> list[Stroke]:
             strokes.append(Stroke("line", _wobble(_resample(corners), seed, 0.7), color=_color(item, "red"),
                                   dashed=bool(item.get("dashed")), width=2.0))
             if label:
-                strokes.append(Stroke("text", text=label, at=QPointF(min(pa.x(), pb.x()), min(pa.y(), pb.y()) - 6), size=12))
+                strokes.append(Stroke("text", text=label, at=QPointF(min(pa.x(), pb.x()), min(pa.y(), pb.y()) - 6), size=12,
+                                      movable=True))
         elif kind == "circle":
             p = _pt(item.get("at"))
             if p is None:
@@ -353,14 +377,16 @@ def build(note: dict, canvas: QRectF, angle: float = 0.0) -> list[Stroke]:
                     for k in range(52)]
             strokes.append(Stroke("line", _wobble(ring, seed, 0.8), color=_color(item, "red"), width=2.2))
             if label:
-                strokes.append(Stroke("text", text=label, at=QPointF(c.x() + r + 6, c.y() - r), size=12))
+                strokes.append(Stroke("text", text=label, at=QPointF(c.x() + r * 0.72 + 4, c.y() - r * 0.72 - 4), size=12,
+                                      movable=True))
         elif kind == "text":
             p = _pt(item.get("at"))
             if p is None or not item.get("text"):
                 continue
             size = {"small": 12, "big": 18}.get(str(item.get("size")), 14)
-            strokes.append(Stroke("text", text=str(item["text"])[:60], at=to(*p), size=size, color=_color(item)))
-    return _pace(_keep_inside(strokes, canvas))
+            strokes.append(Stroke("text", text=str(item["text"])[:60], at=to(*p), size=size, color=_color(item),
+                                  movable=True))
+    return _pace(_keep_inside(_untangle(strokes, canvas), canvas))
 
 
 # --- Layouts for learning anything: they fill the canvas themselves ----------------------
@@ -533,16 +559,64 @@ LAYOUTS = {"steps": _steps, "cycle": _cycle, "compare": _compare, "timeline": _t
            "mindmap": _mindmap, "points": _points}
 
 
+def _text_rect(s: Stroke, at: QPointF | None = None) -> QRectF:
+    """The box a line of handwriting covers (``at`` is its baseline anchor)."""
+    at = at or s.at
+    width = QFontMetricsF(theme.hand_font(s.size)).horizontalAdvance(s.text)
+    left = at.x() - (width if s.align == "right" else width / 2 if s.align == "center" else 0)
+    return QRectF(left, at.y() - s.size * 0.95, width, s.size * 1.3)
+
+
+_CELL = 6.0
+"""Grid size for counting how much ink a label would sit on."""
+
+
+def _untangle(strokes: list[Stroke], canvas: QRectF) -> list[Stroke]:
+    """Labels move to the nearest clear spot: off other labels first, then off
+    the drawn lines, staying on the canvas. Ticks and axis names stay put."""
+    ink: dict[tuple[int, int], int] = {}
+    for s in strokes:
+        for q in s.points if s.kind == "line" else [s.at] if s.kind == "dot" else []:
+            cell = (int(q.x() // _CELL), int(q.y() // _CELL))
+            ink[cell] = ink.get(cell, 0) + 1
+
+    def ink_under(r: QRectF) -> int:
+        return sum(ink.get((cx, cy), 0)
+                   for cx in range(int(r.left() // _CELL), int(r.right() // _CELL) + 1)
+                   for cy in range(int(r.top() // _CELL), int(r.bottom() // _CELL) + 1))
+
+    bounds = canvas.adjusted(-6, -4, 6, 4)
+    taken = [_text_rect(s) for s in strokes if s.kind == "text" and not s.movable and s.at is not None]
+    offsets = [(0.0, 0.0)] + [(dx * d, dy * d) for d in (6, 12, 18, 26, 36, 48, 62)
+                              for dx, dy in ((0, -1), (0, 1), (1, 0), (-1, 0), (1, -1), (-1, -1), (1, 1), (-1, 1))]
+    for s in strokes:
+        if s.kind != "text" or not s.movable or s.at is None:
+            continue
+        best, best_score = s.at, math.inf
+        for dx, dy in offsets:
+            at = QPointF(s.at.x() + dx, s.at.y() + dy)
+            r = _text_rect(s, at)
+            pad = r.adjusted(-3, -2, 3, 2)
+            # Never on another label; a little ink is better than a label far from its thing.
+            score = (1000 * sum(pad.intersects(t) for t in taken) + 2.5 * ink_under(r)
+                     + (800 if not bounds.contains(r) else 0) + 0.9 * math.hypot(dx, dy))
+            if score < best_score:
+                best, best_score = at, score
+        s.at = best
+        taken.append(_text_rect(s))
+    return strokes
+
+
 def _keep_inside(strokes: list[Stroke], canvas: QRectF) -> list[Stroke]:
     """Handwriting that would run off the canvas is nudged back onto it."""
     for s in strokes:
         if s.kind != "text" or s.at is None:
             continue
-        width = QFontMetricsF(theme.hand_font(s.size)).horizontalAdvance(s.text)
-        left = s.at.x() - (width if s.align == "right" else width / 2 if s.align == "center" else 0)
-        shift = min(0.0, canvas.right() + 6 - (left + width)) or max(0.0, canvas.left() - 6 - left)
-        if shift:
-            s.at = QPointF(s.at.x() + shift, s.at.y())
+        r = _text_rect(s)
+        shift = min(0.0, canvas.right() + 6 - r.right()) or max(0.0, canvas.left() - 6 - r.left())
+        lift = min(0.0, canvas.bottom() + 6 - r.bottom()) or max(0.0, canvas.top() - 4 - r.top())
+        if shift or lift:
+            s.at = QPointF(s.at.x() + shift, s.at.y() + lift)
     return strokes
 
 
@@ -852,13 +926,16 @@ class NoteCard(QWidget):
         self._write(p, self.note.get("subtitle", ""), QPointF(card.left() + 22, card.top() + 84), 14, False,
                     QColor(120, 116, 110), min(1.0, max(0.0, (t - 0.25) / 0.5)))
 
-        # The sketch, stroke by stroke.
+        # The sketch, stroke by stroke, kept off the title and the buttons.
         drawn = self._drawn_for()
+        p.save()
+        p.setClipRect(QRectF(card.left() + 2, self.canvas.top() - 10, card.width() - 4, self.canvas.height() + 20))
         for s in self._strokes:
             u = 1.0 if self._three_d() and self._saved else (drawn - s.start) / s.duration if s.duration else 1.0
             if u <= 0:
                 continue
             self._paint_stroke(p, s, min(1.0, u))
+        p.restore()
 
         # Follow-ups.
         if drawn > (self._strokes[-1].start if self._strokes else 0):

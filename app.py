@@ -2050,6 +2050,9 @@ if __name__ == "__main__":
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     except (AttributeError, OSError):
         pass
+    import devmode
+    if devmode.enabled():
+        devmode.log_to_file()
 
     # Single-instance check. MUST run before QApplication construction
     # so a duplicate-launch exits fast without spinning up Qt / SDKs.
