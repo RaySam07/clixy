@@ -1,33 +1,31 @@
 """Clixy's status island: a notch at the top of the screen (the default),
-like a laptop's notch, or a sliver on the left or right edge.
+like a laptop's notch, or a tab on the left or right edge.
 
-At the top it's a small black notch with your buddy and soft audio lines.
-It says hello ("Hey Rayan!") when Clixy starts and the first time each day.
-Rest the mouse on it and it drops down your dashboard (the time, the date,
-the weather, today's classes; see dashboard.py), and tucks back up when the
-mouse leaves. It widens into a pill while you talk and drops the answer
-down as a card.
+The look: a flat, pure-black tab fused to the screen edge. Where it meets
+the edge its shoulders flare out in a concave curve; its lower corners are
+gently rounded. One light glows at its end in your buddy's colour (Ember
+burns red-orange, Splash blue), bright at the centre, deeper at the rim.
 
-On a side edge, a pure-black shape grows out of the edge, like the Dynamic
-Island turned on its side:
+At the top:
+- Resting: a slim black notch; the light glows faintly and breathes.
+- Hello: "Hey Rayan!" when Clixy starts and the first time each day.
+- Listening: it widens and says "Listening"; the light swells with your voice.
+- Thinking: "Thinking", with a soft shimmer; the light breathes.
+- Speaking: back to the slim notch with the light alive while the answer
+  plays. The answer is only ever heard, never shown.
+- A notice (an error, "I didn't catch that") in a line or two, then it
+  tucks away. A guide step shows only "Step 2 of 3".
+- Rest the mouse on it and it drops down your dashboard: a hello, the
+  time, the date and the weather (see dashboard.py).
 
-- Idle: a thin sliver on the edge. When the mouse rests on it, it springs
-  out into a pill that says hello: your buddy, "Clixy here." and the keys to
-  hold. It lingers a moment after the mouse leaves, then tucks back in.
-- Listening: stretches down the edge into a tall capsule with a coral
-  recording dot, a vertical waveform that moves with your voice, and your
-  pixel buddy at the bottom, listening.
-- Thinking: the waveform settles into a slow shimmer; the buddy thinks.
-- Answer: widens into a card with the buddy and your question on top and
-  the answer as captions, sentence by sentence as it's spoken. Names of
-  things to click show as butter chips, the same color as the label next
-  to the pointer.
-- Note: a short message instead of an answer ("didn't catch that").
+On a side edge the same black tab grows out of the edge: a sliver at rest,
+a tall capsule with the light and a waveform while listening, and a short
+tab for hello, notices and guide steps.
 
-Size, height and corner radius follow a spring, so every change of state is
-one fluid motion; content fades in once the shape is nearly there. Like the
-overlay it is click-through, never takes focus, and hides while the screen
-is captured so the model never sees it.
+Size follows a spring, so every change of state is one fluid motion; words
+fade in once the shape is nearly there. Like the overlay it is
+click-through, never takes focus, and hides while the screen is captured
+so the model never sees it.
 
 Threading: Qt main thread only; app.py reaches it through the overlay
 controller's island_* methods via pyqtSignal slots.
@@ -36,11 +34,25 @@ from __future__ import annotations
 
 import datetime
 import math
-import re
 import time
 
 from PyQt6.QtCore import QPointF, QRect, QRectF, Qt, QTimer
-from PyQt6.QtGui import QColor, QCursor, QFont, QFontMetricsF, QGuiApplication, QImage, QPainter, QPainterPath, QPen, QScreen
+from PyQt6.QtGui import (
+    QBrush,
+    QColor,
+    QCursor,
+    QFont,
+    QFontMetricsF,
+    QGuiApplication,
+    QImage,
+    QLinearGradient,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QRadialGradient,
+    QScreen,
+    QTransform,
+)
 from PyQt6.QtWidgets import QWidget
 
 import theme
@@ -48,31 +60,28 @@ import theme
 
 class SideIsland(QWidget):
     # At the top of the screen, like a laptop's notch.
-    NOTCH = (132.0, 30.0)
-    HELLO = (214.0, 34.0)
-    HINT = (262.0, 34.0)
-    PILL = (300.0, 38.0)
-    TOP_CARD_W = 430.0
-    DASH_W = 470.0
-    _TOP_WIN = (520, 380)
+    NOTCH = (150.0, 24.0)
+    HELLO = (196.0, 36.0)
+    HINT = (262.0, 36.0)
+    PILL = (204.0, 40.0)
+    DASH_W = 440.0
+    NOTE_W = 380.0               # the widest a notice gets
+    _TOP_WIN = (540, 380)        # room for the shoulders and the shadow
     _HELLO_S = 3.2
     _DWELL = 0.5                 # s the mouse rests on it before it shows anything
+    _INSET = 22.0                # the words' left margin
 
     # On a side edge.
     SLIVER = (8.0, 58.0)
-    GREET = (256.0, 78.0)
-    CAPSULE = (60.0, 214.0)
-    CARD_W = 360.0
-    MAX_CARD_H = 300.0
-    _WIN_W = 400   # room for the card plus its shadow
+    GREET = (232.0, 72.0)
+    CAPSULE = (56.0, 172.0)
+    _WIN_W = 400   # room for a notice plus its shadow
     _WIN_H = 340
-    _PAD = 24.0
     _TOP = 0.34    # vertical centre, as a fraction of the screen's height
     _STIFF, _DAMP = 0.16, 0.70   # per 60 Hz frame: slight overshoot, settles in ~0.5 s
     _PEEK_REACH = 16             # px from the edge: the mouse has to be on the sliver
     _LINGER = 0.6                # s it stays open after the mouse leaves
     _BARS = 13
-    _HEAD = 36.0   # card header: the buddy, its name and your question
 
     def __init__(self, side: str | None = None) -> None:
         super().__init__()
@@ -99,13 +108,16 @@ class SideIsland(QWidget):
         self._state = "idle"
         self._transcript = ""
         self._sentences: list[str] = []
+        """What Clixy is saying: kept for the turn, only ever heard, never shown."""
         self._highlights: list[str] = []
         self._meta = ""
         self._note = ""
+        self._step = ""
+        """Guide mode: "Step 2 of 3", the only words a step shows."""
         self._level = 0.0
         self._smooth_level = 0.0
         self.model_name = ""
-        """Shown in the chip while listening; app.py sets it, e.g. 'Haiku 5.5'."""
+        """The model in use; app.py sets it, e.g. 'Haiku 5.5'."""
         self.hotkey = _hotkey_text()
         """The keys to hold, as shown when it greets you, e.g. 'Ctrl + Win'."""
         self.name = _first_name()
@@ -120,16 +132,18 @@ class SideIsland(QWidget):
         self._hover_since: float | None = None
         self._frame = 0
         self._last_tick = self._t0
-        self._layout_cache: dict = {}
+        self._wrap_cache: dict = {}
 
         # Spring state: width, height (the shape is centred in the window).
         self._w, self._h = self.NOTCH if self.side == "top" else self.SLIVER
         self._vw = self._vh = 0.0
         self._fade_voice = 0.0
-        self._fade_card = 0.0
+        self._fade_note = 0.0
         self._fade_greet = 0.0
         self._fade_notch = 0.0
         self._fade_dash = 0.0
+        # The light: its core's radius and how bright it burns (0-1), eased.
+        self._light_r, self._light_b = 2.5, 0.3
         self._glass: QImage | None = None
         """A blur of the screen behind, taken as the dashboard opens."""
         self._near = False
@@ -190,6 +204,7 @@ class SideIsland(QWidget):
         self._sentences = []
         self._highlights = []
         self._note = ""
+        self._step = ""
         self._meta = self.model_name
         self.update()
 
@@ -204,9 +219,10 @@ class SideIsland(QWidget):
 
     def set_transcript(self, text: str) -> None:
         self._transcript = text.strip()
-        self.update()
 
     def say(self, sentence: str) -> None:
+        """A sentence of the answer as it goes to the voice. It is heard, not
+        shown: the notch settles back and its light comes alive while it plays."""
         sentence = sentence.strip()
         if not sentence:
             return
@@ -216,16 +232,15 @@ class SideIsland(QWidget):
         self.update()
 
     def highlight(self, label: str) -> None:
-        """Show ``label`` (what the pointer points at) as a chip in the captions."""
+        """What the pointer points at; the pointer shows it, so it's only kept."""
         label = (label or "").strip()
         if label and label.lower() not in (h.lower() for h in self._highlights):
             self._highlights.append(label)
-            self.update()
 
     def step(self, text: str, n: int, total: int = 0, keep_clear: QRect | None = None) -> None:
-        """Guide mode: show just this step ("step 2 of 3") until the next one.
-        ``keep_clear`` (global coords) is what you have to click: if the card
-        would cover it, the island moves to the other edge for this step."""
+        """Guide mode: this step ("Step 2 of 3") until the next one; the step
+        itself is spoken. ``keep_clear`` (global coords) is what you have to
+        click: if the island would cover it, it moves to another edge."""
         side = self.home_side
         if keep_clear is not None and self.geometry().adjusted(-24, -24, 24, 24).intersects(keep_clear):
             if self.home_side == "top":  # the far side from what you have to click
@@ -239,31 +254,34 @@ class SideIsland(QWidget):
         self._sentences = [text.strip()] if text.strip() else []
         self._highlights = []
         self._meta = f"step {n} of {total}" if total >= n > 0 else (f"step {n}" if n > 0 else "")
+        self._step = self._meta.capitalize() or "Next step"
         self.update()
 
     def set_meta(self, text: str) -> None:
         self._meta = text
-        self.update()
 
     def note(self, text: str) -> None:
+        """A short notice in place of an answer ("I didn't catch that")."""
         self._collapse_timer.stop()
         self._state = "note"
-        self._note = text.strip()
+        self._note = " ".join(text.split())
         self.update()
         self._collapse_timer.start(6000)
 
     def done(self) -> None:
-        """The turn is over: stay open long enough to read, then tuck away."""
+        """The turn is over. The answer may still be playing, so the light stays
+        alive about as long as it takes to say, then the notch rests."""
         if self._state == "note":
             return  # the note set its own timer
         if self._state in ("listening", "thinking"):
             self._collapse()
             return
         words = sum(len(s.split()) for s in self._sentences)
-        self._collapse_timer.start(int(1000 * max(4.0, min(14.0, 2.5 + 0.3 * words))))
+        self._collapse_timer.start(int(1000 * max(2.0, min(30.0, 1.0 + 0.36 * words))))
 
     def _collapse(self) -> None:
         self._state = "idle"
+        self._step = ""
         self._move_to(self.home_side)
         self.update()
 
@@ -288,19 +306,24 @@ class SideIsland(QWidget):
     def top(self) -> bool:
         return self.side == "top"
 
-    def _card_w(self) -> float:
-        return self.TOP_CARD_W if self.top else self.CARD_W
-
     def _hello(self) -> bool:
         return self.top and self._state == "idle" and time.monotonic() < self._hello_until
+
+    def _notice(self) -> str:
+        """The words of a notice or a guide step, if one is showing."""
+        if self._state == "note":
+            return self._note
+        if self._state == "answer" and self._step:
+            return self._step
+        return ""
 
     def _target(self) -> tuple[float, float]:
         if self._state in ("listening", "thinking"):
             return self.PILL if self.top else self.CAPSULE
-        if self._state == "answer":
-            return self._card_w(), self._card_height()
-        if self._state == "note":
-            return self._card_w(), min(self.MAX_CARD_H, 2 * self._PAD + self._HEAD + 14.0 + self._note_height())
+        if self._notice():
+            return self._notice_size()
+        if self._state == "answer":  # speaking: heard, not shown
+            return self.NOTCH if self.top else self.SLIVER
         if self.top:
             if self._hello():
                 return self.HELLO
@@ -310,21 +333,35 @@ class SideIsland(QWidget):
         return self.GREET if self._near else self.SLIVER
 
     def _dash_height(self) -> float:
-        import dashboard
-        _label, classes = dashboard.day_view(datetime.datetime.now().astimezone(), dashboard.snapshot().classes)
-        return 14 + 92 + 26 + 42 * max(1, len(classes)) + 8 + 30 + 10
+        return 36 + 70 + 12 + 18 + 18   # the hello, the time and weather, the keys
 
-    def _card_height(self) -> float:
-        body = self._captions_layout(self._card_w() - 2 * self._PAD)[1]
-        return min(self.MAX_CARD_H, self._PAD + self._HEAD + 14.0 + body + self._PAD)
+    def _notice_lines(self) -> tuple[QFont, float, list[str]]:
+        """The notice wrapped to at most three lines: (font, line height, lines).
+        A guide step is one line in the state words' type."""
+        step = self._state == "answer"
+        font = _word_font() if step else _note_font()
+        width = self.NOTE_W - self._INSET - 52
+        key = (self._notice(), step, round(width))
+        cached = self._wrap_cache.get(key)
+        if cached is None:
+            metrics = QFontMetricsF(font)
+            lines = [self._notice()] if step else _wrap(self._notice(), metrics, width, 3)
+            cached = (font, metrics.height() * 1.12, lines)
+            if len(self._wrap_cache) > 16:
+                self._wrap_cache.clear()
+            self._wrap_cache[key] = cached
+        return cached
 
-    def _note_height(self) -> float:
-        metrics = QFontMetricsF(theme.display_font(13.5))
-        return metrics.boundingRect(QRectF(0, 0, self._card_w() - 2 * self._PAD, 10_000),
-                                    Qt.TextFlag.TextWordWrap, self._note).height()
+    def _notice_size(self) -> tuple[float, float]:
+        font, line_h, lines = self._notice_lines()
+        metrics = QFontMetricsF(font)
+        text_w = max((metrics.horizontalAdvance(line) for line in lines), default=0.0)
+        width = min(self.NOTE_W, max(self.PILL[0], self._INSET + text_w + 52))
+        return width, self.PILL[1] + max(0, len(lines) - 1) * line_h
 
     def _shape_rect(self) -> QRectF:
-        """The visible black shape, flush with the screen edge."""
+        """The black shape's body, flush with the screen edge (its shoulders
+        flare out a little past it, along the edge)."""
         if self.top:
             return QRectF((self.width() - self._w) / 2.0, 0.0, self._w, self._h)
         cy = self.height() / 2.0
@@ -335,21 +372,24 @@ class SideIsland(QWidget):
     def _shape_path(self) -> QPainterPath:
         rect = self._shape_rect()
         if self.top:
-            # Flush with the top edge: only the lower corners are rounded.
-            radius = min(15.0, self._h / 2.0) if self._h < 52 else min(26.0, self._h / 2.0)
-            path = QPainterPath()
-            path.addRoundedRect(QRectF(rect.x(), rect.y() - radius, rect.width(), rect.height() + radius),
-                                radius, radius)
-            return path
-        radius = 10.0 if self._w < 24 else min(32.0, self._h / 2.0, self._w / 2.0 + 12.0)
-        # Extend past the edge so only the inner corners are rounded.
-        if self.side == "right":
-            full = QRectF(rect.x(), rect.y(), rect.width() + radius, rect.height())
+            return tab_path(rect.width(), rect.height()).translated(rect.left(), rect.top())
+        # A side tab is the top one turned: its length runs along the edge.
+        local = tab_path(rect.height(), rect.width())
+        if self.side == "left":
+            turn = QTransform(0, 1, 1, 0, 0, rect.top())                 # (u, v) -> (v, top + u)
         else:
-            full = QRectF(rect.x() - radius, rect.y(), rect.width() + radius, rect.height())
-        path = QPainterPath()
-        path.addRoundedRect(full, radius, radius)
-        return path
+            turn = QTransform(0, 1, -1, 0, self.width(), rect.top())     # (u, v) -> (W - v, top + u)
+        return turn.map(local)
+
+    def _row(self, rect: QRectF) -> float:
+        """The centre line of the words and the light: the middle of the slim
+        notch, settling at the middle of the listening tab as it grows."""
+        return rect.top() + min(rect.height(), self.PILL[1]) / 2.0
+
+    def _light_pos(self, rect: QRectF) -> QPointF:
+        """The light sits at the notch's right end."""
+        depth = min(rect.height(), self.PILL[1])
+        return QPointF(rect.right() - (8.0 + 0.4 * depth), self._row(rect))
 
     # --- Animation -----------------------------------------------------------
 
@@ -385,6 +425,29 @@ class SideIsland(QWidget):
             _refresh_dashboard()  # fresh weather and classes while it opens
             self._glass = self._frosted_backdrop()
 
+    def _light_target(self, t: float) -> tuple[float, float]:
+        """(core radius, brightness) for the light in this state, at time ``t``."""
+        state = self._state
+        if state == "listening":  # swells with your voice
+            level = self._smooth_level
+            return 3.9 + 2.2 * level, 0.7 + 0.3 * min(1.0, 1.6 * level)
+        if state == "thinking":   # a slow breath
+            b = 0.5 + 0.5 * math.sin(t * 2 * math.pi / 1.7)
+            return 3.4 + 1.0 * b, 0.42 + 0.45 * b
+        if state == "answer":
+            if self._step:
+                return 3.6, 0.85
+            e = _speech(t)        # alive, like a voice, while the answer plays
+            return 3.0 + 1.6 * e, 0.55 + 0.4 * e
+        if state == "note":
+            return 3.2, 0.6
+        if self._hello():
+            return 3.8, 0.9
+        if self._near:
+            return 3.6, 0.8
+        b = 0.5 + 0.5 * math.sin(t * 2 * math.pi / 5.0)  # resting: barely there
+        return 2.5 + 0.2 * b, 0.3 + 0.12 * b
+
     def _animate(self) -> None:
         now = time.monotonic()
         frames = max(1, min(4, round((now - self._last_tick) * 60)))
@@ -409,13 +472,13 @@ class SideIsland(QWidget):
             voice_on = self._state in ("listening", "thinking") and self._w > self.PILL[0] * 0.8
             greet_on = False
         else:
-            voice_on = self._state in ("listening", "thinking") and self._h > 150 and self._w > 44
+            voice_on = self._state in ("listening", "thinking") and self._h > self.CAPSULE[1] * 0.8 and self._w > 40
             greet_on = self._state == "idle" and self._near and self._w > self.GREET[0] * 0.8
-        card_on = self._state in ("answer", "note") and self._w > tw * 0.85
+        note_on = bool(self._notice()) and self._w > tw * 0.85
         notch_on = self.top and self._state == "idle" and self._h < 44
         dash_on = (self.top and self.dashboard and self._state == "idle" and self._near
                    and self._w > self.DASH_W * 0.85 and self._h > 90)
-        for attr, on, rate in (("_fade_voice", voice_on, 0.22), ("_fade_card", card_on, 0.18),
+        for attr, on, rate in (("_fade_voice", voice_on, 0.22), ("_fade_note", note_on, 0.2),
                                ("_fade_greet", greet_on, 0.3), ("_fade_notch", notch_on, 0.25),
                                ("_fade_dash", dash_on, 0.22)):
             value = getattr(self, attr)
@@ -427,15 +490,19 @@ class SideIsland(QWidget):
                 value = target
             setattr(self, attr, value)
         self._smooth_level += (self._level - self._smooth_level) * 0.25
+        radius, bright = self._light_target(now - self._t0)
+        ease = min(1.0, (0.4 if self._state == "listening" else 0.16) * frames)
+        self._light_r += (radius - self._light_r) * ease
+        self._light_b += (bright - self._light_b) * ease
 
         self._frame += 1
-        if moving or self._state in ("listening", "thinking"):
+        if moving or self._state != "idle":
             self.update()
         elif self._fade_dash > 0.01 and self._frame % 20 == 0:
             self.update()  # the dashboard's clock
-        elif self.top and self._state == "idle" and self._frame % 3 == 0:
-            # The resting notch's audio lines breathe: repaint just the notch.
-            self.update(self._shape_rect().toAlignedRect().adjusted(-4, 0, 4, 4))
+        elif self._frame % 3 == 0:
+            # Resting, the light breathes: repaint just the shape.
+            self.update(self._shape_path().boundingRect().toAlignedRect().adjusted(-2, -2, 2, 2))
 
     # --- Painting ------------------------------------------------------------
 
@@ -444,19 +511,8 @@ class SideIsland(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         path = self._shape_path()
         rect = self._shape_rect()
+        self._paint_shadow(painter, path)
 
-        # Soft shadow toward the screen while open: stacked wide strokes of
-        # faint black, darkest at the shape's edge, fading out over ~16 px.
-        strength = max(0.0, min(1.0, (self._w - 16.0) / 40.0))
-        if strength > 0:
-            direction = 0 if self.top else (-1 if self.side == "right" else 1)
-            shadow = path.translated(direction * 3.0, 4.0 if self.top else 6.0)
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-            for i in range(1, 9):
-                pen = QPen(QColor(0, 0, 0, round(8 * strength)), i * 4.0)
-                pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-                painter.setPen(pen)
-                painter.drawPath(shadow)
         painter.setPen(Qt.PenStyle.NoPen)
         glass = self._fade_dash if self._glass is not None else 0.0
         if glass > 0.01:
@@ -465,29 +521,90 @@ class SideIsland(QWidget):
             painter.setClipPath(path)
             painter.drawImage(QRectF(self.rect()), self._glass)
             painter.restore()
-        tint = QColor(theme.NOTCH)
-        tint.setAlphaF(1.0 - 0.3 * glass)
-        painter.setBrush(tint)
+        painter.setBrush(QBrush(self._depth_gradient(rect, theme.NOTCH, theme.NOTCH_NAVY, 1.0 - 0.3 * glass)))
         painter.drawPath(path)
-        if self.top:
-            # A faint edge, so a black notch still reads on a dark page; brighter on glass.
-            painter.setPen(QPen(QColor(255, 255, 255, round(26 + 30 * glass)), 1.0))
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.drawPath(path)
-            painter.setPen(Qt.PenStyle.NoPen)
+        # A hairline, fading in away from the screen edge, so black still reads on a dark page.
+        edge = QColor(theme.NOTCH_EDGE)
+        edge.setAlphaF(min(1.0, edge.alphaF() * (1.0 + 1.2 * glass)))
+        clear = QColor(edge)
+        clear.setAlphaF(0.0)
+        painter.setPen(QPen(QBrush(self._depth_gradient(rect, clear, edge, 1.0, reach=18.0)), 1.0))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawPath(path)
+        painter.setPen(Qt.PenStyle.NoPen)
 
         painter.setClipPath(path)
         t = time.monotonic() - self._t0
-        if self._fade_notch > 0.01:
-            self._paint_notch(painter, rect, t)
-        if self._fade_dash > 0.01:
-            self._paint_dash(painter, rect)
+        accent = theme.current_palette().flood
+        if self.top:
+            if self._fade_notch > 0.01:
+                self._paint_notch(painter, rect)
+            if self._fade_dash > 0.01:
+                self._paint_dash(painter, rect)
+            if self._fade_voice > 0.01:
+                self._paint_pill(painter, rect, t)
+            if self._fade_note > 0.01:
+                self._paint_notice(painter, rect, accent)
+            room = min(rect.height(), self.PILL[1]) / 2.0
+            paint_light(painter, self._light_pos(rect), self._light_r, self._light_b, accent, room)
+            return
+        if self._w < 24:
+            self._paint_sliver(painter, rect, accent)
         if self._fade_voice > 0.01:
-            (self._paint_pill if self.top else self._paint_voice)(painter, rect, t)
-        if self._fade_card > 0.01:
-            self._paint_card(painter, rect)
+            self._paint_voice(painter, rect, t, accent)
         if self._fade_greet > 0.01:
-            self._paint_greet(painter, rect, t)
+            self._paint_greet(painter, rect, accent)
+        if self._fade_note > 0.01:
+            self._paint_notice(painter, rect, accent)
+
+    def _depth_gradient(self, rect: QRectF, at_edge: QColor, inward: QColor, alpha: float,
+                        reach: float | None = None) -> QLinearGradient:
+        """A gradient from the screen edge into the screen: black at the edge,
+        a breath of navy at the far end (or over ``reach`` px)."""
+        if self.top:
+            start, depth = QPointF(rect.center().x(), rect.top()), rect.height()
+            direction = QPointF(0.0, 1.0)
+        elif self.side == "right":
+            start, depth = QPointF(rect.right(), rect.center().y()), rect.width()
+            direction = QPointF(-1.0, 0.0)
+        else:
+            start, depth = QPointF(rect.left(), rect.center().y()), rect.width()
+            direction = QPointF(1.0, 0.0)
+        span = reach if reach is not None else depth
+        gradient = QLinearGradient(start, start + direction * max(1.0, span))
+        a, b = QColor(at_edge), QColor(inward)
+        a.setAlphaF(a.alphaF() * alpha)
+        b.setAlphaF(b.alphaF() * alpha)
+        gradient.setColorAt(0.0, a)
+        if reach is None:
+            gradient.setColorAt(0.45, a)  # pure black for the first half
+        gradient.setColorAt(1.0, b)
+        return gradient
+
+    def _paint_shadow(self, painter: QPainter, path: QPainterPath) -> None:
+        """A soft shadow onto the screen under the bigger shapes (the dashboard,
+        a notice, the side tabs): stacked wide strokes of faint black, fading
+        out toward the screen edge so the shoulders stay crisp."""
+        depth = self._h if self.top else self._w
+        strength = max(0.0, min(1.0, (depth - 42.0) / 36.0))
+        if strength <= 0:
+            return
+        rect = self._shape_rect()
+        if self.top:
+            shadow = path.translated(0.0, 4.0)
+        else:
+            shadow = path.translated(-3.0 if self.side == "right" else 3.0, 4.0)
+        dark = QColor(0, 0, 0, round(9 * strength))
+        clear = QColor(0, 0, 0, 0)
+        brush = QBrush(self._depth_gradient(rect, clear, dark, 1.0, reach=26.0))
+        painter.save()
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        for i in range(1, 9):
+            pen = QPen(brush, i * 4.0)
+            pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+            painter.setPen(pen)
+            painter.drawPath(shadow)
+        painter.restore()
 
     def _scaled(self, painter: QPainter, rect: QRectF, fade: float) -> None:
         """Fade in with a little grow, from the edge the shape grows out of."""
@@ -496,88 +613,176 @@ class SideIsland(QWidget):
             anchor = QPointF(rect.center().x(), rect.top())
         else:
             anchor = QPointF(rect.right() if self.side == "right" else rect.left(), rect.center().y())
-        scale = 0.94 + 0.06 * fade
+        scale = 0.96 + 0.04 * fade
         painter.translate(anchor)
         painter.scale(scale, scale)
         painter.translate(-anchor)
 
-    def _paint_voice(self, painter: QPainter, rect: QRectF, t: float) -> None:
+    def _paint_word(self, painter: QPainter, x: float, cy: float, word: str, shimmer: float | None = None) -> None:
+        """A state word ("Listening") in white SemiBold, centred on ``cy``.
+        ``shimmer`` (0-1, where the shine is) runs a soft light across it."""
+        painter.setFont(_word_font())
+        if shimmer is None:
+            painter.setPen(theme.NOTCH_TEXT)
+        else:
+            w = painter.fontMetrics().horizontalAdvance(word)
+            sweep = x - 40 + (w + 80) * shimmer
+            shine = QLinearGradient(sweep - 34, 0, sweep + 34, 0)
+            shine.setColorAt(0.0, QColor(255, 255, 255, 140))
+            shine.setColorAt(0.5, QColor(255, 255, 255, 255))
+            shine.setColorAt(1.0, QColor(255, 255, 255, 140))
+            painter.setPen(QPen(QBrush(shine), 1.0))
+        painter.drawText(QRectF(x, cy - 14, 400, 28), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, word)
+
+    def _paint_notch(self, painter: QPainter, rect: QRectF) -> None:
+        """The idle notch's words: "Hey Rayan!" while saying hello; the keys
+        to hold while the mouse rests on it (with the dashboard off)."""
+        hello, hint = self._hello(), self._near and not self._hello()
+        if not (hello or hint):
+            return  # resting: just the light
+        painter.save()
+        # How far the shape has opened toward its wider form.
+        wide = self.HELLO[0] if hello else self.HINT[0]
+        k = max(0.0, min(1.0, (rect.width() - self.NOTCH[0]) / (wide - self.NOTCH[0])))
+        painter.setOpacity(self._fade_notch * k)
+        x, cy = rect.left() + self._INSET, self._row(rect)
+        if hello:
+            self._paint_word(painter, x, cy, f"Hey {self.name}!" if self.name else "Hey there!")
+        else:
+            x = self._paint_mini_keys(painter, x, cy - 9.0, 18.0)
+            painter.setFont(theme.ui_font(9.0, QFont.Weight.Medium))
+            painter.setPen(theme.NOTCH_MUTED)
+            painter.drawText(QRectF(x + 8, cy - 9.0, max(0.0, rect.right() - x - 48), 18),
+                             Qt.AlignmentFlag.AlignVCenter, "hold to ask")
+        painter.restore()
+
+    def _paint_pill(self, painter: QPainter, rect: QRectF, t: float) -> None:
+        """Top of the screen, listening or thinking: one word, left of centre
+        (the light at the right end is painted for every state)."""
+        painter.save()
+        painter.setOpacity(self._fade_voice)
+        listening = self._state == "listening"
+        self._paint_word(painter, rect.left() + self._INSET, self._row(rect),
+                         "Listening" if listening else "Thinking",
+                         None if listening else (t * 0.62) % 1.0)
+        painter.restore()
+
+    def _paint_notice(self, painter: QPainter, rect: QRectF, accent: QColor) -> None:
+        """A notice in a line or two, or a guide step's "Step 2 of 3"."""
+        painter.save()
+        painter.setOpacity(self._fade_note)
+        font, line_h, lines = self._notice_lines()
+        x, cy = rect.left() + self._INSET, rect.top() + self.PILL[1] / 2.0
+        if self._state == "answer":
+            self._paint_word(painter, x, cy, lines[0] if lines else "")
+        else:
+            painter.setFont(font)
+            painter.setPen(theme.NOTCH_TEXT)
+            width = rect.width() - self._INSET - 46
+            for i, line in enumerate(lines):
+                painter.drawText(QRectF(x, cy - line_h / 2 + i * line_h, width, line_h),
+                                 Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, line)
+        if not self.top:  # at the top the light is always painted
+            paint_light(painter, QPointF(rect.right() - 24.0, cy), self._light_r, self._light_b, accent, 18.0)
+        painter.restore()
+
+    def _paint_sliver(self, painter: QPainter, rect: QRectF, accent: QColor) -> None:
+        """A side edge at rest, or speaking: a thin line of light down the sliver."""
+        painter.save()
+        glow = self._light_b
+        line = QRectF(rect.center().x() - 1.25, rect.top() + 15, 2.5, max(0.0, rect.height() - 30))
+        halo = QColor(accent)
+        halo.setAlphaF(0.22 * glow)
+        painter.setBrush(halo)
+        painter.drawRoundedRect(line.adjusted(-2.0, -2.0, 2.0, 2.0), 3.0, 3.0)
+        _hot, mid, deep = accent_shades(accent)
+        fill = QLinearGradient(line.topLeft(), line.bottomLeft())
+        for at, colour in ((0.0, deep), (0.5, mid), (1.0, deep)):
+            colour = QColor(colour)
+            colour.setAlphaF(min(1.0, 0.35 + 0.65 * glow))
+            fill.setColorAt(at, colour)
+        painter.setBrush(QBrush(fill))
+        painter.drawRoundedRect(line, 1.25, 1.25)
+        painter.restore()
+
+    def _paint_voice(self, painter: QPainter, rect: QRectF, t: float, accent: QColor) -> None:
+        """A side edge, listening or thinking: the light on top and a vertical
+        waveform under it in the light's colours."""
         painter.save()
         self._scaled(painter, rect, self._fade_voice)
         cx = rect.center().x()
         listening = self._state == "listening"
+        paint_light(painter, QPointF(cx, rect.top() + 24), self._light_r, self._light_b, accent, 20.0)
 
-        # Recording dot: coral and pulsing while listening, dim while thinking.
-        dot = QPointF(cx, rect.top() + 18)
-        if listening:
-            pulse = (t % 1.4) / 1.4
-            ring = QColor(theme.CORAL)
-            ring.setAlphaF(0.55 * (1 - pulse))
-            painter.setBrush(ring)
-            painter.drawEllipse(dot, 3.5 + 7 * pulse, 3.5 + 7 * pulse)
-            painter.setBrush(theme.CORAL)
-        else:
-            painter.setBrush(QColor(255, 255, 255, 110))
-        painter.drawEllipse(dot, 3.5, 3.5)
-
-        # Vertical waveform: horizontal bars stacked down the capsule.
+        _hot, mid, deep = accent_shades(accent)
         gap, bar_h = 5.0, 3.0
-        y0 = rect.top() + 38
-        mid = (self._BARS - 1) / 2
+        y0 = rect.top() + 50
+        centre = (self._BARS - 1) / 2
         for i in range(self._BARS):
-            weight = 1 - abs(i - mid) / mid
+            weight = 1 - abs(i - centre) / centre
             if listening:
                 level = self._smooth_level
-                width = 6 + 32 * level * (0.35 + 0.65 * weight) * (0.7 + 0.3 * math.sin(t * 9 + i * 1.3))
-                color = QColor(theme.BUTTER)
+                width = 6 + 26 * level * (0.35 + 0.65 * weight) * (0.7 + 0.3 * math.sin(t * 9 + i * 1.3))
+                color = _mix(deep, mid, weight)
             else:
                 width = 4.0
-                color = QColor(255, 255, 255)
-                color.setAlphaF(0.2 + 0.8 * (0.5 + 0.5 * math.sin(t * 5.7 - i * 0.55)))
+                color = QColor(mid)
+                color.setAlphaF(0.2 + 0.7 * (0.5 + 0.5 * math.sin(t * 5.7 - i * 0.55)))
             painter.setBrush(color)
             y = y0 + i * (bar_h + gap)
             painter.drawRoundedRect(QRectF(cx - width / 2, y, width, bar_h), 1.5, 1.5)
-
-        # The buddy at the bottom, listening, then thinking.
-        theme.paint_avatar_in(painter, QRectF(rect.left(), rect.bottom() - 62, rect.width(), 52), t=t,
-                              mood="listening" if listening else "thinking", scale=1.0,
-                              device_pixel_ratio=self.devicePixelRatioF(), glow=True)
         painter.restore()
 
-    def _paint_notch(self, painter: QPainter, rect: QRectF, t: float) -> None:
-        """The resting notch: your buddy and soft audio lines; while saying
-        hello, "Hey Rayan!"; while the mouse rests on it, the keys to hold."""
+    def _paint_greet(self, painter: QPainter, rect: QRectF, accent: QColor) -> None:
+        """A side edge, when the mouse rests on it: "Clixy here." and the keys to hold."""
         painter.save()
-        painter.setOpacity(self._fade_notch)
-        band = min(rect.height(), self.HINT[1])
-        cy = rect.top() + band / 2.0
-        hello, hint = self._hello(), self._near and not self._hello()
-        size = 24.0 if hello else 22.0
-        theme.paint_avatar_in(painter, QRectF(rect.left() + 10, cy - size / 2, size, size), t=t,
-                              mood="happy" if hello else "idle", scale=size / 48.0,
-                              device_pixel_ratio=self.devicePixelRatioF(), glow=True)
-        # How far the shape has opened toward its wider form, for the words in the middle.
-        wide = self.HELLO[0] if hello else self.HINT[0]
-        k = max(0.0, min(1.0, (rect.width() - self.NOTCH[0]) / (wide - self.NOTCH[0])))
-        if not hint:
-            self._paint_voice_pill(painter, QPointF(rect.right() - 26, cy), t, 30.0, 15.0, None, glow=0.6)
-        if k > 0.02 and (hello or hint):
-            painter.setOpacity(self._fade_notch * k)
-            x = rect.left() + 42
-            if hello:
-                words = f"Hey {self.name}" if self.name else "Hey there"
-                painter.setFont(theme.display_font(13.5))
-                painter.setPen(theme.NOTCH_TEXT)
-                painter.drawText(QPointF(x, cy + 5.5), words)
-                painter.setPen(theme.current_palette().flood)
-                painter.drawText(QPointF(x + painter.fontMetrics().horizontalAdvance(words), cy + 5.5), "!")
-            else:
-                x = self._paint_mini_keys(painter, x, cy - 9.0, 18.0)
-                painter.setFont(theme.ui_font(8.8, QFont.Weight.Light))
-                painter.setPen(theme.NOTCH_MUTED)
-                painter.drawText(QRectF(x + 7, cy - 9.0, rect.right() - x - 14, 16), Qt.AlignmentFlag.AlignVCenter,
-                                 "hold to ask")
+        self._scaled(painter, rect, self._fade_greet)
+        x, cy = rect.left() + self._INSET, rect.top() + 23.0
+        self._paint_word(painter, x, cy, "Clixy here.")
+        paint_light(painter, QPointF(rect.right() - 24.0, cy), self._light_r, self._light_b, accent, 18.0)
+        end = self._paint_mini_keys(painter, x, cy + 16.0, 18.0)
+        painter.setFont(theme.ui_font(9.0, QFont.Weight.Medium))
+        hint = "hold to ask"
+        if end + 8 + painter.fontMetrics().horizontalAdvance(hint) <= rect.right() - 14:
+            painter.setPen(theme.NOTCH_MUTED)
+            painter.drawText(QRectF(end + 8, cy + 16.0, rect.right() - end - 8, 18),
+                             Qt.AlignmentFlag.AlignVCenter, hint)
         painter.restore()
+
+    def _paint_mini_keys(self, painter: QPainter, x: float, y: float, cap_h: float) -> float:
+        """The shortcut as small flat keycaps of frosted glass; returns where they end."""
+        from widgets import _paint_windows_logo
+        font = theme.ui_font(8.4, QFont.Weight.DemiBold)
+        fm = QFontMetricsF(font)
+        radius, pad = 5.0, 7.0
+        labels = self.hotkey.split(" + ")
+        white = QColor(255, 255, 255, 235)
+        for i, label in enumerate(labels):
+            logo = fm.capHeight() * 1.05 + 4 if label == "Win" else 0.0
+            w = max(cap_h, fm.horizontalAdvance(label) + logo + 2 * pad)
+            body = QRectF(x, y, w, cap_h)
+            painter.setBrush(theme.NOTCH_KEY)
+            painter.setPen(QPen(theme.NOTCH_KEY_EDGE, 1.0))
+            painter.drawRoundedRect(body.adjusted(0.5, 0.5, -0.5, -0.5), radius, radius)
+            painter.setFont(font)
+            painter.setPen(white)
+            if logo:
+                size = fm.capHeight() * 1.05
+                left = body.center().x() - (logo + fm.horizontalAdvance(label)) / 2
+                _paint_windows_logo(painter, QRectF(left, body.center().y() - size / 2, size, size), white)
+                painter.setPen(white)
+                painter.drawText(QRectF(left + logo, body.top(), body.width(), body.height()),
+                                 Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, label)
+            else:
+                painter.drawText(body, Qt.AlignmentFlag.AlignCenter, label)
+            x += w
+            if i < len(labels) - 1:
+                painter.setPen(theme.NOTCH_MUTED)
+                painter.setFont(theme.ui_font(9.0))
+                painter.drawText(QRectF(x, y, 14, cap_h), Qt.AlignmentFlag.AlignCenter, "+")
+                x += 14
+        painter.setPen(Qt.PenStyle.NoPen)
+        return x
 
     def _frosted_backdrop(self) -> QImage | None:
         """What's on screen behind the island, blurred; None if it can't be read."""
@@ -593,26 +798,21 @@ class SideIsland(QWidget):
         return None if shot.isNull() else frost(shot.toImage())
 
     def _paint_dash(self, painter: QPainter, rect: QRectF) -> None:
-        """The dashboard: the time and date, the weather, and today's classes
-        (or the next day's), with the class on now in your buddy's colour."""
+        """The dashboard: a hello on the notch's own row (the light at its
+        end), the time, big and thin, the date, and the weather."""
         import dashboard
         painter.save()
         self._scaled(painter, rect, self._fade_dash)
         snap = dashboard.snapshot()
         now = datetime.datetime.now().astimezone()
-        flood = theme.current_palette().flood
         x0, right = rect.left() + 24, rect.right() - 24
-        y = rect.top() + 14
 
-        # Your buddy and a hello, then the time, big and thin, and the date.
-        theme.paint_avatar_in(painter, QRectF(x0 - 3, y, 18, 18), t=time.monotonic() - self._t0, mood="happy",
-                              scale=18 / 48.0, device_pixel_ratio=self.devicePixelRatioF(), glow=True)
         part = "morning" if now.hour < 12 else "afternoon" if now.hour < 17 else "evening"
-        painter.setFont(theme.ui_font(9.5))
-        painter.setPen(theme.NOTCH_MUTED)
-        painter.drawText(QPointF(x0 + 20, y + 13), f"Good {part}" + (f", {self.name}" if self.name else ""))
-        y += 22
+        painter.setFont(theme.ui_font(10.0, QFont.Weight.DemiBold))
         painter.setPen(theme.NOTCH_TEXT)
+        painter.drawText(QRectF(x0, self._row(rect) - 12, right - x0 - 30, 24), Qt.AlignmentFlag.AlignVCenter,
+                         f"Good {part}" + (f", {self.name}" if self.name else ""))
+        y = rect.top() + 36
         painter.setFont(theme.ui_font(26, QFont.Weight.ExtraLight))
         painter.drawText(QPointF(x0 - 2, y + 36), dashboard.clock(now))
         painter.setPen(theme.NOTCH_MUTED)
@@ -633,305 +833,134 @@ class SideIsland(QWidget):
             line = f"{weather.text} · {weather.place}"
             if weather.high is not None and weather.low is not None:
                 line += f" · {round(weather.high)}°/{round(weather.low)}°"
-            line = painter.fontMetrics().elidedText(line, Qt.TextElideMode.ElideRight, 230)
-            painter.drawText(QRectF(right - 230, y + 44, 230, 18),
+            line = painter.fontMetrics().elidedText(line, Qt.TextElideMode.ElideRight, 210)
+            painter.drawText(QRectF(right - 210, y + 44, 210, 18),
                              Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, line)
         elif not snap.city:
             painter.setFont(theme.ui_font(9))
             painter.setPen(theme.NOTCH_MUTED)
-            painter.drawText(QRectF(right - 230, y + 20, 230, 18),
-                             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+            painter.drawText(QRectF(right - 210, y + 20, 210, 36),
+                             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter | Qt.TextFlag.TextWordWrap,
                              "Add your city in Settings for the weather")
-        y += 70
-        painter.setPen(QPen(QColor(255, 255, 255, 30), 1.0))
-        painter.drawLine(QPointF(x0, y), QPointF(right, y))
-
-        # Today's classes, or the next day's.
-        label, classes = dashboard.day_view(now, snap.classes)
-        y += 8
-        painter.setFont(theme.ui_font(8.6, QFont.Weight.DemiBold))
-        painter.setPen(theme.NOTCH_MUTED)
-        painter.drawText(QRectF(x0, y, 200, 16), Qt.AlignmentFlag.AlignVCenter, (label or "Classes").upper())
-        note = dashboard.status(now, classes) if label == "Today" else ""
-        if note:
-            painter.setPen(flood)
-            painter.drawText(QRectF(right - 220, y, 220, 16),
-                             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, note)
-        y += 22
-        if not classes:
-            painter.setFont(theme.ui_font(10, QFont.Weight.Light))
-            painter.setPen(theme.NOTCH_TEXT)
-            text = ("No classes in the next two weeks." if snap.timetable
-                    else "Add your school timetable in Settings > General.")
-            painter.drawText(QRectF(x0, y, right - x0, 26), Qt.AlignmentFlag.AlignVCenter, text)
-            y += 30
-        tx = x0 + 70
-        for k in classes:
-            ongoing = k.start <= now < k.end
-            base = painter.opacity()
-            if k.end <= now:
-                painter.setOpacity(base * 0.4)  # already over today
-            if ongoing:
-                painter.setPen(Qt.PenStyle.NoPen)
-                painter.setBrush(flood)
-                painter.drawRoundedRect(QRectF(x0 - 12, y + 4, 3, 30), 1.5, 1.5)
-            painter.setFont(theme.mono_font(8.6))
-            painter.setPen(flood if ongoing else theme.NOTCH_MUTED)
-            painter.drawText(QRectF(x0, y + 1, 66, 20), Qt.AlignmentFlag.AlignVCenter, dashboard.clock(k.start))
-            painter.setFont(theme.ui_font(10.4, QFont.Weight.Medium if ongoing else QFont.Weight.Normal))
-            painter.setPen(theme.NOTCH_TEXT)
-            title = painter.fontMetrics().elidedText(k.title, Qt.TextElideMode.ElideRight, int(right - tx))
-            painter.drawText(QRectF(tx, y, right - tx, 22), Qt.AlignmentFlag.AlignVCenter, title)
-            painter.setFont(theme.ui_font(8.8))
-            painter.setPen(theme.NOTCH_MUTED)
-            where = " · ".join(b for b in (k.room, k.kind, f"until {dashboard.clock(k.end)}") if b)
-            where = painter.fontMetrics().elidedText(where, Qt.TextElideMode.ElideRight, int(right - tx))
-            painter.drawText(QRectF(tx, y + 19, right - tx, 18), Qt.AlignmentFlag.AlignVCenter, where)
-            painter.setOpacity(base)
-            y += 42
 
         # The keys to ask.
-        y += 6
-        x = self._paint_mini_keys(painter, x0, y + 2, 18.0)
-        painter.setFont(theme.ui_font(8.8, QFont.Weight.Light))
+        y += 82
+        x = self._paint_mini_keys(painter, x0, y, 18.0)
+        painter.setFont(theme.ui_font(9.0, QFont.Weight.Medium))
         painter.setPen(theme.NOTCH_MUTED)
-        painter.drawText(QRectF(x + 7, y + 2, 160, 16), Qt.AlignmentFlag.AlignVCenter, "hold to ask")
+        painter.drawText(QRectF(x + 8, y, 160, 18), Qt.AlignmentFlag.AlignVCenter, "hold to ask")
         painter.restore()
 
-    def _paint_pill(self, painter: QPainter, rect: QRectF, t: float) -> None:
-        """Top of the screen, listening or thinking: your buddy, one clean word,
-        and a glowing pill in your buddy's colour whose dots move with your voice."""
-        painter.save()
-        self._scaled(painter, rect, self._fade_voice)
-        listening = self._state == "listening"
-        cy = rect.top() + rect.height() / 2.0
-        theme.paint_avatar_in(painter, QRectF(rect.left() + 10, cy - 12, 24, 24), t=t,
-                              mood="listening" if listening else "thinking", scale=24 / 48.0,
-                              device_pixel_ratio=self.devicePixelRatioF(), glow=True)
-        word = "Listening" if listening else "Thinking"
-        painter.setFont(theme.ui_font(10.5, QFont.Weight.DemiBold))
-        if listening:
-            painter.setPen(theme.NOTCH_TEXT)
-        else:  # a soft shimmer runs across the word while it thinks
-            from PyQt6.QtGui import QLinearGradient
-            w = painter.fontMetrics().horizontalAdvance(word)
-            x = rect.center().x() - w / 2
-            sweep = x - 40 + (w + 80) * ((t * 0.7) % 1.0)
-            shine = QLinearGradient(sweep - 30, 0, sweep + 30, 0)
-            shine.setColorAt(0.0, QColor(150, 150, 160))
-            shine.setColorAt(0.5, QColor(255, 255, 255))
-            shine.setColorAt(1.0, QColor(150, 150, 160))
-            painter.setPen(QPen(shine, 1.0))
-        painter.drawText(QRectF(rect.left(), rect.top(), rect.width(), rect.height()), Qt.AlignmentFlag.AlignCenter, word)
-        self._paint_voice_pill(painter, QPointF(rect.right() - 34, cy), t, 46.0, 24.0,
-                               self._smooth_level if listening else None)
-        painter.restore()
 
-    def _paint_voice_pill(self, painter: QPainter, centre: QPointF, t: float, w: float, h: float,
-                          level: float | None, glow: float = 1.0) -> None:
-        """The glowing pill: your buddy's colour, four dots. ``level`` (0-1)
-        makes them jump with your voice; None makes them ripple (thinking, resting)."""
-        flood = QColor(theme.current_palette().flood)
-        pill = QRectF(centre.x() - w / 2, centre.y() - h / 2, w, h)
-        painter.setPen(Qt.PenStyle.NoPen)
-        for k in range(1, 6):  # the glow
-            halo = QColor(flood)
-            halo.setAlphaF(0.07 * glow * (1 - k / 6))
-            painter.setBrush(halo)
-            painter.drawRoundedRect(pill.adjusted(-k * 2.4, -k * 2.4, k * 2.4, k * 2.4), h / 2 + k * 2.4, h / 2 + k * 2.4)
-        painter.setBrush(flood)
-        painter.drawRoundedRect(pill, h / 2, h / 2)
-        on = theme.current_palette().on_flood
-        dot = QColor(on)
-        gap = w / 5.0
-        for k in range(4):
-            if level is None:
-                lift = math.sin(t * 5.0 - k * 0.8) * h * 0.12
-                r = h * 0.11
-            else:
-                lift = 0.0
-                r = h * (0.1 + 0.16 * level * (0.6 + 0.4 * math.sin(t * 11 + k * 1.7)))
-            dot.setAlphaF(0.9)
-            painter.setBrush(dot)
-            painter.drawEllipse(QPointF(pill.left() + gap * (k + 1), centre.y() - lift), r, r)
+# --- The shape and the light -------------------------------------------------------
 
-    def _paint_greet(self, painter: QPainter, rect: QRectF, t: float) -> None:
-        """Your buddy, "Clixy here." and the keys to hold."""
-        painter.save()
-        self._scaled(painter, rect, self._fade_greet)
-        width, height = self.GREET
-        # Laid out at full size from the screen edge, so it slides out with the shape.
-        x0 = rect.right() - width
-        top = rect.center().y() - height / 2
-        pad, buddy = 16.0, 46.0
-        theme.paint_avatar_in(painter, QRectF(x0 + pad, top + (height - buddy) / 2, buddy, buddy), t=t,
-                              mood="happy", scale=1.0, device_pixel_ratio=self.devicePixelRatioF(), glow=True)
-        tx = x0 + pad + buddy + 12
-        right = x0 + width - pad
-
-        hello = "Clixy here"
-        painter.setFont(theme.display_font(15.5))
-        fm = painter.fontMetrics()
-        base = top + 33
-        painter.setPen(theme.NOTCH_TEXT)
-        painter.drawText(QPointF(tx, base), hello)
-        painter.setPen(theme.current_palette().flood)
-        painter.drawText(QPointF(tx + fm.horizontalAdvance(hello), base), ".")
-
-        x = self._paint_mini_keys(painter, tx, top + 44, 19.0)
-        painter.setFont(theme.ui_font(8.8, QFont.Weight.Light))
-        hint = "hold to ask"
-        if x + 7 + painter.fontMetrics().horizontalAdvance(hint) <= right:
-            painter.setPen(theme.NOTCH_MUTED)
-            painter.drawText(QRectF(x + 7, top + 44, right - x - 7, 17), Qt.AlignmentFlag.AlignVCenter, hint)
-        painter.restore()
-
-    def _paint_mini_keys(self, painter: QPainter, x: float, y: float, cap_h: float) -> float:
-        """The shortcut as small coral keycaps (the look of Settings' keycaps);
-        returns where they end."""
-        from widgets import _paint_windows_logo
-        font = theme.ui_font(8.4, QFont.Weight.DemiBold)
-        fm = QFontMetricsF(font)
-        lip, radius, pad = 2.5, 5.0, 7.0
-        labels = self.hotkey.split(" + ")
-        for i, label in enumerate(labels):
-            logo = fm.capHeight() * 1.05 + 4 if label == "Win" else 0.0
-            w = max(cap_h, fm.horizontalAdvance(label) + logo + 2 * pad)
-            body = QRectF(x, y, w, cap_h - lip)
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QColor(190, 60, 36))
-            painter.drawRoundedRect(body.translated(0, lip), radius, radius)
-            painter.setBrush(theme.CORAL)
-            painter.setPen(QPen(QColor(255, 130, 100), 1.0))
-            painter.drawRoundedRect(body.adjusted(0.5, 0.5, -0.5, -0.5), radius, radius)
-            white = QColor(255, 255, 255)
-            painter.setFont(font)
-            painter.setPen(white)
-            if logo:
-                size = fm.capHeight() * 1.05
-                left = body.center().x() - (logo + fm.horizontalAdvance(label)) / 2
-                _paint_windows_logo(painter, QRectF(left, body.center().y() - size / 2, size, size), white)
-                painter.setPen(white)
-                painter.drawText(QRectF(left + logo, body.top(), body.width(), body.height()),
-                                 Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, label)
-            else:
-                painter.drawText(body, Qt.AlignmentFlag.AlignCenter, label)
-            x += w
-            if i < len(labels) - 1:
-                painter.setPen(theme.NOTCH_MUTED)
-                painter.setFont(theme.ui_font(9.0))
-                painter.drawText(QRectF(x, y, 14, cap_h - lip), Qt.AlignmentFlag.AlignCenter, "+")
-                x += 14
-        return x
-
-    def _paint_card(self, painter: QPainter, rect: QRectF) -> None:
-        painter.save()
-        self._scaled(painter, rect, self._fade_card)
-        # Content is laid out at full card width from the inner edge.
-        x0 = (rect.right() - self.CARD_W if self.side == "right" else rect.left()) + self._PAD
-        if self.top:
-            x0 = rect.left() + self._PAD
-        y = rect.top() + self._PAD
-        width = self._card_w() - 2 * self._PAD
-
-        # Header: the buddy, its name and the meta on the first line, your
-        # question under it.
-        t = time.monotonic() - self._t0
-        mood = "thinking" if self._state == "note" else "happy"
-        theme.paint_avatar_in(painter, QRectF(x0, y, self._HEAD, self._HEAD), t=t, mood=mood, scale=1.0,
-                              device_pixel_ratio=self.devicePixelRatioF(), glow=True)
-        tx = x0 + self._HEAD + 12
-        two_lines = bool(self._transcript) and self._state == "answer"
-        name_y = y + (15 if two_lines else 23)
-        painter.setPen(theme.NOTCH_TEXT)
-        painter.setFont(theme.ui_font(10.5, QFont.Weight.DemiBold))
-        painter.drawText(QPointF(tx, name_y), theme.current_avatar().name)
-        if self._meta and self._state == "answer":
-            painter.setFont(theme.mono_font(8.2))
-            painter.setPen(theme.NOTCH_MUTED)
-            meta_w = painter.fontMetrics().horizontalAdvance(self._meta)
-            painter.drawText(QPointF(x0 + width - meta_w, name_y - 1), self._meta)
-        if two_lines:
-            painter.setPen(theme.NOTCH_MUTED)
-            painter.setFont(theme.ui_font(9.5, QFont.Weight.Light))
-            quoted = painter.fontMetrics().elidedText(f"“{self._transcript}”", Qt.TextElideMode.ElideRight,
-                                                      int(x0 + width - tx))
-            painter.drawText(QPointF(tx, y + 32), quoted)
-        y += self._HEAD + 14
-
-        if self._state == "note":
-            painter.setPen(theme.NOTCH_TEXT)
-            painter.setFont(theme.display_font(13.5))
-            painter.drawText(QRectF(x0, y, width, rect.bottom() - y - self._PAD + 4), Qt.TextFlag.TextWordWrap, self._note)
-            painter.restore()
-            return
-
-        layout, height = self._captions_layout(width)
-        available = rect.bottom() - self._PAD + 4 - y
-        # When the answer is taller than the card, show its end.
-        shift = max(0.0, height - available)
-        painter.setClipRect(QRectF(x0 - 2, y, width + 4, available), Qt.ClipOperation.IntersectClip)
-        self._paint_captions(painter, layout, x0, y - shift)
-        painter.restore()
-
-    # --- Captions: words with chips ------------------------------------------
-
-    def _captions_layout(self, width: float):
-        """Lay out the sentences as wrapped words, with chips for the names of
-        things to click. Earlier sentences are dimmed.
-
-        Returns ((font, chip_font, metrics, line_h, items), height), where
-        each item is (kind, text, x, y, width, current)."""
-        key = (tuple(self._sentences), tuple(self._highlights), round(width))
-        cached = self._layout_cache.get(key)
-        if cached is not None:
-            return cached
-        font = theme.display_font(14.5)
-        chip_font = theme.ui_font(11.5, QFont.Weight.DemiBold)
-        metrics, chip_metrics = QFontMetricsF(font), QFontMetricsF(chip_font)
-        line_h = metrics.height() * 1.18
-        space = metrics.horizontalAdvance(" ")
-        items: list[tuple] = []
-        x, line = 0.0, 0
-        last = len(self._sentences) - 1
-        for index, sentence in enumerate(self._sentences):
-            current = index == last
-            for text, is_chip, glued in split_chips(sentence, self._highlights):
-                w = chip_metrics.horizontalAdvance(text) + 12 if is_chip else metrics.horizontalAdvance(text)
-                if glued and items:
-                    x -= space  # punctuation sticks to the chip before it
-                if x > 0 and x + w > width and not glued:
-                    x, line = 0.0, line + 1
-                items.append(("chip" if is_chip else "word", text, x, line * line_h, w, current))
-                x += w + space
-        height = (line + 1) * line_h if items else 0.0
-        result = ((font, chip_font, metrics, line_h, items), height)
-        if len(self._layout_cache) > 32:
-            self._layout_cache.clear()
-        self._layout_cache[key] = result
-        return result
-
-    @staticmethod
-    def _paint_captions(painter: QPainter, layout, x0: float, y0: float) -> None:
-        font, chip_font, metrics, line_h, items = layout
-        for kind, text, x, y, w, current in items:
-            baseline = y0 + y + metrics.ascent() + (line_h - metrics.height()) / 2
-            if kind == "chip":
-                chip = QRectF(x0 + x, baseline - metrics.ascent() + 2, w, metrics.height() - 2)
-                painter.setPen(Qt.PenStyle.NoPen)
-                painter.setBrush(theme.BUTTER if current else theme.NOTCH_CHIP_DIM)
-                painter.drawRoundedRect(chip, 6, 6)
-                painter.setFont(chip_font)
-                painter.setPen(theme.INK if current else theme.NOTCH_CHIP_DIM_TEXT)
-                painter.drawText(chip, Qt.AlignmentFlag.AlignCenter, text)
-            else:
-                painter.setFont(font)
-                painter.setPen(theme.NOTCH_TEXT if current else theme.NOTCH_DIM)
-                painter.drawText(QPointF(x0 + x, baseline), text)
+def tab_path(width: float, depth: float) -> QPainterPath:
+    """A tab hanging from an edge along y = 0, ``width`` long and ``depth``
+    deep: its shoulders flare into the edge in a concave curve (reaching a
+    little past 0 and ``width``), its lower corners are gently rounded."""
+    shoulder = max(0.0, min(5.5 + 0.06 * depth, 10.0, depth * 0.45, width * 0.25))
+    radius = max(0.0, min(max(8.0, 0.36 * depth), 22.0, depth - shoulder, width / 2.0))
+    k = 0.5523  # a quarter circle, as a cubic
+    s, r, w, h = shoulder, radius, width, depth
+    path = QPainterPath(QPointF(-s, 0.0))
+    path.cubicTo(QPointF(-s + k * s, 0.0), QPointF(0.0, s - k * s), QPointF(0.0, s))
+    path.lineTo(0.0, h - r)
+    path.cubicTo(QPointF(0.0, h - r + k * r), QPointF(r - k * r, h), QPointF(r, h))
+    path.lineTo(w - r, h)
+    path.cubicTo(QPointF(w - r + k * r, h), QPointF(w, h - r + k * r), QPointF(w, h - r))
+    path.lineTo(w, s)
+    path.cubicTo(QPointF(w, s - k * s), QPointF(w + s - k * s, 0.0), QPointF(w + s, 0.0))
+    path.closeSubpath()
+    return path
 
 
-_QUOTED = re.compile(r"[\"“‘']([^\"”’']{1,40})[\"”’']")
+def accent_shades(color: QColor) -> tuple[QColor, QColor, QColor]:
+    """The light's three tones from the buddy's colour: a hot, pale centre,
+    the colour itself, and a deeper rim. Ember burns pale gold, orange, red;
+    Splash pale cyan, blue, deep blue."""
+    h, s, l, _a = QColor(color).getHslF()
+    h = max(0.0, h)
+    warm = h < 0.17 or h > 0.9
+    hot = QColor.fromHslF((h + (0.035 if warm else -0.02)) % 1.0, s, min(0.93, l + (1 - l) * (0.5 if warm else 0.72)))
+    deep = QColor.fromHslF((h + (-0.045 if warm else 0.035)) % 1.0, min(1.0, s * 1.05), l * 0.7)
+    return hot, QColor(color), deep
 
+
+def paint_light(painter: QPainter, centre: QPointF, radius: float, bright: float, color: QColor,
+                room: float = 1e9) -> None:
+    """The light: a small core, pale at the centre, the buddy's colour, then a
+    deeper rim, in a soft glow of the same colour. ``bright`` (0-1) is how
+    hard it burns; ``room`` caps the glow to the space around it."""
+    if bright <= 0.01 or radius <= 0.2:
+        return
+    hot, mid, deep = accent_shades(color)
+    painter.save()
+    painter.setPen(Qt.PenStyle.NoPen)
+    halo_r = min(radius * (3.0 + 1.8 * bright), room * 1.15)
+    if halo_r > radius:
+        halo = QRadialGradient(centre, halo_r)
+        for at, colour, alpha in ((0.0, mid, 0.6), (0.3, mid, 0.3), (0.62, deep, 0.1), (1.0, deep, 0.0)):
+            colour = QColor(colour)
+            colour.setAlphaF(alpha * bright)
+            halo.setColorAt(at, colour)
+        painter.setBrush(QBrush(halo))
+        painter.drawEllipse(centre, halo_r, halo_r)
+    # The core: hot at the centre, the colour at its edge, which melts into the glow.
+    core = QRadialGradient(centre, radius * 1.3)
+    edge = QColor(mid)
+    edge.setAlphaF(0.0)
+    core.setColorAt(0.0, hot)
+    core.setColorAt(0.38, _mix(hot, mid, 0.55))
+    core.setColorAt(0.72, mid)
+    core.setColorAt(1.0, edge)
+    painter.setOpacity(painter.opacity() * (0.4 + 0.6 * bright))
+    painter.setBrush(QBrush(core))
+    painter.drawEllipse(centre, radius * 1.3, radius * 1.3)
+    painter.restore()
+
+
+def _speech(t: float) -> float:
+    """0-1: a lively flicker, like a voice, for the light while the answer plays."""
+    v = 0.5 + 0.24 * math.sin(t * 7.3) + 0.16 * math.sin(t * 12.9 + 1.3) + 0.1 * math.sin(t * 3.1 + 0.4)
+    return max(0.0, min(1.0, v))
+
+
+def _mix(a: QColor, b: QColor, k: float) -> QColor:
+    k = max(0.0, min(1.0, k))
+    return QColor.fromRgbF(a.redF() + (b.redF() - a.redF()) * k, a.greenF() + (b.greenF() - a.greenF()) * k,
+                           a.blueF() + (b.blueF() - a.blueF()) * k)
+
+
+def _word_font() -> QFont:
+    """The state words ("Listening", "Hey Rayan!"): Manrope SemiBold."""
+    return theme.ui_font(11.0, QFont.Weight.DemiBold)
+
+
+def _note_font() -> QFont:
+    return theme.ui_font(9.6, QFont.Weight.Medium)
+
+
+def _wrap(text: str, metrics: QFontMetricsF, width: float, max_lines: int) -> list[str]:
+    """``text`` wrapped to ``width``, at most ``max_lines``; the last one elided."""
+    lines: list[str] = []
+    line = ""
+    words = text.split()
+    for i, word in enumerate(words):
+        trial = f"{line} {word}" if line else word
+        if line and metrics.horizontalAdvance(trial) > width:
+            lines.append(line)
+            line = word
+            if len(lines) == max_lines - 1:
+                line = " ".join(words[i:])
+                break
+        else:
+            line = trial
+    if line:
+        lines.append(metrics.elidedText(line, Qt.TextElideMode.ElideRight, width))
+    return lines
+
+
+# --- Helpers ------------------------------------------------------------------------
 
 def _refresh_dashboard() -> None:
     try:
@@ -1018,37 +1047,6 @@ def _hotkey_text() -> str:
         return describe(resolve_setting("HOTKEY", DEFAULT_COMBO))
     except Exception:
         return "Ctrl + Win"
-
-
-def split_chips(sentence: str, highlights: list[str]) -> list[tuple[str, bool, bool]]:
-    """Split a sentence into (text, is_chip, glued) tokens. A chip is a
-    highlighted label (case-insensitive, may be several words) or text in
-    quotes. ``glued`` marks text that touches the token before it with no
-    space, like the period in "Export.", so it isn't pushed apart."""
-    spans: list[tuple[int, int]] = []
-    for label in sorted(highlights, key=len, reverse=True):
-        for m in re.finditer(r"(?<!\w)" + re.escape(label) + r"(?!\w)", sentence, re.IGNORECASE):
-            if not any(a < m.end() and m.start() < b for a, b in spans):
-                spans.append((m.start(), m.end()))
-    for m in _QUOTED.finditer(sentence):
-        if not any(a < m.end() and m.start() < b for a, b in spans):
-            spans.append((m.start(), m.end()))
-    spans.sort()
-
-    out: list[tuple[str, bool, bool]] = []
-
-    def words(text: str, after_chip: bool) -> None:
-        for i, word in enumerate(text.split()):
-            glued = i == 0 and after_chip and not text[:1].isspace()
-            out.append((word, False, glued))
-
-    pos, after_chip = 0, False
-    for a, b in spans:
-        words(sentence[pos:a], after_chip)
-        out.append((sentence[a:b].strip("\"“”‘’'"), True, False))
-        pos, after_chip = b, True
-    words(sentence[pos:], after_chip)
-    return out
 
 
 def model_label(model_id: str) -> str:

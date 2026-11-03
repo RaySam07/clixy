@@ -1,14 +1,11 @@
-"""The notch's dashboard: the time and date, the weather where you are, and
-today's classes from your school timetable. Rest the mouse on the notch and
-it drops down.
+"""The notch's dashboard: the time and date and the weather where you are.
+Rest the mouse on the notch and it drops down. (It no longer shows classes:
+Rayan asked for the timetable to go, 4 Nov 2026.)
 
-The timetable is any iCal calendar: a link (a school timetable feed, Google
-Calendar's secret address, an Outlook published calendar) or an .ics file
-picked in Settings, kept as ~/.clixy/timetable.ics. Entries named only
-"Lecture" or "40856/lecture" show their real module name, taken from inside
-the entry. Weather comes from Open-Meteo (free, no account): only the city
-name and its coordinates are sent. With no city set, the timetable's time
-zone gives one ("Asia/Dubai" is Dubai).
+Weather comes from Open-Meteo (free, no account): only the city name and its
+coordinates are sent. With no city set, the time zone of a timetable picked
+in Settings (an .ics kept as ~/.clixy/timetable.ics) gives one ("Asia/Dubai"
+is Dubai). Reading a timetable is still here for Settings' import check.
 
 Threading: fetching runs on a background thread; the island reads the last
 snapshot on the Qt thread.
@@ -23,14 +20,13 @@ import threading
 import time
 import urllib.parse
 import urllib.request
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 from config import APP_HOME
 
 TIMETABLE_FILE = APP_HOME / "timetable.ics"
 WEATHER_EVERY_S = 15 * 60
-TIMETABLE_EVERY_S = 6 * 3600
 DAYS_AHEAD = 14
 
 
@@ -63,9 +59,7 @@ class Weather:
 
 @dataclass
 class Snapshot:
-    classes: list[Klass] = field(default_factory=list)   # the next DAYS_AHEAD days, in order
     weather: Weather | None = None
-    timetable: str = ""        # what it's read from, for Settings
     city: str = ""
 
 
@@ -150,43 +144,11 @@ def import_timetable(path: str | Path) -> int:
         raise ValueError("That calendar couldn't be read.") from exc
     TIMETABLE_FILE.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(path, TIMETABLE_FILE)
-    with _lock:
-        _state["timetable_at"] = 0.0  # read it on the next refresh
-    refresh(force=True)
+    refresh(force=True)  # its time zone may name the city for the weather
     return count
 
 
 # --- What to show ----------------------------------------------------------------------
-
-def day_view(now: dt.datetime, classes: list[Klass], limit: int = 4) -> tuple[str, list[Klass]]:
-    """Today's classes while any are left, else the next day that has some:
-    ("Today" | "Tomorrow" | "Monday", its classes)."""
-    today = now.date()
-    todays = [k for k in classes if k.start.date() == today]
-    if todays and todays[-1].end > now:
-        left = [k for k in todays if k.end > now]
-        done = [k for k in todays if k.end <= now]
-        return "Today", (done[-max(0, limit - len(left)):] if limit > len(left) else []) + left[:limit]
-    later = [k for k in classes if k.start.date() > today]
-    if not later:
-        return "", []
-    day = later[0].start.date()
-    label = "Tomorrow" if day == today + dt.timedelta(days=1) else f"{day:%A}"
-    return label, [k for k in later if k.start.date() == day][:limit]
-
-
-def status(now: dt.datetime, classes: list[Klass]) -> str:
-    """"now · until 11:00" or "next in 25 min" for today's classes; else ""."""
-    for k in classes:
-        if k.start <= now < k.end:
-            return f"now · until {clock(k.end)}"
-        if k.start > now and k.start.date() == now.date():
-            minutes = int((k.start - now).total_seconds() // 60)
-            if minutes < 60:
-                return f"next in {max(1, minutes)} min"
-            return f"next at {clock(k.start)}"
-    return ""
-
 
 def clock(moment: dt.datetime | dt.time) -> str:
     """A time the way this PC shows times (12 or 24 hour)."""
@@ -231,7 +193,7 @@ def parse_weather(forecast: dict, place: str) -> Weather:
 # --- Fetching, in the background -------------------------------------------------------
 
 _lock = threading.Lock()
-_state: dict = {"snapshot": Snapshot(), "weather_at": 0.0, "timetable_at": 0.0, "busy": False, "places": {}}
+_state: dict = {"snapshot": Snapshot(), "weather_at": 0.0, "busy": False, "places": {}}
 
 
 def snapshot() -> Snapshot:
@@ -240,13 +202,11 @@ def snapshot() -> Snapshot:
 
 
 def refresh(force: bool = False) -> None:
-    """Fetch what's stale on a background thread; never waits."""
+    """Fetch the weather if it's stale, on a background thread; never waits."""
     with _lock:
         if _state["busy"]:
             return
-        now = time.monotonic()
-        stale = force or now - _state["timetable_at"] > TIMETABLE_EVERY_S or now - _state["weather_at"] > WEATHER_EVERY_S
-        if not stale:
+        if not force and time.monotonic() - _state["weather_at"] <= WEATHER_EVERY_S:
             return
         _state["busy"] = True
     threading.Thread(target=_refresh, args=(force,), name="clixy-dashboard", daemon=True).start()
@@ -256,17 +216,8 @@ def _refresh(force: bool) -> None:
     try:
         snap = Snapshot(**vars(snapshot()))
         now = time.monotonic()
-        data = b""
-        if force or now - _state["timetable_at"] > TIMETABLE_EVERY_S or not snap.classes:
-            try:
-                data, snap.timetable = _timetable_bytes()
-                snap.classes = parse_timetable(data, _start_of_today()) if data else []
-            except Exception:
-                pass  # keep the last classes
-            with _lock:
-                _state["timetable_at"] = now
         if force or now - _state["weather_at"] > WEATHER_EVERY_S or snap.weather is None:
-            city = _setting("WEATHER_CITY") or city_from_calendar(data or _file_bytes())
+            city = _setting("WEATHER_CITY") or city_from_calendar(_file_bytes())
             snap.city = city
             if city:
                 try:
@@ -280,21 +231,6 @@ def _refresh(force: bool) -> None:
     finally:
         with _lock:
             _state["busy"] = False
-
-
-def _timetable_bytes() -> tuple[bytes, str]:
-    """The timetable from the link in Settings (kept as the file too), else the file."""
-    link = _setting("TIMETABLE_URL").strip()
-    if link:
-        if link.startswith("webcal://"):
-            link = "https://" + link[len("webcal://"):]
-        data = _fetch(link)
-        if b"BEGIN:VCALENDAR" in data[:4096]:
-            TIMETABLE_FILE.parent.mkdir(parents=True, exist_ok=True)
-            TIMETABLE_FILE.write_bytes(data)
-            return data, "your timetable link"
-    data = _file_bytes()
-    return data, (TIMETABLE_FILE.name if data else "")
 
 
 def _file_bytes() -> bytes:

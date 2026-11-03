@@ -46,7 +46,7 @@ def test_a_turn_opens_the_island_and_then_tucks_it_away(island):
     island.set_meta("2.1s · $0.0004")
     assert island._state == "answer"
     assert island._sentences == ["Click Export at the top right."]
-    assert island._target()[0] == island.CARD_W
+    assert island._target() == island.SLIVER, "the answer is heard, never shown"
     island.done()
     assert island._collapse_timer.isActive()
     island._collapse()
@@ -133,7 +133,7 @@ def test_the_greeting_shows_its_content_once_open(island, monkeypatch):
     _wait(island, now, 4.0, animate=True)
     assert (island._w, island._h) == island.GREET
     assert island._fade_greet == 1.0
-    island.grab()  # paints the buddy, "Clixy here." and the keys
+    island.grab()  # paints "Clixy here.", the light and the keys
 
 
 def test_no_greeting_while_it_is_busy(island, monkeypatch):
@@ -205,18 +205,73 @@ def test_the_notch_only_opens_for_a_mouse_that_rests_on_it(notch, monkeypatch):
     assert notch._target() == notch.NOTCH, "and it closes as soon as you move away"
 
 
-def test_the_notch_widens_to_listen_and_drops_the_answer(notch, monkeypatch):
+def test_the_notch_widens_to_listen_then_speaks_without_showing_the_answer(notch, monkeypatch):
     now = _clock(monkeypatch, start=notch._t0 + 100)
     notch.listening()
     assert notch._target() == notch.PILL
     _wait(notch, now, 2.0, animate=True)
     assert notch._fade_voice == 1.0 and notch._fade_notch == 0.0
     notch.say("Press the Windows key and P together.")
-    assert notch._target()[0] == notch.TOP_CARD_W
+    assert notch._target() == notch.NOTCH, "the answer is only heard: the notch settles back"
     _wait(notch, now, 2.0, animate=True)
-    assert notch._fade_card == 1.0
+    assert notch._fade_voice == 0.0 and notch._fade_note == 0.0
+    assert notch._light_b > 0.4, "its light stays alive while the answer plays"
+    notch.done()
+    assert notch._collapse_timer.isActive()
     notch._collapse()
     assert notch._target() == notch.NOTCH
+
+
+def test_the_notch_is_a_tab_with_flared_shoulders(notch):
+    rect = notch._shape_rect()
+    bounds = notch._shape_path().boundingRect()
+    assert bounds.top() == 0 and bounds.left() < rect.left() and bounds.right() > rect.right(), \
+        "the shoulders flare out along the top edge"
+    assert notch._shape_path().contains(rect.center())
+    for side in ("left", "right"):
+        notch.set_home(side)
+        rect, bounds = notch._shape_rect(), notch._shape_path().boundingRect()
+        assert bounds.top() < rect.top() and bounds.bottom() > rect.bottom(), "and along a side edge"
+    notch.set_home("top")
+
+
+def test_the_light_wears_the_buddys_colour(notch):
+    import theme
+    from island import accent_shades
+    for buddy in ("ember", "splash"):
+        theme.set_avatar(buddy, persist=False)
+        hot, mid, deep = accent_shades(theme.current_palette().flood)
+        assert mid == theme.current_palette().flood
+        assert hot.lightnessF() > mid.lightnessF() > deep.lightnessF()
+        notch.grab()
+    theme.set_avatar(theme.DEFAULT_AVATAR, persist=False)
+
+
+def test_the_light_swells_with_your_voice(notch, monkeypatch):
+    now = _clock(monkeypatch, start=notch._t0 + 100)
+    notch.listening()
+    notch.set_level(0.0)
+    _wait(notch, now, 1.0, animate=True)
+    quiet = notch._light_r
+    notch.set_level(1.0)
+    _wait(notch, now, 1.0, animate=True)
+    assert notch._light_r > quiet + 1.5
+
+
+def test_a_notice_fits_in_a_few_lines(notch, monkeypatch):
+    now = _clock(monkeypatch, start=notch._t0 + 100)
+    notch.note("Dev mode is on: I restart by myself whenever the code changes. " * 4)
+    w, h = notch._target()
+    assert w <= notch.NOTE_W and len(notch._notice_lines()[2]) <= 3
+    _wait(notch, now, 2.0, animate=True)
+    assert notch._fade_note == 1.0
+    notch.grab()
+
+
+def test_a_guide_step_shows_only_its_number(notch):
+    notch.step("pick duplicate.", 2, 3)
+    assert notch._notice() == "Step 2 of 3"
+    assert notch._sentences == ["pick duplicate."]
 
 
 def test_every_notch_state_paints(notch, monkeypatch):
@@ -276,11 +331,11 @@ def test_a_new_question_clears_the_last_answer(island):
     assert island._sentences == [] and island._transcript == ""
 
 
-def test_long_answers_never_grow_past_the_max_height(island):
+def test_long_answers_never_grow_the_island(island):
     island.listening()
     for _ in range(30):
         island.say("This is a fairly long sentence that keeps going and going.")
-    assert island._target()[1] <= island.MAX_CARD_H
+    assert island._target() == island.SLIVER
 
 
 def test_a_turn_with_no_answer_closes_right_away(island):
@@ -316,15 +371,6 @@ def test_it_can_live_on_the_left_edge(qapp, monkeypatch):
         widget.grab()
     finally:
         widget.close()
-
-
-def test_chips_for_labels_and_quotes_keep_punctuation_glued():
-    from island import split_chips
-    tokens = split_chips('Click Export, then "Save as PDF".', ["Export"])
-    assert ("Export", True, False) in tokens
-    assert (",", False, True) in tokens
-    assert ("Save as PDF", True, False) in tokens
-    assert (".", False, True) in tokens
 
 
 def test_every_state_paints(island):

@@ -1,4 +1,5 @@
-"""The notch dashboard: the time, the weather and today's classes."""
+"""The notch dashboard: the time and the weather (classes are no longer shown;
+reading a timetable stays for Settings' import and the weather city)."""
 from __future__ import annotations
 
 import datetime as dt
@@ -86,20 +87,6 @@ def test_class_titles(summary, description, want):
     assert dashboard.class_title(summary, description) == want
 
 
-def test_today_then_the_next_day_with_classes():
-    ks = _classes()
-    label, shown = dashboard.day_view(dt.datetime(2026, 11, 2, 12, 40, tzinfo=DUBAI), ks)
-    assert label == "Today" and [k.title for k in shown] == ["Fluid Dynamics", "Circuits 1"]
-    assert dashboard.status(dt.datetime(2026, 11, 2, 12, 40, tzinfo=DUBAI), shown).startswith("now · until")
-    assert dashboard.status(dt.datetime(2026, 11, 2, 11, 35, tzinfo=DUBAI), shown) == "next in 25 min"
-    label, shown = dashboard.day_view(dt.datetime(2026, 11, 2, 19, 0, tzinfo=DUBAI), ks)
-    assert label == "Tomorrow" and shown[0].title == "Linear Algebra 2 - Group B"
-    label, shown = dashboard.day_view(dt.datetime(2026, 11, 3, 18, 0, tzinfo=DUBAI), ks)
-    assert label == "Tomorrow" and shown[0].title == "Robotics Club"
-    label, shown = dashboard.day_view(dt.datetime(2026, 11, 5, 10, 0, tzinfo=DUBAI), _classes(days=21))
-    assert label == "Wednesday" and shown[0].title == "Robotics Club"   # a week on
-
-
 def test_the_city_comes_from_the_timetable():
     assert dashboard.city_from_calendar(ICS) == "Dubai"
     assert dashboard.city_from_calendar(b"X-WR-TIMEZONE:America/New_York\n") == "New York"
@@ -132,6 +119,17 @@ def test_offline_keeps_going(monkeypatch):
     assert dashboard.snapshot().weather is None and dashboard.snapshot().city == "Dubai"
 
 
+def test_the_timetable_is_never_fetched_but_still_names_the_city(monkeypatch):
+    fetched = []
+    monkeypatch.setattr(dashboard, "_fetch", lambda url: fetched.append(url) or b"")
+    monkeypatch.setattr(dashboard, "_setting", lambda name: "https://example.test/tt.ics" if name == "TIMETABLE_URL" else "")
+    dashboard.TIMETABLE_FILE.write_bytes(ICS)
+    dashboard._refresh(force=True)
+    assert not any("tt.ics" in url for url in fetched), "the timetable link is left alone"
+    assert dashboard.snapshot().city == "Dubai"
+    assert not hasattr(dashboard.snapshot(), "classes")
+
+
 # --- In the notch ------------------------------------------------------------------------
 
 @pytest.fixture
@@ -144,14 +142,14 @@ def test_resting_on_the_notch_opens_the_dashboard(qapp, monkeypatch):
     from island import SideIsland
     monkeypatch.setattr(dashboard, "refresh", lambda force=False: None)
     monkeypatch.setattr(dashboard, "_state", {"snapshot": dashboard.Snapshot(
-        classes=_classes(), weather=dashboard.Weather(31, 1, "Dubai", 33, 26), timetable="t.ics", city="Dubai"),
-        "weather_at": 0.0, "timetable_at": 0.0, "busy": False, "places": {}})
+        weather=dashboard.Weather(31, 1, "Dubai", 33, 26), city="Dubai"),
+        "weather_at": 0.0, "busy": False, "places": {}})
     notch = SideIsland(side="top")
     try:
         notch._hello_until = 0
         notch._near = True
         w, h = notch._target()
-        assert w == notch.DASH_W and h > 150
+        assert w == notch.DASH_W and 120 < h < 200, "the hello, the time and the weather: no classes"
         for _ in range(150):
             notch._update_near = lambda: None
             notch._animate()

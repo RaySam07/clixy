@@ -63,6 +63,17 @@ NOTCH_DIM = _c(104, 104, 117)
 NOTCH_CHIP_DIM = _c(52, 52, 62)
 NOTCH_CHIP_DIM_TEXT = _c(182, 182, 194)
 
+# The notch's own shape colours, the same whatever the buddy: black with a
+# breath of deep navy at the bottom. Its one accent, the light at its end,
+# wears the buddy's colour (current_palette().flood).
+NOTCH_NAVY = _c(5, 9, 19)
+"""The barely-there navy at the notch's lower edge."""
+NOTCH_EDGE = _c(205, 215, 235, 36)
+"""The hairline round the notch, so black still reads on a dark page."""
+NOTCH_KEY = _c(255, 255, 255, 22)
+NOTCH_KEY_EDGE = _c(255, 255, 255, 46)
+"""Keycaps in the notch: flat frosted glass."""
+
 
 LOGO_BUDDY = "ember"
 """Clixy's logo is Ember, the pixel fire."""
