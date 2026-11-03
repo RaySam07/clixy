@@ -37,5 +37,7 @@ taskkill /im Clixy.exe /f >nul 2>nul
 
 set CLIXY_DEV=1
 start "Clixy dev" "%CLIXY_VENV%\Scripts\pythonw.exe" app.py
+rem Brings Clixy back if a restart lands mid-edit and fails (keep_alive.py).
+start "Clixy dev keep-alive" "%CLIXY_VENV%\Scripts\pythonw.exe" tools\dev\keep_alive.py
 echo Clixy dev is running. Look for your buddy in the tray.
 timeout /t 3 >nul
