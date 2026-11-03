@@ -3,9 +3,11 @@
 Ask "what's going on here?" over a Fourier video, or "why does a wave wrap
 into a flower?", and while the voice explains, a note card slides in and
 Clixy sketches it stroke by stroke in handwriting: a title, a graph with its
-axes and labels, the point that matters circled, simple 3D shapes turning
-slowly when depth helps. Two or three follow-up questions sit underneath as
-buttons; Clear puts it all away. Every note is kept in ~/.clixy/notes.
+axes and labels, the point that matters circled. When depth helps (an engine,
+a molecule, an orbit, vectors, a surface) the note holds a real 3D model
+instead (scene3d.NoteModel): solid, lit, slowly turning, its moving parts
+moving, every part labelled. Two or three follow-up questions sit underneath
+as buttons; Clear puts it all away. Every note is kept in ~/.clixy/notes.
 
 The model writes the note as JSON (``PROMPT`` below): what to draw in the
 note's own coordinates, never code. Curves can be given as a formula
@@ -26,9 +28,11 @@ import time
 from pathlib import Path
 
 from PyQt6.QtCore import QPointF, QRectF, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QFontMetricsF, QGuiApplication, QPainter, QPainterPath, QPen, QPolygonF
+from PyQt6.QtGui import (QColor, QFont, QFontMetricsF, QGuiApplication, QPainter, QPainterPath, QPen, QPixmap,
+                         QPolygonF)
 from PyQt6.QtWidgets import QWidget
 
+import scene3d
 import theme
 from config import APP_HOME
 
@@ -64,18 +68,27 @@ for ideas that aren't graphs, use one of these layouts instead (no view needed; 
 {"type": "points", "points": ["a key fact", "another"]}                 3-5 short key points
 pick the clearest form: a graph for quantities and functions, steps for processes, cycle for loops, compare for differences, timeline for history, mindmap for a topic's parts, points when it's a few key facts.
 
-when depth genuinely helps (vectors, 3d shapes, surfaces, orbits), use "view": {"3d": true, "range": 2} and these instead (x, y, z; z is up):
-{"type": "axes3d", "labels": ["x", "y", "z"]}
-{"type": "vector3d", "from": [0, 0, 0], "to": [1, 1, 1], "label": "v"}
-{"type": "point3d", "at": [x, y, z], "label": "..."}
-{"type": "line3d", "from": [x, y, z], "to": [x, y, z], "dashed": true}
-{"type": "curve3d", "x": "cos(t)", "y": "sin(t)", "z": "t/6", "from": 0, "to": 12.6}
-{"type": "box3d", "at": [x, y, z], "size": [w, d, h]}
-{"type": "sphere", "at": [x, y, z], "r": 1}
-{"type": "surface", "expr": "sin(x)*cos(y)"}
+3d: when depth genuinely helps (a machine or engine, a molecule, an orbit or the solar system, vectors, a field, a 3d surface, solids and geometry, anatomy, a building), make a real 3d model instead: solid, lit parts that turn slowly on the card, moving parts that really move, each part named on a label beside it. clixy draws this 3d itself, so never say it can't and never point to another app. use "view": {"3d": true} (it is fitted to the card; optional "turn" and "tilt" in degrees choose the viewing angle) and these items, in x, y, z with z up, in the thing's real proportions:
+{"type": "box3d", "at": [x, y, z], "size": [w, d, h], "label": "crankcase"}
+{"type": "cylinder", "at": [x, y, z], "r": 0.5, "h": 2, "axis": [0, 0, 1], "label": "piston"}  ("cone" takes the same; "hollow": true makes a pipe wall)
+{"type": "cutaway", "at": [x, y, z], "r": 0.6, "h": 2, "label": "cylinder"}  a wall cut open toward the viewer, so the parts inside show
+{"type": "sphere", "at": [x, y, z], "r": 1, "label": "..."}
+{"type": "torus", "at": [x, y, z], "r": 1, "tube": 0.2, "axis": [0, 0, 1]}   {"type": "gear", "at": [x, y, z], "r": 0.6, "teeth": 14, "axis": [0, 1, 0]}
+{"type": "tube", "points": [[x, y, z], ...], "r": 0.1, "label": "..."}  a pipe, wire, duct or vessel along a path
+{"type": "plane", "at": [x, y, z], "normal": [0, 0, 1], "size": [w, h]}  see-through
+{"type": "molecule", "atoms": [["O", 0, 0, 0], ["H", 0.76, 0, 0.59], ["H", -0.76, 0, 0.59]], "bonds": [[0, 1], [0, 2]], "label": "water"}  real geometry in ångström, drawn in element colours; [0, 1, 2] is a double bond
+{"type": "axes3d", "labels": ["x", "y", "z"]}   {"type": "vector3d", "from": [0, 0, 0], "to": [1, 2, 1], "label": "a"}
+{"type": "point3d", "at": [x, y, z], "label": "..."}   {"type": "line3d", "from": [x, y, z], "to": [x, y, z], "dashed": true}
+{"type": "curve3d", "x": "2*cos(t)", "y": "2*sin(t)", "z": "0", "from": 0, "to": 6.283, "travel": true}  (t is the variable; travel: a ball moves along it, like a planet on its orbit)
+{"type": "surface", "expr": "x^2 - y^2", "x": [-2, 2], "y": [-2, 2], "label": "saddle"}  shaded and coloured by height
+{"type": "field", "x": "-y", "y": "x", "z": "0", "range": 2}  arrows showing a field or a flow (x, y, z are the variables)
+{"type": "text", "text": "the key insight"}  written under the model; with "at": [x, y, z] it names that spot instead
+any solid also takes "color", "material" ("metal", "matte", "glass" to see inside it, "glow" for a flame, a spark or a star) and an "id" when another part refers to it.
+moving parts move: "spin": turns per second about the part's own axis, or about "pivot": [x, y, z] (a crank pin, a moon); "slide": [dx, dy, dz] moves it back and forth that far, "rate" times a second; "follow": "id" slides it in step with that part (a piston following its crank pin). a cylinder with "from": "id", "to": "id" instead of "at" joins two parts (a connecting rod).
+build the real thing: its key parts (4 to 14 for a machine) in the right places, the inside shown with a cutaway or glass, and a label on each part the explanation talks about.
 
-colors: ink, blue, red, green, orange, purple, grey.
-keep it clean and true: 3 to 10 items, labels of 1-4 words, exact maths (use "function" for real curves), nothing cluttered. text items are the key insight in a few words, like "peak = frequency present". draw what the idea really looks like: if it is wrapped, rotated or polar, draw it that way with "parametric", not a plain wave beside it. geometry stays round: circles and wound curves are drawn with equal x and y scales. leave room: no two labels in the same spot, and put text items in empty space, away from curves. followups are 2 or 3 natural next questions, under 6 words each.
+colors: ink, blue, red, green, orange, purple, grey (3d also: teal, yellow, white, black, brown, silver, gold).
+keep it clean and true: 3 to 10 items (a 3d model up to 16), labels of 1-4 words, exact maths (use "function" for real curves), nothing cluttered. text items are the key insight in a few words, like "peak = frequency present". draw what the idea really looks like: if it is wrapped, rotated or polar, draw it that way with "parametric", not a plain wave beside it. geometry stays round: circles and wound curves are drawn with equal x and y scales. leave room: no two labels in the same spot, and put text items in empty space, away from curves. followups are 2 or 3 natural next questions, under 6 words each.
 make a note for anything someone is trying to learn or understand. only for small talk, a yes or no, or "where do i click", reply {"skip": true}.\
 """
 
@@ -84,7 +97,8 @@ _SKETCH_WORDS = re.compile(
     r"| does| do| did| happens| causes| makes)?|who (?:is|was|were)|when (?:did|was|is)|teach|learn|study|understand"
     r"|intuition|derive|prove|solve|calculate|visuali[sz]e|graph|plot|sketch|diagram|draw me|lecture|summar\w+"
     r"|describe|define|definition|meaning|difference between|compare|vs\.?|versus|history of|tell me about"
-    r"|break (?:it|this) down|walk me through|show me (?:how|why|what)|help me (?:understand|learn|revise|study))\b",
+    r"|break (?:it|this) down|walk me through|show me (?:how|why|what)|help me (?:understand|learn|revise|study)"
+    r"|3-?d|three[- ]d\w*|in three dimensions|model of)\b",
     re.IGNORECASE,
 )
 _NOT_LEARNING = re.compile(
@@ -769,7 +783,10 @@ class NoteCard(QWidget):
     cleared = pyqtSignal()
 
     W, H = 470.0, 352.0
+    H3D = 430.0  # a 3D model gets a taller card
     _M = 18.0   # room for the shadow
+    TURN_RATE = 0.5     # a 3D model rocks slowly to and fro (radians of swing per second)...
+    TURN_FOR_S = 45.0   # ...then comes to rest; resting the mouse on the card sets it turning again
 
     def __init__(self) -> None:
         super().__init__(None, Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint
@@ -777,7 +794,8 @@ class NoteCard(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
         self.setWindowTitle("Clixy note")
-        self.resize(int(self.W + 2 * self._M), int(self.H + 2 * self._M))
+        self._h = self.H
+        self.resize(int(self.W + 2 * self._M), int(self._h + 2 * self._M))
         self.note: dict | None = None
         self._t0 = time.monotonic()
         self._strokes: list[Stroke] = []
@@ -785,6 +803,13 @@ class NoteCard(QWidget):
         self._clear_rect = QRectF()
         self._drag_from = None
         self._saved = False
+        self._backdrop = None         # the card itself (paper, grid, topic, Clear), drawn once
+        self._model: scene3d.NoteModel | None = None   # the 3D model, when the note has one
+        self._clock = 0.0             # the model's own time: it turns and its parts move while this runs
+        self._last = time.monotonic()
+        self._turn_until = 0.0
+        self._resting = False
+        self._paint_ms = 0.0          # how long a 3D frame takes, to pace the frames to the PC
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)
 
@@ -793,6 +818,13 @@ class NoteCard(QWidget):
         self.note = note
         self._t0 = time.monotonic()
         self._saved = False
+        height = self.H3D if self._three_d() else self.H
+        if height != self._h:   # keep the card's bottom edge where it was
+            bottom = self.geometry().bottom()
+            self._h = height
+            self.resize(int(self.W + 2 * self._M), int(height + 2 * self._M))
+            if self.isVisible():
+                self.move(self.x(), bottom - self.height() + 1)
         self._layout()
         if not self.isVisible():
             screen = screen or QGuiApplication.screenAt(self.cursor().pos()) or QGuiApplication.primaryScreen()
@@ -800,17 +832,20 @@ class NoteCard(QWidget):
             self.move(area.right() - self.width() - 12, area.bottom() - self.height() - 12)
         self.show()
         self.raise_()
-        self._timer.start(16)
+        self._clock, self._last, self._resting = 0.0, time.monotonic(), False
+        self._turn_until = self._t0 + self.TURN_FOR_S
+        self._timer.start(16 if self._model is None else 33)
 
     def clear(self) -> None:
         self._timer.stop()
         self.hide()
         self.note = None
+        self._model = None
         self.cleared.emit()
 
     @property
     def card(self) -> QRectF:
-        return QRectF(self._M, self._M, self.W, self.H)
+        return QRectF(self._M, self._M, self.W, self._h)
 
     @property
     def canvas(self) -> QRectF:
@@ -824,7 +859,13 @@ class NoteCard(QWidget):
         return 18 * math.sin((time.monotonic() - self._t0) * 0.45) if self._three_d() else 0.0
 
     def _layout(self) -> None:
-        self._strokes = build(self.note, self.canvas, self._angle()) if self.note else []
+        self._model = None
+        if self._three_d():
+            try:
+                self._model = scene3d.NoteModel.from_note(self.note, compile_expr)
+            except Exception:   # a model that can't be built: the sketched wireframe below instead
+                self._model = None
+        self._strokes = build(self.note, self.canvas, self._angle()) if self.note and self._model is None else []
         self._chips = []
         x = self.card.left() + 22
         y = self.card.bottom() - 44
@@ -839,16 +880,45 @@ class NoteCard(QWidget):
     def _drawn_for(self) -> float:
         return time.monotonic() - self._t0 - 0.5   # the title writes first
 
+    def _finished_at(self) -> float:
+        """When everything on the note has been drawn (seconds into the drawing)."""
+        if self._model is not None:
+            return self._model.reveal_end()
+        return self._strokes[-1].start + self._strokes[-1].duration if self._strokes else 0.0
+
+    def _turn(self) -> float:
+        return self._model.TURN * math.sin(self._clock * self.TURN_RATE) if self._model is not None else 0.0
+
     def _tick(self) -> None:
-        if self._three_d():
-            self._strokes = build(self.note, self.canvas, self._angle())  # it turns slowly
-        done = self._strokes and self._drawn_for() > self._strokes[-1].start + self._strokes[-1].duration + 0.4
+        now = time.monotonic()
+        if self._model is not None:
+            if not self._resting:
+                self._clock += min(0.1, max(0.0, now - self._last))
+                # Come to rest at the end of a swing, where it moves slowest, so it stops softly.
+                if now > self._turn_until and abs(math.cos(self._clock * self.TURN_RATE)) < 0.06:
+                    self._resting = True
+            self._last = now
+        elif self._three_d():
+            self._strokes = build(self.note, self.canvas, self._angle())  # the wireframe turns slowly
+        done = self._drawn_for() > self._finished_at() + 0.4
         if done and not self._saved:
             self._saved = True
             save_note(self.note, self.grab().toImage())
-        if done and not self._three_d():
+        if done and (self._resting if self._model is not None else not self._three_d()):
             self._timer.stop()
+        elif self._model is not None:
+            # 30 frames a second, fewer on a PC where a frame takes longer to draw.
+            self._timer.setInterval(33 if self._paint_ms < 12 else 50 if self._paint_ms < 22 else 80)
         self.update()
+
+    def enterEvent(self, _event) -> None:  # noqa: N802
+        """Resting the mouse on a 3D note sets it turning again."""
+        if self._model is not None and self.isVisible():
+            self._turn_until = time.monotonic() + self.TURN_FOR_S
+            if self._resting:
+                self._resting = False
+                self._last = time.monotonic()
+                self._timer.start(33)
 
     # --- Mouse: follow-ups, Clear, dragging ----------------------------------------------------
     def mousePressEvent(self, event) -> None:  # noqa: N802
@@ -877,6 +947,74 @@ class NoteCard(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         p.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
+        card = self.card
+        p.drawPixmap(0, 0, self._card_pixmap())
+
+        # Title and subtitle, written first.
+        t = time.monotonic() - self._t0
+        self._write(p, self.note.get("title", ""), QPointF(card.left() + 22, card.top() + 60), 21, True,
+                    COLORS["ink"], min(1.0, t / 0.5))
+        self._write(p, self.note.get("subtitle", ""), QPointF(card.left() + 22, card.top() + 84), 14, False,
+                    QColor(120, 116, 110), min(1.0, max(0.0, (t - 0.25) / 0.5)))
+
+        # The sketch, stroke by stroke (or the 3D model), kept off the title and the buttons.
+        drawn = self._drawn_for()
+        p.save()
+        p.setClipRect(QRectF(card.left() + 2, self.canvas.top() - 10, card.width() - 4, self.canvas.height() + 20))
+        if self._model is not None:
+            started = time.perf_counter()
+            try:
+                self._model.paint(p, self.canvas, turn=self._turn(), t=self._clock, reveal=drawn)
+            except Exception:   # never a broken card: the sketched wireframe instead
+                self._model = None
+                self._strokes = build(self.note, self.canvas, self._angle())
+            self._paint_ms = 0.8 * self._paint_ms + 0.2 * (time.perf_counter() - started) * 1000
+        for s in self._strokes:
+            u = 1.0 if self._three_d() and self._saved else (drawn - s.start) / s.duration if s.duration else 1.0
+            if u <= 0:
+                continue
+            self._paint_stroke(p, s, min(1.0, u))
+        p.restore()
+
+        # Follow-ups.
+        if self._model is not None:
+            ready = drawn > self._model.reveal_end() - 0.6
+        else:
+            ready = drawn > (self._strokes[-1].start if self._strokes else 0)
+        if ready:
+            flood = theme.CORAL
+            for rect, text in self._chips:
+                p.setPen(QPen(QColor(flood.red(), flood.green(), flood.blue(), 120), 1.2))
+                p.setBrush(QColor(253, 232, 226))
+                p.drawRoundedRect(rect, 15, 15)
+                p.setPen(QPen(flood, 1.4))
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                bubble = QRectF(rect.left() + 12, rect.center().y() - 6, 13, 11)
+                p.drawRoundedRect(bubble, 4, 4)
+                p.drawLine(QPointF(bubble.left() + 3, bubble.bottom()), QPointF(bubble.left() + 1, bubble.bottom() + 3))
+                p.setPen(QColor(50, 40, 40))
+                p.setFont(theme.ui_font(9.5, QFont.Weight.DemiBold))
+                p.drawText(rect.adjusted(32, 0, -10, 0), Qt.AlignmentFlag.AlignVCenter, text)
+        p.end()
+
+    def _card_pixmap(self) -> QPixmap:
+        """The card's paper, shadow, topic band, Clear and grid: they never change
+        while a note is up, so they are drawn once, not every frame."""
+        dpr = self.devicePixelRatioF() or 1.0
+        key = (self.width(), self.height(), dpr, (self.note or {}).get("topic", ""))
+        if self._backdrop is None or self._backdrop[0] != key:
+            pix = QPixmap(max(1, round(self.width() * dpr)), max(1, round(self.height() * dpr)))
+            pix.setDevicePixelRatio(dpr)
+            pix.fill(Qt.GlobalColor.transparent)
+            q = QPainter(pix)
+            q.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            q.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
+            self._paint_card(q)
+            q.end()
+            self._backdrop = (key, pix)
+        return self._backdrop[1]
+
+    def _paint_card(self, p: QPainter) -> None:
         card = self.card
         for i in range(1, 9):  # soft shadow
             p.setPen(QPen(QColor(0, 0, 0, 7), i * 2.2))
@@ -918,41 +1056,6 @@ class NoteCard(QWidget):
         while y <= grid.bottom():
             p.drawLine(QPointF(grid.left(), y), QPointF(grid.right(), y))
             y += 16
-
-        # Title and subtitle, written first.
-        t = time.monotonic() - self._t0
-        self._write(p, self.note.get("title", ""), QPointF(card.left() + 22, card.top() + 60), 21, True,
-                    COLORS["ink"], min(1.0, t / 0.5))
-        self._write(p, self.note.get("subtitle", ""), QPointF(card.left() + 22, card.top() + 84), 14, False,
-                    QColor(120, 116, 110), min(1.0, max(0.0, (t - 0.25) / 0.5)))
-
-        # The sketch, stroke by stroke, kept off the title and the buttons.
-        drawn = self._drawn_for()
-        p.save()
-        p.setClipRect(QRectF(card.left() + 2, self.canvas.top() - 10, card.width() - 4, self.canvas.height() + 20))
-        for s in self._strokes:
-            u = 1.0 if self._three_d() and self._saved else (drawn - s.start) / s.duration if s.duration else 1.0
-            if u <= 0:
-                continue
-            self._paint_stroke(p, s, min(1.0, u))
-        p.restore()
-
-        # Follow-ups.
-        if drawn > (self._strokes[-1].start if self._strokes else 0):
-            flood = theme.CORAL
-            for rect, text in self._chips:
-                p.setPen(QPen(QColor(flood.red(), flood.green(), flood.blue(), 120), 1.2))
-                p.setBrush(QColor(253, 232, 226))
-                p.drawRoundedRect(rect, 15, 15)
-                p.setPen(QPen(flood, 1.4))
-                p.setBrush(Qt.BrushStyle.NoBrush)
-                bubble = QRectF(rect.left() + 12, rect.center().y() - 6, 13, 11)
-                p.drawRoundedRect(bubble, 4, 4)
-                p.drawLine(QPointF(bubble.left() + 3, bubble.bottom()), QPointF(bubble.left() + 1, bubble.bottom() + 3))
-                p.setPen(QColor(50, 40, 40))
-                p.setFont(theme.ui_font(9.5, QFont.Weight.DemiBold))
-                p.drawText(rect.adjusted(32, 0, -10, 0), Qt.AlignmentFlag.AlignVCenter, text)
-        p.end()
 
     @staticmethod
     def _write(p: QPainter, text: str, at: QPointF, size: float, bold: bool, color: QColor, reveal: float) -> None:

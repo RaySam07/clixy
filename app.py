@@ -1595,7 +1595,8 @@ class ClickyApp(QObject):
         """Ask the thinking model for a sketch note and show it (worker thread)."""
         try:
             with self._smart_ai.ask_stream(images=[(capture.image, capture.label)], transcript=question,
-                                           history=[], system_prompt=sketch.PROMPT, max_tokens=2500) as stream:
+                                           history=[], system_prompt=sketch.PROMPT,
+                                           max_tokens=4000) as stream:   # room for a 3D model's parts
                 reply = "".join(stream.text_deltas())
         except Exception as exc:
             dbg.log(f"SKETCH: failed: {type(exc).__name__}: {exc}")
