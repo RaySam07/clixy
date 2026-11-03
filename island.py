@@ -51,7 +51,7 @@ class SideIsland(QWidget):
     NOTCH = (132.0, 30.0)
     HELLO = (214.0, 34.0)
     HINT = (262.0, 34.0)
-    PILL = (330.0, 46.0)
+    PILL = (300.0, 38.0)
     TOP_CARD_W = 430.0
     DASH_W = 470.0
     _TOP_WIN = (520, 380)
@@ -560,14 +560,7 @@ class SideIsland(QWidget):
         wide = self.HELLO[0] if hello else self.HINT[0]
         k = max(0.0, min(1.0, (rect.width() - self.NOTCH[0]) / (wide - self.NOTCH[0])))
         if not hint:
-            painter.setPen(Qt.PenStyle.NoPen)
-            n = 5 if hello else 6
-            x = rect.right() - 14 - n * 6.0
-            for i in range(n):
-                weight = 1 - abs(i - (n - 1) / 2) / ((n - 1) / 2 + 0.5)
-                h = 3.5 + 9.0 * weight * (0.55 + 0.45 * math.sin(t * 2.3 + i * 1.15))
-                painter.setBrush(theme.SUN)
-                painter.drawRoundedRect(QRectF(x + i * 6.0, cy - h / 2, 3.0, h), 1.5, 1.5)
+            self._paint_voice_pill(painter, QPointF(rect.right() - 26, cy), t, 30.0, 15.0, None, glow=0.6)
         if k > 0.02 and (hello or hint):
             painter.setOpacity(self._fade_notch * k)
             x = rect.left() + 42
@@ -706,42 +699,61 @@ class SideIsland(QWidget):
         painter.restore()
 
     def _paint_pill(self, painter: QPainter, rect: QRectF, t: float) -> None:
-        """Top of the screen, listening or thinking: the buddy, a row of audio
-        lines that move with your voice, and the recording dot."""
+        """Top of the screen, listening or thinking: your buddy, one clean word,
+        and a glowing pill in your buddy's colour whose dots move with your voice."""
         painter.save()
         self._scaled(painter, rect, self._fade_voice)
         listening = self._state == "listening"
         cy = rect.top() + rect.height() / 2.0
-        theme.paint_avatar_in(painter, QRectF(rect.left() + 12, cy - 15, 30, 30), t=t,
-                              mood="listening" if listening else "thinking", scale=30 / 48.0,
+        theme.paint_avatar_in(painter, QRectF(rect.left() + 10, cy - 12, 24, 24), t=t,
+                              mood="listening" if listening else "thinking", scale=24 / 48.0,
                               device_pixel_ratio=self.devicePixelRatioF(), glow=True)
-        n, bar_w, gap = 21, 4.0, 4.0
-        x0 = rect.center().x() - (n * (bar_w + gap) - gap) / 2 + 4
-        mid = (n - 1) / 2
-        painter.setPen(Qt.PenStyle.NoPen)
-        for i in range(n):
-            weight = 1 - abs(i - mid) / mid
-            if listening:
-                h = 4 + 24 * self._smooth_level * (0.35 + 0.65 * weight) * (0.7 + 0.3 * math.sin(t * 9 + i * 1.3))
-                color = QColor(theme.BUTTER)
-            else:
-                h = 4.0
-                color = QColor(255, 255, 255)
-                color.setAlphaF(0.2 + 0.8 * (0.5 + 0.5 * math.sin(t * 5.7 - i * 0.55)))
-            painter.setBrush(color)
-            painter.drawRoundedRect(QRectF(x0 + i * (bar_w + gap), cy - h / 2, bar_w, h), 2, 2)
-        dot = QPointF(rect.right() - 24, cy)
+        word = "Listening" if listening else "Thinking"
+        painter.setFont(theme.ui_font(10.5, QFont.Weight.DemiBold))
         if listening:
-            pulse = (t % 1.4) / 1.4
-            ring = QColor(theme.CORAL)
-            ring.setAlphaF(0.55 * (1 - pulse))
-            painter.setBrush(ring)
-            painter.drawEllipse(dot, 4 + 7 * pulse, 4 + 7 * pulse)
-            painter.setBrush(theme.CORAL)
-        else:
-            painter.setBrush(QColor(255, 255, 255, 110))
-        painter.drawEllipse(dot, 4, 4)
+            painter.setPen(theme.NOTCH_TEXT)
+        else:  # a soft shimmer runs across the word while it thinks
+            from PyQt6.QtGui import QLinearGradient
+            w = painter.fontMetrics().horizontalAdvance(word)
+            x = rect.center().x() - w / 2
+            sweep = x - 40 + (w + 80) * ((t * 0.7) % 1.0)
+            shine = QLinearGradient(sweep - 30, 0, sweep + 30, 0)
+            shine.setColorAt(0.0, QColor(150, 150, 160))
+            shine.setColorAt(0.5, QColor(255, 255, 255))
+            shine.setColorAt(1.0, QColor(150, 150, 160))
+            painter.setPen(QPen(shine, 1.0))
+        painter.drawText(QRectF(rect.left(), rect.top(), rect.width(), rect.height()), Qt.AlignmentFlag.AlignCenter, word)
+        self._paint_voice_pill(painter, QPointF(rect.right() - 34, cy), t, 46.0, 24.0,
+                               self._smooth_level if listening else None)
         painter.restore()
+
+    def _paint_voice_pill(self, painter: QPainter, centre: QPointF, t: float, w: float, h: float,
+                          level: float | None, glow: float = 1.0) -> None:
+        """The glowing pill: your buddy's colour, four dots. ``level`` (0-1)
+        makes them jump with your voice; None makes them ripple (thinking, resting)."""
+        flood = QColor(theme.current_palette().flood)
+        pill = QRectF(centre.x() - w / 2, centre.y() - h / 2, w, h)
+        painter.setPen(Qt.PenStyle.NoPen)
+        for k in range(1, 6):  # the glow
+            halo = QColor(flood)
+            halo.setAlphaF(0.07 * glow * (1 - k / 6))
+            painter.setBrush(halo)
+            painter.drawRoundedRect(pill.adjusted(-k * 2.4, -k * 2.4, k * 2.4, k * 2.4), h / 2 + k * 2.4, h / 2 + k * 2.4)
+        painter.setBrush(flood)
+        painter.drawRoundedRect(pill, h / 2, h / 2)
+        on = theme.current_palette().on_flood
+        dot = QColor(on)
+        gap = w / 5.0
+        for k in range(4):
+            if level is None:
+                lift = math.sin(t * 5.0 - k * 0.8) * h * 0.12
+                r = h * 0.11
+            else:
+                lift = 0.0
+                r = h * (0.1 + 0.16 * level * (0.6 + 0.4 * math.sin(t * 11 + k * 1.7)))
+            dot.setAlphaF(0.9)
+            painter.setBrush(dot)
+            painter.drawEllipse(QPointF(pill.left() + gap * (k + 1), centre.y() - lift), r, r)
 
     def _paint_greet(self, painter: QPainter, rect: QRectF, t: float) -> None:
         """Your buddy, "Clixy here." and the keys to hold."""

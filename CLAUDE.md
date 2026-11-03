@@ -16,6 +16,11 @@ Clixy is Rayan Sameer's Windows AI buddy (PyQt6). This folder is the local dev c
 - Tests: `.venv\Scripts\python -m pytest tests -q`.
 
 ## What's next
+- **Start here: `docs/plans/next-ui.md`.** In order:
+  1. A professional blue notch (no orange fire; longer, less rounded).
+  2. The new pointer cursor.
+  3. Speed up and wire in the on-screen 3D (`scene3d.py`).
+  4. The task-doing brain (ask Rayan which connectors first).
 - `docs/plans/guide-mode.md`: exact marks from Windows UI Automation and guidance one
   step at a time. Built; verify it on real Windows first (UIA listing in `snap.py`, the
   pynput input watch in `guide.py`) and fix what doesn't hold up.
