@@ -61,10 +61,41 @@ To do:
      brightness the way `aim.busy_map` does.
    - The highlight tint should be the new blue, not orange.
    - The shell cutaway's orientation should face the camera.
-3. **Wire it.** Extend `sketch.PROMPT` with a `"model"` option for physical things
-   (engines, organs, molecules, machines), using the parts schema in `scene3d.py`.
-   In `app._on_show_sketch`, show `ModelOverlay` when the note has a model. Hide it
-   on the next hotkey press and on the note card's Clear.
+3. **Wire it smart: any concept, not just machines.** Rayan's brief: "3D wiring needs
+   to be smart and adaptable to any scenario, whatever concept needs teaching."
+   - **One teaching plan per question.** The sketch call (Sonnet 5.5, light thinking)
+     returns `{"note": {...}, "model": {...}}` with either or both. The model chooses:
+     - **3D** for anything spatial or physical: machines, anatomy, molecules,
+       planets, solids, vectors and fields, buildings;
+     - **the note** for graphs, processes, comparisons and timelines;
+     - **both** when the 3D needs a written takeaway beside it.
+   - **3D for abstract ideas too.** Add builders the model can use as spatial metaphors:
+     - `graph3d` (nodes as spheres, edges as tubes): data structures, networks,
+       family trees, how ideas connect;
+     - `bars3d`: comparing amounts;
+     - `molecule` (atoms by element colour, bonds as sticks);
+     - `field` (a grid of arrows): forces, flow, gradients;
+     - `path` (a point moving along a curve): orbits, journeys, a signal travelling;
+     - `stack` (labelled layers): the OSI model, earth's layers, a cell wall.
+   - **Build big things cheaply.** Add `repeat` (radial or linear arrays with a step,
+     a turn and a scale per copy), so 20 compressor stages or a DNA ladder is one
+     part, not twenty.
+   - **Teach in steps, in sync with the voice.** The model gives `steps`. Each step:
+     - names the parts to highlight;
+     - can move the camera (turn or zoom to a part);
+     - shows that step's chip and caption;
+     - can show or hide parts and play motions: spin, move along a path, pulse,
+       explode a part outward to show inside.
+     Step timing follows the spoken sentences (the TTS already reports each
+     sentence as it plays).
+   - **Always land somewhere useful.** If the 3D JSON is invalid or too heavy, show
+     the note card; if that fails too, the voice answer stands alone.
+   - **Show and hide.** In `app._on_show_sketch`, show `ModelOverlay` for a model and
+     the note card for a note. Hide both on the next hotkey press and on Clear.
+   - **Try it with a spread of questions.** For example: how a jet engine works; the
+     heart's four chambers; why ice floats (a water molecule); how a binary search
+     tree finds a number; supply and demand; the OSI model; Earth's seasons (an
+     orbit with tilt); and the cross product. Each should pick a sensible form.
 4. **Tests.** Copy the pattern of `tests/test_sketch.py`:
    - parse_model refusing bad input;
    - every shape building triangles;
