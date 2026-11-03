@@ -5,7 +5,21 @@ laptop with Clixy dev running, so every change can be looked at live.
 
 ## 1. The notch: professional, blue, less rounded (Rayan's brief)
 
-**The approved design is `docs/plans/blue-notch-design.png`**, drawn by
+**Rayan's latest note on the design: "not liking that bubble, it looks too kiddish,
+make it really clean."** So drop the rounded cyan pill with dots everywhere:
+- **Listening:** use a minimal waveform on the right instead. Five to seven thin
+  vertical bars, 2 px wide, rounded ends, 3 px apart, white at about 85% (the
+  middle ones a touch of cyan). Their heights follow the voice level; no glow, no
+  container.
+- **Resting:** three short, still bars, or nothing.
+- **Thinking:** the bars sit low and a soft brightness passes across them.
+- **The spark glyph:** keep it small and flat (no gradient blob), or use a simple
+  monochrome Clixy wordmark instead.
+
+Everything else in the design stands (navy-black, radius 10, the word centred,
+the pointer cursor). Show Rayan a render before calling it done.
+
+The base design is `docs/plans/blue-notch-design.png`, drawn by
 `docs/plans/blue-notch-mock.py`. Copy its colours, sizes and shapes into
 `island.py`: the Clixy spark glyph, the cyan → blue pill, the navy-black gradient
 with a blue edge line, radius 10, and the new pointer cursor.
