@@ -86,6 +86,7 @@ Settings are saved (ClickyApp.apply_live_settings), never per question."""
 # --- Constants + sentence splitter --------------------------------------------
 
 _SENTENCE_END_RE = re.compile(r"[.!?]\s")
+_CLAUSE_END_RE = re.compile(r"[,;:]\s")
 _STRAY_POINT_RE = re.compile(r"\[\s*POINT\b[^\]]*\]?", re.IGNORECASE)
 
 _MAX_HISTORY_EXCHANGES = 10
@@ -97,18 +98,27 @@ not trigger a re-capture. 150px = ~3cm on a 200% DPI laptop display,
 still 'target hover' intent, not 'user repositioned intentionally'."""
 
 
-def flush_sentences(buffer: str) -> tuple[list[str], str]:
+def flush_sentences(buffer: str, clause: bool = False) -> tuple[list[str], str]:
     """Split buffer into complete sentences and leftover.
 
     Returns (list_of_complete_sentences, remaining_buffer).
     Splits on .!? followed by whitespace. The system prompt tells the model
     to avoid abbreviations like 'e.g.' so false splits are rare.
+    With ``clause`` (nothing spoken yet), a first sentence still being written
+    is cut at its first comma, semicolon or colon after four words, so the
+    voice starts on a short phrase instead of waiting for the whole sentence.
     """
     sentences: list[str] = []
     while (m := _SENTENCE_END_RE.search(buffer)):
         end = m.end()
         sentences.append(buffer[:end].strip())
         buffer = buffer[end:]
+    if clause and not sentences:
+        for m in _CLAUSE_END_RE.finditer(buffer):
+            if len(buffer[:m.start()].split()) >= 4:
+                sentences.append(buffer[:m.end()].strip())
+                buffer = buffer[m.end():]
+                break
     return sentences, buffer
 
 
@@ -1300,7 +1310,7 @@ class ClickyApp(QObject):
                     if any(mark in sentence_buffer for mark in "[{`"):
                         tag_started = True
                     if not tag_started:
-                        sentences, sentence_buffer = flush_sentences(sentence_buffer)
+                        sentences, sentence_buffer = flush_sentences(sentence_buffer, clause=not flushed)
                         for s in sentences:
                             if cancel.is_set():
                                 return

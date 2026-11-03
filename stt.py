@@ -29,6 +29,7 @@ Top-to-bottom order (so ``python -m stt`` works):
 """
 from __future__ import annotations
 
+import os
 import queue
 import threading
 import time
@@ -1022,6 +1023,21 @@ class _CartesiaSession:
 _MODEL_WAIT_S = 300.0
 """How long a question waits for the speech model on its first download."""
 
+def _add_cuda_dll_dirs() -> None:
+    """Let CTranslate2 find cuBLAS and cuDNN from NVIDIA's pip wheels
+    (nvidia-cublas-cu12, nvidia-cudnn-cu12) when they're installed."""
+    try:
+        import nvidia  # namespace package from the wheels
+    except ImportError:
+        return
+    for base in getattr(nvidia, "__path__", []):
+        for lib in ("cublas", "cudnn"):
+            path = os.path.join(base, lib, "bin")
+            if os.path.isdir(path) and path not in os.environ.get("PATH", ""):
+                os.add_dll_directory(path)
+                os.environ["PATH"] = path + os.pathsep + os.environ.get("PATH", "")
+
+
 class FasterWhisperSTT(STT):
     """Local offline STT via faster-whisper (CTranslate2 Whisper).
 
@@ -1068,9 +1084,22 @@ class FasterWhisperSTT(STT):
         self._model_error: Exception | None = None
 
     def _default_model_factory(self):
+        """On an NVIDIA GPU when one works ("auto" or "cuda"): about 0.1 s per
+        question instead of about 0.9 s on the CPU. "auto" falls back to the
+        CPU when CUDA's libraries are missing; a short warm-up run proves it."""
         from faster_whisper import WhisperModel  # lazy import
+        if self._device in ("auto", "cuda"):
+            try:
+                _add_cuda_dll_dirs()
+                import numpy as np
+                model = WhisperModel(self._model_size, device="cuda", compute_type="float16")
+                list(model.transcribe(np.zeros(8000, dtype=np.float32), language="en", beam_size=1)[0])
+                return model
+            except Exception:
+                if self._device == "cuda":
+                    raise
         return WhisperModel(
-            self._model_size, device=self._device, compute_type=self._compute_type
+            self._model_size, device="cpu", compute_type=self._compute_type
         )
 
     def _default_audio_stream_factory(self, callback):

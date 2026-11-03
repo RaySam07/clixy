@@ -402,9 +402,10 @@ FASTER_WHISPER_MODEL: str = os.getenv(
 but slower. Local offline STT needs no API key."""
 
 FASTER_WHISPER_DEVICE: str = os.getenv(
-    "FASTER_WHISPER_DEVICE", resolve_setting("FASTER_WHISPER_DEVICE", "cpu")
+    "FASTER_WHISPER_DEVICE", resolve_setting("FASTER_WHISPER_DEVICE", "auto")
 )
-"""'cpu' (portable default) or 'cuda' if the user has an NVIDIA GPU."""
+"""'auto' (default: an NVIDIA GPU when CUDA's libraries load, else the CPU),
+'cuda' or 'cpu'."""
 
 FASTER_WHISPER_COMPUTE: str = os.getenv(
     "FASTER_WHISPER_COMPUTE", resolve_setting("FASTER_WHISPER_COMPUTE", "int8")
