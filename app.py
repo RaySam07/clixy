@@ -2038,7 +2038,7 @@ def _resolve_llm_credentials() -> tuple[str, str]:
     ant_key = resolve_api_key("ANTHROPIC_API_KEY") or _openrouter_key()
     if os.getenv("MODEL_ID"):
         return MODEL_ID, ant_key
-    ant_model = resolve_model("ANTHROPIC_MODEL", "claude-sonnet-5-5")
+    ant_model = resolve_model("ANTHROPIC_MODEL", "claude-haiku-5-5")
     return f"anthropic/{ant_model}", ant_key
 
 

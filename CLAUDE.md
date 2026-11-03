@@ -38,7 +38,8 @@ Clixy is Rayan Sameer's Windows AI buddy (PyQt6). This folder is the local dev c
   date, weather (Open-Meteo, city from Settings or the timetable's time zone) and today's
   classes from an iCal timetable (link or .ics file in Settings > General), on frosted glass.
   Rayan's timetable is a University of Birmingham Dubai MyTimetable export; never commit it.
-- Brain: answers on Claude Sonnet 5.5 (thinking off for a fast first word); guide steps and
+- Brain: answers on Claude Haiku 5.5 (thinking off, about twice as fast to the first word as
+  Sonnet; Rayan chose this 4 Nov 2026); guide steps and
   sketch notes on Sonnet 5.5 with low-effort adaptive thinking (`ai.thinking_variant`).
   `apps.py` opens apps, sites and ms-settings pages ([OPEN:...]).
 - Sketch notes (`sketch.py`): any learning question gets a hand-drawn note card (graphs,
