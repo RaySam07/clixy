@@ -1,9 +1,12 @@
 @echo off
 rem Clixy dev: runs Clixy from this folder and restarts it by itself whenever the
 rem code changes (devmode.py). Double-click to start. The first run sets up a
-rem private Python environment in .venv (a few minutes, about 1 GB).
+rem private Python environment (a few minutes, about 1 GB) in a short folder,
+rem %USERPROFILE%\.venvs\clixy: Windows' 260-character path limit breaks PyQt6
+rem when it sits under a long project path. Set CLIXY_VENV to put it elsewhere.
 setlocal
 cd /d "%~dp0..\.."
+if not defined CLIXY_VENV set "CLIXY_VENV=%USERPROFILE%\.venvs\clixy"
 
 where py >nul 2>nul
 if errorlevel 1 (
@@ -13,26 +16,26 @@ if errorlevel 1 (
   exit /b 1
 )
 
-if not exist ".venv\Scripts\python.exe" (
+if not exist "%CLIXY_VENV%\Scripts\python.exe" (
   echo Setting up Clixy dev for the first time...
-  py -3.13 -m venv .venv 2>nul || py -3 -m venv .venv
-  if errorlevel 1 ( echo Couldn't create .venv. & pause & exit /b 1 )
+  py -3.13 -m venv "%CLIXY_VENV%" 2>nul || py -3 -m venv "%CLIXY_VENV%"
+  if errorlevel 1 ( echo Couldn't create %CLIXY_VENV%. & pause & exit /b 1 )
 )
 
 rem Install packages on the first run and whenever requirements.txt changes.
-fc /b requirements.txt .venv\requirements.installed >nul 2>nul
+fc /b requirements.txt "%CLIXY_VENV%\requirements.installed" >nul 2>nul
 if errorlevel 1 (
   echo Installing what Clixy needs...
-  ".venv\Scripts\python.exe" -m pip install --upgrade pip
-  ".venv\Scripts\python.exe" -m pip install -r requirements.txt
+  "%CLIXY_VENV%\Scripts\python.exe" -m pip install --upgrade pip
+  "%CLIXY_VENV%\Scripts\python.exe" -m pip install -r requirements.txt
   if errorlevel 1 ( echo Installing failed; see the messages above. & pause & exit /b 1 )
-  copy /y requirements.txt .venv\requirements.installed >nul
+  copy /y requirements.txt "%CLIXY_VENV%\requirements.installed" >nul
 )
 
 rem Only one Clixy runs at a time: close the installed one first.
 taskkill /im Clixy.exe /f >nul 2>nul
 
 set CLIXY_DEV=1
-start "Clixy dev" ".venv\Scripts\pythonw.exe" app.py
+start "Clixy dev" "%CLIXY_VENV%\Scripts\pythonw.exe" app.py
 echo Clixy dev is running. Look for your buddy in the tray.
 timeout /t 3 >nul

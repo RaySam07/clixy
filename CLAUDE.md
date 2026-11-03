@@ -13,7 +13,12 @@ Clixy is Rayan Sameer's Windows AI buddy (PyQt6). This folder is the local dev c
 - `tools\dev\Start-Clixy-Dev.bat` runs Clixy from this folder in dev mode. It restarts by
   itself within a couple of seconds whenever a watched file changes (`devmode.py`). A
   file that doesn't compile shows in the island instead.
-- Tests: `.venv\Scripts\python -m pytest tests -q`.
+- The Python environment is `%USERPROFILE%\.venvs\clixy`, not `.venv`: Windows' 260-character
+  path limit is on and breaks PyQt6 under a long project path.
+- Tests: `%USERPROFILE%\.venvs\clixy\Scripts\python -m pytest tests -q`.
+- When Rayan asks for a new zip: `tools\dev\Make-Clixy-Zip.bat` builds Clixy.exe and saves
+  `Downloads\Clixy-<date>-<letter>.zip`; `--install` also replaces the installed app in
+  `%LOCALAPPDATA%\Programs\Clixy` (only when he asks to install).
 
 ## What's next
 - **Start here: `docs/plans/next-ui.md`.** In order:
