@@ -533,7 +533,9 @@ class AnthropicClient(AIClient):
         api_key: str,
         model_id: str,
         base_url: str | None = None,
+        effort: str | None = None,
     ) -> None:
+        self._api_key, self._base_url = api_key, base_url
         self._http = AnthropicHttpxClient()
         kwargs: dict = {"api_key": api_key, "timeout": 60.0, "http_client": self._http}
         if base_url is not None:
@@ -544,6 +546,11 @@ class AnthropicClient(AIClient):
         via_openrouter = bool(base_url) and "openrouter.ai" in base_url
         self.model_id = model_id if via_openrouter else model_id.removeprefix("anthropic/")
         self._thinking = _ANTHROPIC_THINKING.get(_bare_model(model_id).replace(".", "-"))
+        # A thinking client (guide steps, sketches) plans before it answers:
+        # adaptive thinking at this effort, instead of thinking turned off.
+        self.effort = effort
+        if effort:
+            self._thinking = None
 
     def warm(self) -> None:
         _warm(self._http, self.client.base_url)
@@ -632,6 +639,8 @@ class AnthropicClient(AIClient):
             })
 
         extra = {"thinking": self._thinking} if self._thinking else {}
+        if self.effort:
+            extra["extra_body"] = {"output_config": {"effort": self.effort}}
         sdk_stream_mgr = self.client.messages.stream(
             model=self.model_id,
             max_tokens=max_tokens,
@@ -1323,6 +1332,23 @@ def _provider_base_url(
     if api_key and api_key.startswith("sk-or-"):
         return openrouter_url
     return native_url
+
+
+SMART_CLAUDE = "claude-sonnet-5-5"
+"""The model that plans guide steps and draws sketches when Claude is the provider."""
+
+
+def thinking_variant(client: AIClient, effort: str = "low") -> AIClient:
+    """A copy of ``client`` that thinks a little before answering, on Claude
+    Sonnet 5.5: for work that needs planning (a route through Settings, a
+    diagram). Other providers keep their own client."""
+    if not isinstance(client, AnthropicClient):
+        return client
+    slug = client.model_id.startswith("anthropic/")
+    via_openrouter = bool(client._base_url) and "openrouter.ai" in client._base_url
+    # Effort is a Claude API field; through OpenRouter, Sonnet answers without the extra thinking.
+    return AnthropicClient(api_key=client._api_key, model_id=("anthropic/" if slug else "") + SMART_CLAUDE,
+                           base_url=client._base_url, effort=None if via_openrouter else effort)
 
 
 def create_ai_client(

@@ -39,29 +39,39 @@ def wants_guide(question: str) -> bool:
 
 
 SYSTEM_PROMPT = """\
-you're clixy, guiding the user through a task on their windows computer one step at a time, like a friend sitting beside them. you see their screen as it is right now. you're told the goal, what they've done so far, what this computer is, and the clickable things windows itself lists on screen, each with an id and its box.
+you're clixy, guiding the user through a task on their windows computer one step at a time, like a friend sitting beside them who knows windows inside out. you see their screen as it is right now. you're told the goal, what's been done so far, what this computer is, its installed apps, and the clickable things windows itself lists on screen, each with an id and its box.
+
+before you answer, think about the goal and the screen: what is the shortest real route from here, on windows 11 or 10 as this computer runs it? never invent a menu, button or setting that isn't on screen or that doesn't exist in this version of windows. if you're unsure where something lives, open the settings page or app that certainly has it, then look.
 
 reply with the single next step only:
-- one short spoken sentence saying what to do, all lowercase, casual and warm. it's read aloud: no lists, no markdown, no symbols.
+- one or two short spoken sentences, warm and natural, like you're sitting next to them: say what to do and, in a few words, why. all lowercase. it's read aloud: no lists, no markdown, no symbols, no ids or coordinates.
 - then exactly one action tag:
-  [CLICK:#id:label] click that element from the list. always prefer this: it's exact. read the names carefully and pick the one that matches.
-  [KEYS:win+p:label] press these keys together. use it whenever a shortcut is the quickest way or nothing on screen leads there yet: win+p projects to another screen or projector, win+i opens settings, win+a quick settings, win+e file explorer, win+shift+s a screenshot, win+k cast to a wireless display.
-  [TYPE:#id:text] type this into that field.
+  [OPEN:ms-settings:display] or [OPEN:app name] or [OPEN:https://site.com] you open it for them, straight away. the best first step whenever a settings page, an app or a website gets there directly: it skips clicking through menus.
+  [CLICK:#id:label] they click that element from the list. read the names carefully and pick the one that matches; prefer it to a box, it's exact.
+  [KEYS:win+p:label] they press these keys together, when a shortcut is the quickest way: win+p projects to another screen or projector, win+k casts to a wireless display, win+a quick settings, win+shift+s a screenshot, win+v clipboard history, win+. emoji.
+  [TYPE:#id:text] they type this into that field.
   [BOX:x1,y1,x2,y2:label] only when what they need isn't in the list: its box in screenshot pixels, hugging it tightly.
 - then [STEP:n/total]: this step's number and your best guess at the total.
 
-when the goal is reached on screen, say so in one short sentence and add [DONE].
+when the goal is reached on screen, say so in one short, happy sentence and add [DONE].
 if the goal isn't something to do on this computer (a general question), answer it fully, the way a sharp expert would, in natural speech, then [DONE].
 if the last step didn't do what you expected, say so kindly and give the step that fixes it.
-never refuse to show the way and never say you can't draw or point: there is always a key to press or a thing to click. never click or type for them; they do each step and you see the result.
-you know windows 11 and 10 inside out: settings, quick settings, the start menu, the taskbar, file explorer and common apps.
+never refuse and never say you can't draw or point: there is always something to open, a key to press or a thing to click. apart from opening things, never click or type for them; they do each step and you see the result.
 
 examples:
-- goal "project my laptop to the projector", nothing done yet: "press the windows key and p together to open the project menu. [KEYS:win+p:project menu][STEP:1/2]"
-- then the list has #4 button "Duplicate": "pick duplicate so the projector shows the same thing as your laptop. [CLICK:#4:duplicate][STEP:2/2]"
-- then: "that's it, the projector is showing your screen. [DONE]"
-- goal "turn on dark mode", the list has #12 list item "Personalization": "open personalization on the left. [CLICK:#12:personalization][STEP:2/4]"\
+- goal "project my laptop to the projector", nothing done yet: "press the windows key and p together, that opens the project menu. [KEYS:win+p:project menu][STEP:1/2]"
+- then the list has #4 button "Duplicate": "pick duplicate, so the projector shows exactly what's on your laptop. [CLICK:#4:duplicate][STEP:2/2]"
+- then: "that's it, you're projecting. [DONE]"
+- goal "turn on dark mode", nothing done yet: "let's go straight to your colour settings, i'll open them for you. [OPEN:ms-settings:personalization-colors][STEP:1/2]"
+- then the list has #9 dropdown "Choose your mode": "open choose your mode and pick dark. [CLICK:#9:choose your mode][STEP:2/2]"
+- goal "open spotify and play my liked songs": "opening spotify for you. [OPEN:spotify][STEP:1/3]"\
 """
+
+
+def system_prompt() -> str:
+    """The guide's instructions, with the Settings pages and this PC's apps."""
+    import apps
+    return SYSTEM_PROMPT + apps.prompt_block()
 
 _CLICK_RE = re.compile(r"\[\s*CLICK\s*:\s*#?\s*(\d+)\s*(?::([^\]]*))?\]", re.IGNORECASE)
 _TYPE_RE = re.compile(r"\[\s*TYPE\s*:\s*#?\s*(\d+)\s*:([^\]]*)\]", re.IGNORECASE)
@@ -76,12 +86,12 @@ _STRAY_TAG_RE = re.compile(r"\[\s*[A-Za-z_]+\s*:[^\]]*(?:\]|$)", re.DOTALL)
 class Step:
     """One step as the model gave it."""
     say: str
-    action: str = "none"        # click, keys, type, box, or none
+    action: str = "none"        # open, click, keys, type, box, or none
     target: int | None = None   # element id, for click and type
     keys: str = ""
     box: Box | None = None      # screenshot px, when nothing in the list fits
     label: str = ""
-    text: str = ""              # what to type
+    text: str = ""              # what to type, or what to open
     n: int = 0
     total: int = 0
     done: bool = False
@@ -94,7 +104,11 @@ def parse_step(reply: str) -> Step:
     if m := _STEP_RE.search(text):
         step.n, step.total = int(m.group(1)), int(m.group(2) or 0)
     step.done = bool(_DONE_RE.search(text))
-    if m := _CLICK_RE.search(text):
+    import apps
+    text, opens = apps.parse_open(text)
+    if opens:
+        step.action, step.text = "open", opens[0]
+    elif m := _CLICK_RE.search(text):
         step.action, step.target, step.label = "click", int(m.group(1)), (m.group(2) or "").strip()
     elif m := _TYPE_RE.search(text):
         step.action, step.target, step.text = "type", int(m.group(1)), m.group(2).strip()
@@ -272,6 +286,7 @@ class Guide:
     watch: object = field(default_factory=InputWatch)
     about: str = ""
     refine: object = None            # snap.refine, for BOX steps
+    open: object = None              # apps.open_target, for OPEN steps
     dbg: object = None
     clock: object = time.monotonic
     sleep: object = time.sleep
@@ -312,6 +327,15 @@ class Guide:
                 if step.say:
                     self.say(step.say, n, total, (target, capture.monitor) if target else None)
                     last = step.say
+                if step.action == "open" and not step.done:
+                    opened = self._open(step.text)
+                    if not opened:
+                        fix = f"{step.text} couldn't be opened on this computer. find another way."
+                    done.append(f"clixy opened {opened or step.text}" + ("" if opened else " (it failed)"))
+                    self.sleep(1.6)  # let it open before looking again
+                    fresh = self.capture()
+                    capture = fresh if fresh is not None else capture
+                    continue
                 if step.done or not marks:
                     return last
                 self.watch.drain()
@@ -328,6 +352,14 @@ class Guide:
             return last
         finally:
             self.watch.stop()
+
+    def _open(self, target: str) -> str:
+        if self.open is None:
+            return ""
+        try:
+            return self.open(target) or ""
+        except Exception:
+            return ""
 
     def _prompt(self, goal: str, done: list[str], lines: list[str], fix: str) -> str:
         parts = [f'goal: "{goal.strip()}"']

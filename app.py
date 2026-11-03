@@ -30,11 +30,13 @@ from ctypes import wintypes
 from PyQt6.QtCore import QObject, pyqtSignal
 from PyQt6.QtWidgets import QApplication
 
+import apps
 import guide
 import kb
 import sysinfo
 from ai import (
     _CLICKY_ANNOTATION_SYSTEM_PROMPT,
+    _CLICKY_SYSTEM_PROMPT,
     OllamaClient,
     create_ai_client,
 )
@@ -83,6 +85,7 @@ Settings are saved (ClickyApp.apply_live_settings), never per question."""
 # --- Constants + sentence splitter --------------------------------------------
 
 _SENTENCE_END_RE = re.compile(r"[.!?]\s")
+_STRAY_POINT_RE = re.compile(r"\[\s*POINT\b[^\]]*\]?", re.IGNORECASE)
 
 _MAX_HISTORY_EXCHANGES = 10
 
@@ -511,6 +514,13 @@ class ClickyApp(QObject):
                 ollama_host=OLLAMA_HOST,
             )
         self._ai = ai_client
+        # Planning work (guide steps, sketches) goes to a client that thinks a
+        # little first: Claude Sonnet 5.5 at low effort when Claude is the provider.
+        from ai import thinking_variant
+        try:
+            self._smart_ai = thinking_variant(ai_client)
+        except Exception:
+            self._smart_ai = ai_client
 
         # GPT-Realtime speech-to-speech mode, selected via
         # LLM_PROVIDER='openai-realtime'. This is a PARALLEL pipeline: when
@@ -586,6 +596,7 @@ class ClickyApp(QObject):
         if getattr(self._overlay, "island", None) is not None:
             from island import model_label
             self._overlay.island.model_name = model_label(getattr(self._ai, "model_id", "") or "")
+        apps.load_in_background()  # which apps this PC has, for "open spotify"
         if self._hotkey is None:
             self._hotkey = PushToTalkHotkey(
                 on_press=lambda: self.sig_pressed.emit(),
@@ -1255,6 +1266,10 @@ class ClickyApp(QObject):
             )
             if annotation_mode:
                 _ask_kwargs["system_prompt"] = _CLICKY_ANNOTATION_SYSTEM_PROMPT
+            if type(self._ai).__name__ != "OllamaClient":  # its box prompt is matched by identity
+                # It can open apps, websites and Settings pages, and knows this PC's apps.
+                _ask_kwargs["system_prompt"] = (
+                    _ask_kwargs.get("system_prompt", _CLICKY_SYSTEM_PROMPT) + apps.prompt_block())
 
             stage = "AI"
             with self._ai.ask_stream(**_ask_kwargs) as stream:
@@ -1299,14 +1314,26 @@ class ClickyApp(QObject):
             # Parse + strip them here so TTS never reads coordinates aloud, and
             # map their screenshot coords to physical for the overlay.
             spoken_text = result.spoken_text
+            # "Open Spotify", "go to youtube", "take me to display settings": open it.
+            spoken_text, to_open = apps.parse_open(spoken_text)
+            spoken_text = _STRAY_POINT_RE.sub("", spoken_text).strip()
+            for target in to_open[:1]:
+                try:
+                    opened = apps.open_target(target)
+                except Exception as exc:
+                    opened = ""
+                    dbg.log(f"OPEN: {target!r} failed: {type(exc).__name__}: {exc}")
+                dbg.log(f"OPEN: {target!r} -> {opened!r}")
+                if not opened:
+                    self.sig_island_note.emit(f"I couldn't find {target} on this PC.")
             phys_annotations: list = []
             _anns: list = []
-            if annotation_mode and result.spoken_text:
+            if annotation_mode and spoken_text:
                 # Strip FIRST, outside the try: parse_annotations is pure regex
                 # and cannot raise, so spoken_text is ALWAYS tag-stripped before
                 # the tail flush (coords never reach TTS even if the coordinate
                 # transform below fails). Only the physical transform is guarded.
-                spoken_text, _anns = parse_annotations(result.spoken_text)
+                spoken_text, _anns = parse_annotations(spoken_text)
 
             # Flush the tail (everything in spoken_text that hasn't yet been
             # sent to TTS). Uses the tag-stripped spoken_text so the
@@ -1546,8 +1573,8 @@ class ClickyApp(QObject):
         dbg.log(f"GUIDE: {goal!r}")
 
         def ask(cap, text: str) -> str:
-            with self._ai.ask_stream(images=[(cap.image, cap.label)], transcript=text, history=[],
-                                     system_prompt=guide.SYSTEM_PROMPT) as stream:
+            with self._smart_ai.ask_stream(images=[(cap.image, cap.label)], transcript=text, history=[],
+                                           system_prompt=guide.system_prompt()) as stream:
                 return "".join(stream.text_deltas())
 
         def fresh_capture():
@@ -1575,6 +1602,7 @@ class ClickyApp(QObject):
             foreground=snap.foreground,
             about=sysinfo.profile(),
             refine=snap.refine,
+            open=apps.open_target,
             dbg=dbg,
         )
         last = session.run(goal, capture)
@@ -1948,7 +1976,7 @@ def _resolve_llm_credentials() -> tuple[str, str]:
     ant_key = resolve_api_key("ANTHROPIC_API_KEY") or _openrouter_key()
     if os.getenv("MODEL_ID"):
         return MODEL_ID, ant_key
-    ant_model = resolve_model("ANTHROPIC_MODEL", "claude-haiku-5-5")
+    ant_model = resolve_model("ANTHROPIC_MODEL", "claude-sonnet-5-5")
     return f"anthropic/{ant_model}", ant_key
 
 

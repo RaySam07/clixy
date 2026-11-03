@@ -1185,7 +1185,7 @@ class TestResolveLLMCredentials:
         self._saved_keys(mocker, ANTHROPIC_API_KEY="sk-ant-test")
 
         model_id, api_key = _resolve_llm_credentials()
-        assert model_id == "anthropic/claude-haiku-5-5"
+        assert model_id == "anthropic/claude-sonnet-5-5"
         assert api_key == "sk-ant-test"
 
     def test_routes_to_ollama_when_provider_is_ollama(self, mocker):
@@ -1294,7 +1294,7 @@ class TestResolveLLMCredentials:
 
         model_id, api_key = _resolve_llm_credentials()
         # Falls back to anthropic with the default model; doesn't raise.
-        assert model_id == "anthropic/claude-haiku-5-5"
+        assert model_id == "anthropic/claude-sonnet-5-5"
         assert api_key == "sk-ant-test"
 
 

@@ -142,7 +142,7 @@ Claude models use the Anthropic SDK against https://openrouter.ai/api."""
 
 # ── LLM model ID (routed by prefix via ai.create_ai_client) ─────────────────
 
-MODEL_ID: str = os.getenv("MODEL_ID", "anthropic/claude-haiku-5-5")
+MODEL_ID: str = os.getenv("MODEL_ID", "anthropic/claude-sonnet-5-5")
 """OpenRouter-style model ID. Prefix routes to the right SDK via
 ai.create_ai_client():
     'anthropic/...'  → AnthropicClient (via anthropic SDK, OpenRouter

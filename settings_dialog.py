@@ -721,8 +721,8 @@ class SettingsDialog(QDialog):
             model = self._selected_model_id(self._category("LLM"), provider) or "a local model"
             return html("Ollama", model), "", "free · on this PC", True
         if provider.provider_id == "anthropic":
-            model = resolve_model("ANTHROPIC_MODEL", "claude-haiku-5-5")
-            cost = "< 1¢ a question" if "haiku" in model else ""
+            model = resolve_model("ANTHROPIC_MODEL", "claude-sonnet-5-5")
+            cost = "< 0.1¢ a question" if "haiku" in model else "about 1¢ a question" if "sonnet" in model else ""
             return html("Claude", model_label(model)), key, cost + via, False
         if provider.provider_id == "gemini":
             model = resolve_model("GEMINI_MODEL_VISION", "google/gemini-4-argon")
