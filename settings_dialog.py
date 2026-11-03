@@ -1380,6 +1380,56 @@ class SettingsDialog(QDialog):
         )
         return reply == QMessageBox.StandardButton.Save
 
+    # ---------- For the Clixy panel (panel.py) ---------------------------------
+    # The panel's built-in Settings drives a hidden SettingsDialog, so reading,
+    # checking and saving every setting stays in this one class.
+
+    def provider_id(self, category_key: str) -> str:
+        """The provider picked now for "LLM", "STT" or "TTS"."""
+        provider = self._selected_provider(category_key)
+        return provider.provider_id if provider is not None else ""
+
+    def set_provider(self, category_key: str, provider_id: str) -> None:
+        """Pick a provider, as the dropdown would (keys, sharing and Save follow)."""
+        dropdown = self._dropdowns[category_key]
+        index = dropdown.findData(provider_id)
+        if index < 0:
+            return
+        if category_key == "LLM":
+            self._llm_chosen = True
+        dropdown.setCurrentIndex(index)
+
+    def key_state(self, category_key: str) -> str:
+        """For a row's key, never the key itself: "none" (the provider needs no
+        key), "shared" (another row's key covers it), "set" or "missing"."""
+        provider = self._selected_provider(category_key)
+        if provider is None or provider.hide_key_field:
+            return "none"
+        if self._shares_key(category_key):
+            return "shared"
+        return "set" if self._key_inputs[category_key].text().strip() else "missing"
+
+    def set_key(self, category_key: str, text: str) -> None:
+        """A key typed for the row's provider (a pasted key may move the AI row
+        to the provider it belongs to, as in the dialog)."""
+        self._key_inputs[category_key].setText(text.strip())
+
+    def save_blocker(self) -> str:
+        """Why Save can't go ahead yet ("" when it can)."""
+        save = self._buttons.button(QDialogButtonBox.StandardButton.Save)
+        return "" if save.isEnabled() else (self._save_hint.text() or "A key is missing.")
+
+    def save(self) -> bool:
+        """Save everything, as the dialog's Save button does. True once saved."""
+        if self.save_blocker():
+            return False
+        self._on_save()
+        return self.result() == QDialog.DialogCode.Accepted
+
+    def cancel(self) -> None:
+        """Leave without saving (puts back a buddy previewed here)."""
+        self.reject()
+
 
 def required_keys_present() -> bool:
     """Probe: does every required-provider's API key resolve?

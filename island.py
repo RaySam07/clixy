@@ -15,8 +15,10 @@ At the top:
   plays. The answer is only ever heard, never shown.
 - A notice (an error, "I didn't catch that") in a line or two, then it
   tucks away. A guide step shows only "Step 2 of 3".
-- Rest the mouse on it and it drops down your dashboard: a hello, the
-  time, the date and the weather (see dashboard.py).
+- Rest the mouse on it and it shows the keys to hold; click it and the
+  Clixy panel grows out of it (panel.py): your newest sketch note, a box to
+  type a question, and a guide's steps while one runs. (The older hover
+  dashboard, dashboard.py, is still here behind ``dashboard = True``.)
 
 On a side edge the same black tab grows out of the edge: a sliver at rest,
 a tall capsule with the light and a waveform while listening, and a short
@@ -24,8 +26,10 @@ tab for hello, notices and guide steps.
 
 Size follows a spring, so every change of state is one fluid motion; words
 fade in once the shape is nearly there. Like the overlay it is
-click-through, never takes focus, and hides while the screen is captured
-so the model never sees it.
+click-through (except the shape itself while the mouse is on it, so a
+click there opens the panel instead of landing in the window below), never
+takes focus, and hides while the screen is captured so the model never
+sees it.
 
 Threading: Qt main thread only; app.py reaches it through the overlay
 controller's island_* methods via pyqtSignal slots.
@@ -34,6 +38,7 @@ from __future__ import annotations
 
 import datetime
 import math
+import sys
 import time
 
 from PyQt6.QtCore import QPointF, QRect, QRectF, Qt, QTimer
@@ -62,7 +67,7 @@ class SideIsland(QWidget):
     # At the top of the screen, like a laptop's notch.
     NOTCH = (150.0, 24.0)
     HELLO = (196.0, 36.0)
-    HINT = (262.0, 36.0)
+    HINT = (292.0, 36.0)
     PILL = (204.0, 40.0)
     DASH_W = 440.0
     NOTE_W = 380.0               # the widest a notice gets
@@ -122,10 +127,21 @@ class SideIsland(QWidget):
         """The keys to hold, as shown when it greets you, e.g. 'Ctrl + Win'."""
         self.name = _first_name()
         """Who it says hello to ("Rayan"); empty says "Hey there!"."""
-        self.dashboard = True
-        """Resting the mouse on the top notch shows the dashboard (else just the keys)."""
-        if self.side == "top":
+        self.dashboard = False
+        """Resting the mouse on the top notch shows the dashboard (else just the
+        keys). Off: a click opens the Clixy panel, the main surface now."""
+        if self.side == "top" and self.dashboard:
             _refresh_dashboard()  # ready for the first time you rest on it
+        self.panel = None
+        """The Clixy panel (panel.py), made the first time you click the notch."""
+        self.on_ask = None
+        """app.py: called with a question typed in the panel (ClickyApp.ask_text)."""
+        self.on_settings = None
+        """app.py: opens the Settings window (if the panel's own Settings can't open)."""
+        self.on_settings_saved = None
+        """app.py: called with restart_needed after Done in the panel's Settings."""
+        self._catching = False
+        self._was_down = False
         self._t0 = time.monotonic()
         self._hello_until = self._t0 + self._HELLO_S
         self._greeted_on = datetime.date.today()
@@ -179,18 +195,103 @@ class SideIsland(QWidget):
         self.resize(*(self._TOP_WIN if self.side == "top" else (self._WIN_W, self._WIN_H)))
 
     def _apply_clickthrough(self) -> None:
+        self._catching = False
         try:
             from overlay import apply_clickthrough_styles
             apply_clickthrough_styles(int(self.winId()))
         except Exception:
             pass  # not on Windows (tests, previews)
 
+    def _set_catching(self, on: bool) -> None:
+        """Take clicks (``on``) or let them through to the window below."""
+        if on == self._catching:
+            return
+        self._catching = on
+        if sys.platform != "win32":
+            return
+        try:
+            import ctypes
+            user32 = ctypes.windll.user32
+            hwnd = int(self.winId())
+            style = user32.GetWindowLongW(hwnd, -20)          # GWL_EXSTYLE
+            user32.SetWindowLongW(hwnd, -20, (style & ~0x20) if on else (style | 0x20))  # WS_EX_TRANSPARENT
+        except Exception:
+            pass
+
     def hide_for_capture(self) -> None:
         self.hide()
+        if self.panel is not None:
+            self.panel.hide_for_capture()
 
     def show_after_capture(self) -> None:
         self.show()
         self._apply_clickthrough()
+        if self.panel is not None:
+            self.panel.show_after_capture()
+
+    # --- The Clixy panel -----------------------------------------------------
+
+    def _on_shape(self) -> bool:
+        geo = self.geometry()
+        box = self._shape_path().boundingRect().translated(geo.x(), geo.y()).adjusted(-2, -2, 2, 4)
+        return box.contains(QPointF(QCursor.pos()))
+
+    def _watch_click(self) -> None:
+        """A click on the shape opens the Clixy panel. While the mouse is on
+        it the island takes clicks, so the click never lands in the window
+        under the notch; everywhere else it stays click-through."""
+        panel_open = self.panel is not None and self.panel.isVisible()
+        if not self.isVisible() or panel_open or self._state in ("listening", "thinking"):
+            self._set_catching(False)
+            self._was_down = _left_down()
+            return
+        on = self._on_shape()
+        self._set_catching(on)
+        down = _left_down()
+        if on and down and not self._was_down:
+            self.open_panel()
+        self._was_down = down
+
+    def _status_word(self) -> str:
+        if self._state == "listening":
+            return "Listening"
+        if self._state == "thinking":
+            return "Thinking"
+        if self._state == "answer":
+            return "Guiding" if self._step else "Speaking"
+        return "Ready"
+
+    def open_panel(self, focus_ask: bool = False) -> None:
+        """Grow the Clixy panel out of the notch (top centre, whichever edge
+        the island lives on)."""
+        try:
+            from panel import ClixyPanel, guide_progress
+        except Exception:
+            return
+        if self.panel is None:
+            self.panel = ClixyPanel()
+            self.panel.status_fn = self._status_word
+            self.panel.guide_fn = guide_progress
+            self.panel.asked.connect(self._panel_ask)
+            self.panel.settings_requested.connect(self._panel_settings)
+            self.panel.settings_saved.connect(self._panel_settings_saved)
+            self.panel.stopped.connect(self._collapse)
+        self.panel.hotkey = self.hotkey
+        self.panel.name = self.name
+        self._near, self._near_until, self._hover_since = False, 0.0, None
+        self.panel.open_on(self._screen or self.screen(), focus_ask=focus_ask)
+
+    def _panel_ask(self, question: str) -> None:
+        if callable(self.on_ask):
+            self.on_ask(question)
+
+    def _panel_settings(self) -> None:
+        if callable(self.on_settings):
+            self.on_settings()
+
+    def _panel_settings_saved(self, restart: bool) -> None:
+        if callable(self.on_settings_saved):
+            self.on_settings_saved(restart)
 
     # --- States --------------------------------------------------------------
 
@@ -453,6 +554,7 @@ class SideIsland(QWidget):
         frames = max(1, min(4, round((now - self._last_tick) * 60)))
         self._last_tick = now
         self._update_near()
+        self._watch_click()
         if self.top and self._state == "idle" and datetime.date.today() != self._greeted_on:
             self._greeted_on = datetime.date.today()  # first time each day: say hello again
             self._hello_until = now + self._HELLO_S
@@ -653,7 +755,7 @@ class SideIsland(QWidget):
             painter.setFont(theme.ui_font(9.0, QFont.Weight.Medium))
             painter.setPen(theme.NOTCH_MUTED)
             painter.drawText(QRectF(x + 8, cy - 9.0, max(0.0, rect.right() - x - 48), 18),
-                             Qt.AlignmentFlag.AlignVCenter, "hold to ask")
+                             Qt.AlignmentFlag.AlignVCenter, "hold to ask, or click")
         painter.restore()
 
     def _paint_pill(self, painter: QPainter, rect: QRectF, t: float) -> None:
@@ -854,12 +956,19 @@ class SideIsland(QWidget):
 
 # --- The shape and the light -------------------------------------------------------
 
-def tab_path(width: float, depth: float) -> QPainterPath:
+def tab_path(width: float, depth: float, shoulder: float | None = None,
+             radius: float | None = None) -> QPainterPath:
     """A tab hanging from an edge along y = 0, ``width`` long and ``depth``
     deep: its shoulders flare into the edge in a concave curve (reaching a
-    little past 0 and ``width``), its lower corners are gently rounded."""
-    shoulder = max(0.0, min(5.5 + 0.06 * depth, 10.0, depth * 0.45, width * 0.25))
-    radius = max(0.0, min(max(8.0, 0.36 * depth), 22.0, depth - shoulder, width / 2.0))
+    little past 0 and ``width``), its lower corners are gently rounded.
+    ``shoulder`` and ``radius`` override the notch's own proportions (the
+    Clixy panel, panel.py, is the same shape, bigger)."""
+    if shoulder is None:
+        shoulder = max(0.0, min(5.5 + 0.06 * depth, 10.0, depth * 0.45, width * 0.25))
+    if radius is None:
+        radius = max(0.0, min(max(8.0, 0.36 * depth), 22.0, depth - shoulder, width / 2.0))
+    shoulder = max(0.0, min(shoulder, width * 0.25, depth))
+    radius = max(0.0, min(radius, depth - shoulder, width / 2.0))
     k = 0.5523  # a quarter circle, as a cubic
     s, r, w, h = shoulder, radius, width, depth
     path = QPainterPath(QPointF(-s, 0.0))
@@ -1030,6 +1139,17 @@ def _paint_weather_icon(painter: QPainter, c: QPointF, r: float, kind: str) -> N
             for i in range(2):
                 painter.drawLine(QPointF(base.x() - 0.7 * r, below + i * 4), QPointF(base.x() + 0.7 * r, below + i * 4))
     painter.restore()
+
+
+def _left_down() -> bool:
+    """Is the left mouse button down right now (Windows; False elsewhere)?"""
+    if sys.platform != "win32":
+        return False
+    try:
+        import ctypes
+        return bool(ctypes.windll.user32.GetAsyncKeyState(0x01) & 0x8000)
+    except Exception:
+        return False
 
 
 def _first_name() -> str:

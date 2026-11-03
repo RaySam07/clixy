@@ -146,6 +146,7 @@ def test_resting_on_the_notch_opens_the_dashboard(qapp, monkeypatch):
         "weather_at": 0.0, "busy": False, "places": {}})
     notch = SideIsland(side="top")
     try:
+        notch.dashboard = True   # off by default now: a click opens the Clixy panel instead
         notch._hello_until = 0
         notch._near = True
         w, h = notch._target()
