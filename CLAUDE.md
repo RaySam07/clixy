@@ -20,24 +20,29 @@ Clixy is Rayan Sameer's Windows AI buddy (PyQt6). This folder is the local dev c
   `Downloads\Clixy-<date>-<letter>.zip`; `--install` also replaces the installed app in
   `%LOCALAPPDATA%\Programs\Clixy` (only when he asks to install).
 
+## Rayan's design rules (4 Nov 2026)
+- No separate app window: everything lives in the notch and the panel that grows out of it,
+  Settings included. Never show the text of what Clixy says; answers are only spoken.
+- Ember (or the chosen buddy) stays; its colour (`theme.current_palette().flood`) is the one
+  accent: the notch's light, the panel's glossy buttons. No bubble pill, nothing kiddish,
+  no flat grey-on-black "slop"; tactile and warm (paper cards, keycaps, glossy primary).
+- No timetable. Show only real features; leave out anything with no setting behind it.
+
 ## What's next
-- **Start here: `docs/plans/next-ui.md`.** In order:
-  1. A professional blue notch (no orange fire; longer, less rounded).
-  2. The new pointer cursor.
-  3. Done 4 Nov 2026: real 3D on the note card (`scene3d.NoteModel`, numpy + QPainter, no GPU).
-  4. The task-doing brain (ask Rayan which connectors first).
-- `docs/plans/guide-mode.md`: exact marks from Windows UI Automation and guidance one
-  step at a time. Built; verify it on real Windows first (UIA listing in `snap.py`, the
-  pynput input watch in `guide.py`) and fix what doesn't hold up.
-- The island is a notch at the top centre by default (`island.py`, side "top"): resting
-  notch, "Hey <name>!" on start and once a day, a hint only when the mouse rests on it, a
-  listening pill, and the answer as a drop-down card. Left and right edges are still in
-  Settings. The 3D explainers were removed on purpose (too heavy); don't bring them back
-  unless Rayan asks.
-- Resting the mouse on the notch drops down the dashboard (`dashboard.py`): greeting, time,
-  date, weather (Open-Meteo, city from Settings or the timetable's time zone) and today's
-  classes from an iCal timetable (link or .ics file in Settings > General), on frosted glass.
-  Rayan's timetable is a University of Birmingham Dubai MyTimetable export; never commit it.
+- Done 4 Nov 2026: the black notch with a buddy-coloured light (`island.py`), the panel
+  (`panel.py`, `panel_settings.py`), real 3D on the note card (`scene3d.NoteModel`), and
+  smarter guide mode (below). Not yet tried by Rayan with a real click: the panel opening.
+- Next: "Do it for me" (Clixy acting in apps; see the end of `docs/plans/guide-mode.md`),
+  the task-doing brain (ask Rayan which connectors first), a VoiceStudio voice option.
+- Guide mode (`guide.py`, `docs/plans/guide-mode.md`): speaks each step as soon as its
+  sentence is in, waits for windows to settle, sees open windows (`snap.windows`, FOCUS,
+  side by side), uses know-how packs (`knowhow/*.md`, extended by the KB folder) and
+  remembers routes (`memory.RouteBook`). Admin windows like Task Manager hide their
+  controls and Clixy's own hotkey while in front; that limit is real (needs uiAccess).
+- The island (`island.py`, side "top"): a flat black tab with curved shoulders; "Hey <name>!"
+  on start and once a day; Listening / Thinking with the light moving; a hint on hover;
+  click opens the panel (Home, Working while guiding, Settings). Left and right edges are
+  still in Settings. `dashboard.py` is greeting, time, date and weather only.
 - Brain: answers on Claude Haiku 5.5 (thinking off, about twice as fast to the first word as
   Sonnet; Rayan chose this 4 Nov 2026); guide steps and
   sketch notes on Sonnet 5.5 with low-effort adaptive thinking (`ai.thinking_variant`).
