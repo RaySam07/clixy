@@ -5,6 +5,11 @@ laptop with Clixy dev running, so every change can be looked at live.
 
 ## 1. The notch: professional, blue, less rounded (Rayan's brief)
 
+**The approved design is `docs/plans/blue-notch-design.png`**, drawn by
+`docs/plans/blue-notch-mock.py`. Copy its colours, sizes and shapes into
+`island.py`: the Clixy spark glyph, the cyan → blue pill, the navy-black gradient
+with a blue edge line, radius 10, and the new pointer cursor.
+
 Rayan's reference is HeyClicky's notch: a longer black tab that says **Listening**,
 with a glowing pill on the right. He **doesn't want the orange fire** in it.
 
