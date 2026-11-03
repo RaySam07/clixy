@@ -24,7 +24,7 @@ Clixy is Rayan Sameer's Windows AI buddy (PyQt6). This folder is the local dev c
 - **Start here: `docs/plans/next-ui.md`.** In order:
   1. A professional blue notch (no orange fire; longer, less rounded).
   2. The new pointer cursor.
-  3. Speed up and wire in the on-screen 3D (`scene3d.py`).
+  3. Done 4 Nov 2026: real 3D on the note card (`scene3d.NoteModel`, numpy + QPainter, no GPU).
   4. The task-doing brain (ask Rayan which connectors first).
 - `docs/plans/guide-mode.md`: exact marks from Windows UI Automation and guidance one
   step at a time. Built; verify it on real Windows first (UIA listing in `snap.py`, the
@@ -43,6 +43,6 @@ Clixy is Rayan Sameer's Windows AI buddy (PyQt6). This folder is the local dev c
   sketch notes on Sonnet 5.5 with low-effort adaptive thinking (`ai.thinking_variant`).
   `apps.py` opens apps, sites and ms-settings pages ([OPEN:...]).
 - Sketch notes (`sketch.py`): any learning question gets a hand-drawn note card (graphs,
-  3D wireframes, steps, cycle, compare, timeline, mind map, key points) with follow-up
+  solid lit 3D models (scene3d.NoteModel, wireframe fallback), steps, cycle, compare, timeline, mind map, key points) with follow-up
   buttons and Clear; notes are kept in ~/.clixy/notes. Formulas go through a whitelist
   evaluator in floating point; keep it that way.
