@@ -513,6 +513,8 @@ class ClickyApp(QObject):
     sig_guide_step = pyqtSignal(str, int, int, object)
     # A sketch note to draw on the note card (sketch.py), as a dict.
     sig_show_sketch = pyqtSignal(object)
+    # The next job in Up next (jobs.py), to start now that the one before it is done.
+    sig_next_job = pyqtSignal(str)
 
     def __init__(
         self,
@@ -608,6 +610,7 @@ class ClickyApp(QObject):
         self.sig_point_label.connect(lambda label: self._island("point_label", label))
         self.sig_guide_step.connect(lambda text, n, total, where: self._island("island_step", text, n, total, where))
         self.sig_show_sketch.connect(self._on_show_sketch)
+        self.sig_next_job.connect(self.ask_text)
         self._note_card = None
 
     def start(self) -> None:
@@ -1778,6 +1781,18 @@ class ClickyApp(QObject):
             self.sig_clear_annotations.emit()
             self._history.append({"role": "user", "content": [{"type": "text", "text": goal}]})
             self._history.append({"role": "assistant", "content": [{"type": "text", "text": last or "(guided step by step)"}]})
+        # Home's Done today and Up next (jobs.py): a finished job is kept (history on) and
+        # the next in line starts; a job stopped short (Esc, Stop, a new question) clears the line.
+        import jobs
+        if session.finished and not cancel.is_set():
+            if keep:
+                jobs.record(goal, did=session.drove, steps=max(1, len(session.progress()["done"])))
+            following = jobs.next_job()
+            if following:
+                dbg.log(f"GUIDE: next in line: {following!r}")
+                self.sig_next_job.emit(following)
+        else:
+            jobs.clear_queue()
         dbg.log("GUIDE: finished")
 
     def _on_hide_overlay(self) -> None:

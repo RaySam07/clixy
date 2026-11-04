@@ -92,3 +92,15 @@ def _collect_between_tests():
     yield
     gc.collect()
     gc.enable()
+
+
+@pytest.fixture(autouse=True)
+def _jobs_in_tmp(tmp_path, monkeypatch):
+    """Finished jobs (jobs.py) are logged to a temp file, never the user's real
+    ~/.clixy/jobs.jsonl, and the Up next line starts and ends empty."""
+    import jobs
+
+    monkeypatch.setattr(jobs, "log_path", lambda: tmp_path / "jobs.jsonl")
+    jobs.clear_queue()
+    yield
+    jobs.clear_queue()

@@ -2,8 +2,9 @@
 controls the panel and Settings are made of.
 
 - Skins. Daylight (the default) is bright: cool white cards on a soft grey desk,
-  your buddy's colour as glossy gel. Midnight is the dark one: deep plum ink,
-  never flat black. "system" follows Windows' own light or dark choice.
+  your buddy's colour as glossy gel. Charcoal is the dark one: charcoal greys
+  with the same bright tiles and gel, never flat black. "system" follows
+  Windows' own light or dark choice.
   ``skin()`` is the one in use; ``set_appearance()`` switches live and tells
   every listener (``on_skin_changed``).
 - Springs. Things move like objects: a button sinks when pressed and springs
@@ -116,19 +117,19 @@ DAYLIGHT = Skin(
     key_text=QColor("#22242C"), dots=QColor(30, 36, 70, 26),
 )
 
-MIDNIGHT = Skin(
+MIDNIGHT = Skin(                 # Charcoal (Rayan, 4 Nov 2026: "charcoal black/greyish")
     name="dark", dark=True,
-    canvas_top=QColor("#1D1B29"), canvas_bottom=QColor("#14131D"),
-    surface=QColor("#25232F"), surface_hover=QColor("#2B2937"),
-    raised=QColor("#302E3D"), raised_bottom=QColor("#25232F"),
-    border=QColor(255, 255, 255, 18), hairline=QColor(255, 255, 255, 13),
-    text=QColor("#F6F5FB"), text2=QColor("#ADABC0"), text3=QColor("#77758A"),
-    field=QColor("#1A1924"), shadow=QColor(0, 0, 0, 120), track=QColor("#363443"),
-    key_top=QColor("#3A3847"), key_bottom=QColor("#2D2B39"), key_edge=QColor("#0F0E15"),
-    key_text=QColor("#EEEDF4"), dots=QColor(255, 255, 255, 16),
+    canvas_top=QColor("#1E1F23"), canvas_bottom=QColor("#18191C"),
+    surface=QColor("#26282E"), surface_hover=QColor("#2C2E35"),
+    raised=QColor("#33353D"), raised_bottom=QColor("#26282E"),
+    border=QColor(255, 255, 255, 18), hairline=QColor(255, 255, 255, 12),
+    text=QColor("#F2F3F5"), text2=QColor("#A2A6B0"), text3=QColor("#7C808A"),
+    field=QColor("#202125"), shadow=QColor(0, 0, 0, 120), track=QColor("#3A3D45"),
+    key_top=QColor("#33353D"), key_bottom=QColor("#2A2C33"), key_edge=QColor("#0F1013"),
+    key_text=QColor("#E6E7EA"), dots=QColor(255, 255, 255, 14),
 )
 
-APPEARANCES = (("light", "Daylight"), ("dark", "Midnight"), ("system", "Match Windows"))
+APPEARANCES = (("light", "Daylight"), ("dark", "Charcoal"), ("system", "Match Windows"))
 
 _appearance: str | None = None
 _listeners: list = []
