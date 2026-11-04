@@ -28,6 +28,7 @@ Top-to-bottom order (so `py -3.13 -m tts` works):
 from __future__ import annotations
 
 import queue
+import re
 import threading
 from abc import ABC, abstractmethod
 from typing import Callable
@@ -49,6 +50,40 @@ from config import (
 # Sentinel put into the queues on shutdown to unblock blocking get() calls.
 # Using a unique object() beats None because a None sentence is valid no-op input.
 _SHUTDOWN_SENTINEL = object()
+
+
+# --- The first words, sooner ---------------------------------------------------
+
+# Where a sentence can pause naturally, best first: a comma, a joining word, a preposition.
+_BREAKS = (
+    re.compile(r",(?=\s)"),
+    re.compile(r"\s(?=(?:so|and|but|because|which|while|then|where|when|until|since|or)\s)", re.IGNORECASE),
+    re.compile(r"\s(?=(?:to|in|on|into|onto|with|for|from|by|at|of|like)\s)", re.IGNORECASE),
+)
+
+
+def first_phrase(text: str, *, least: int = 4, most: int = 8) -> int:
+    """Where to cut a long first sentence so the voice starts on a short phrase:
+    Kokoro takes ~0.6 s for seven words but ~1.5 s for twelve, and the rest is
+    made while the phrase plays. A natural break between ``least`` and ``most``
+    words in ("i'll open chrome for you | so you can search..."); 0 to keep it whole
+    (short already, or no good break)."""
+    if len(text.split()) <= most + 2:
+        return 0
+    for pattern in _BREAKS:
+        for m in pattern.finditer(text):
+            n = len(text[:m.start()].split())
+            if n > most:
+                break
+            if n >= least:
+                return m.end() if text[m.start()] == "," else m.start()
+    return 0
+
+
+def with_pause(phrase: str) -> str:
+    """A cut-off first phrase ends on a comma, so the voice keeps going up, not down."""
+    phrase = phrase.strip()
+    return phrase if not phrase or phrase[-1] in ".!?,;:" else phrase + ","
 
 
 # --- TTS abstract base -------------------------------------------------------

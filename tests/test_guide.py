@@ -510,3 +510,39 @@ def test_what_is_always_theirs_to_do(label, keys, text, admin, why):
     action = "keys" if keys else ("type" if text else "click")
     step = guide.Step(say="", action=action, keys=keys, text=text, label=label)
     assert guide.theirs_to_do(step, label, admin) == why
+
+
+# Said to Clixy on 4 Nov 2026, wanting it done: each must reach drive mode.
+@pytest.mark.parametrize("said", [
+    "For me, can you search out the top 5 best AI models on Chrome?",
+    "For me, can you go on to Chrome and search up top 5 best open source AI models?",
+    "Can you open up Chrome and search flights from Dubai to Calicut on 22nd of December?",
+    "Yeah, so just go on to my account and search up flights from Dubai to Calicut on the 22nd of December",
+    "Okay on this Chrome browser search up the flights from Dubai to Calicut",
+    "can you look up the cheapest iphone on amazon",
+    "google best pizza near me",
+])
+def test_said_the_way_people_say_it_a_job_gets_done(said):
+    assert guide.wants_guide(said) and guide.wants_drive(said)
+
+
+@pytest.mark.parametrize("said", [
+    "Can you show me how a piston works now?", "Can you show me in 3D how a piston works?",
+    "Hey, Quick-See, can you show me how an airplane works on 3D?", "is this good for me",
+    "what does this mean for me", "can you dissect a heart and show me what exactly is the aorta",
+])
+def test_learning_and_questions_are_not_jobs(said):
+    assert not guide.wants_guide(said) and not guide.wants_drive(said)
+
+
+def test_a_new_search_while_guiding_starts_over_but_for_me_takes_the_wheel():
+    assert guide.during_guide("search up the weather") == "new"
+    assert guide.during_guide("for me") == "drive"
+
+
+def test_the_guide_voice_starts_on_the_first_phrase_too():
+    heard = []
+    early = guide._EarlySpeech(heard.append, lambda: 1.0)
+    early.feed("click your round profile picture at the top right so the menu opens. then ")
+    early.feed("pick studio. [CLICK:#3:profile]")
+    assert heard == ["click your round profile picture,", "at the top right so the menu opens.", "then pick studio."]

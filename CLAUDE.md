@@ -87,3 +87,11 @@ Clixy is Rayan Sameer's Windows AI buddy (PyQt6). This folder is the local dev c
   real 3D models (render3d, above), steps, cycle, compare, timeline, mind map, key points) with follow-up
   buttons and Clear; notes are kept in ~/.clixy/notes. Formulas go through a whitelist
   evaluator in floating point; keep it that way.
+- 4 Nov 2026, "ultra quick, humane, made for you": his own logs (~/.clixy/debug) showed
+  "for me, can you search ... on Chrome" never reached drive mode, and that the wait is
+  mostly Kokoro (~0.6 s for 7 words, 1.5 s for 12, on the CPU). `guide._DO_TASK` now catches
+  jobs said the natural way; searches open their results page straight away and the guide
+  reads out what it finds. "show me how a piston works" stays a learning note. The voice
+  starts on a short first phrase (`tts.first_phrase`, answers and guide steps alike).
+  Faster still: Cartesia (his key, Settings -> Voice) or Kokoro on the RTX 4060 (needs
+  onnxruntime-gpu plus CUDA 13 libraries, ~1 GB; not done).

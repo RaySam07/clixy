@@ -82,17 +82,25 @@ _DEMANDS = re.compile(
 )
 _LEARNING = re.compile(r"^\s*(?:why|what|explain|tell me (?:about|why|what)|how (?:does|do (?!i\b|we\b|you\b))|"
                        r"teach me (?:about|what|why)|help me understand)\b", re.IGNORECASE)
+# "Show me how a piston works", "can you show me in 3D...", "dissect a heart": a thing to
+# understand (a sketch note), even when it starts like a request.
+_HOW_IT_WORKS = re.compile(r"\bhow (?:a|an|the|this|that|these|those|my|your|it|they)\b.{0,40}\bworks?\b",
+                           re.IGNORECASE)
+_SHOW_A_THING = re.compile(r"\b(?:in 3 ?d|3 ?d (?:model|view|version)|(?:model|diagram|picture|drawing|sketch) of|"
+                           r"dissect|explain)\b", re.IGNORECASE)
 
 
 def wants_guide(question: str) -> bool:
     """Is this something to do on this computer, step by step? A how-to ("how do
     I..."), or a demand ("I want to access my YouTube Studio", "help me add a
     panel", "where's the export button"), not a question to understand
-    something ("how does a jet engine work")."""
+    something ("how does a jet engine work", "show me how a piston works")."""
     q = question or ""
+    if _HOW_IT_WORKS.search(q):
+        return False
     if _GUIDE_WORDS.search(q):
         return True
-    if _LEARNING.search(q):
+    if _LEARNING.search(q) or _SHOW_A_THING.search(q):
         return False
     return bool(_DEMANDS.search(q)) or (wants_drive(q) and len(q.split()) >= 3)
 
@@ -113,12 +121,32 @@ _DRIVE = re.compile(r"\b(?:do (?:it|that|this|them|everything|the rest|all of it
                     r"take the wheel|click (?:it|them) for me|do it$)|\bfor me\W*$", re.IGNORECASE)
 _HANDS_OFF = re.compile(r"^\W*(?:let me(?: do it)?|i'?ll do it|i will do it|i'?ve got it|i got it|my turn|"
                         r"stop clicking|hands off|stop driving|i'?ll take it from here)\b", re.IGNORECASE)
+# A whole task for Clixy to do, said the way people say it: "for me, can you search out
+# the top 5 AI models on Chrome", "open up Chrome and search flights from Dubai to
+# Calicut", "on this browser search up...", "can you look up the weather".
+_FILLER = r"(?:(?:ok(?:ay)?|yeah|yes|so|and|now|please|just|hey|clixy)\W+)*"
+_SEARCH = r"(?:search|google|look)(?: (?:up|out|for))?"
+_DO_TASK = re.compile(
+    rf"^\W*{_FILLER}for me\b|"
+    rf"\b(?:open(?: up)?|go (?:on ?to|onto|to|into)|launch|pull up|head to)\s+(?:\S+\s+){{0,4}}?and (?:then )?"
+    rf"(?:{_SEARCH}|type|write|play|find|book|fill|check)\b|"
+    rf"\b{_SEARCH}\b.{{1,80}}\b(?:on|in|using) (?:chrome|google|youtube|edge|firefox|bing|amazon|"
+    rf"the (?:web|internet|browser)|(?:this|my) browser)\b|"
+    rf"\b(?:on|in) (?:this |my |the )?(?:chrome|edge|firefox|(?:chrome |web )?browser)\b.{{0,30}}\b{_SEARCH}\b|"
+    rf"(?:can|could|will|would) you (?:please )?(?:just )?{_SEARCH}\b|"
+    rf"^\W*{_FILLER}{_SEARCH}\b",
+    re.IGNORECASE)
+_ASKING = re.compile(r"^\W*(?:is|are|was|were|does|did|what|which|who|why|whose|when|do you think|would it)\b",
+                     re.IGNORECASE)      # "is this good for me": a question, not a job
 
 
 def wants_drive(text: str) -> bool:
-    """Asked to do it, not just show it: "turn on dark mode for me", "can you do that"."""
+    """Asked to do it, not just show it: "turn on dark mode for me", "can you do that",
+    "for me, can you search up the top 5 AI models on Chrome"."""
     t = " ".join((text or "").split())
-    return bool(_DRIVE.search(t)) and not _HANDS_OFF.match(t)
+    if _HANDS_OFF.match(t) or _ASKING.match(t):
+        return False
+    return bool(_DRIVE.search(t) or _DO_TASK.search(t))
 
 
 def during_guide(text: str) -> str:
@@ -133,7 +161,8 @@ def during_guide(text: str) -> str:
         return "keep"
     if _HANDS_OFF.match(t):
         return "hands off"
-    if wants_drive(t) and not _GUIDE_WORDS.search(t) and not _LEARNING.search(t) and len(t.split()) <= 8:
+    if (_DRIVE.search(t) and not _HANDS_OFF.match(t) and not _GUIDE_WORDS.search(t)
+            and not _LEARNING.search(t) and len(t.split()) <= 8):       # "do it for me", not a new search
         return "drive"
     if _CARRY_ON.match(t):
         return "next"
@@ -146,7 +175,7 @@ SYSTEM_PROMPT = """\
 you're clixy, guiding the user through a task on their windows computer one step at a time, like a friend beside them who knows windows and every common app inside out: the shortcuts, the direct links, the little tricks. you see their screen as it is right now. each turn you're told the goal, what's been done so far, this computer, the open windows (front first), know-how for the apps involved, sometimes the route that worked last time, and the clickable things windows lists on screen, each with an id and its box.
 
 think first: what's the fastest real route from here? in this order:
-1. open it directly with [OPEN:...]: a settings page, a windows tool, an app, a website, an app link or the battery report, straight to the right place. the know-how and the lists give real addresses: use them, never guess one.
+1. open it directly with [OPEN:...]: a settings page, a windows tool, an app, a website, an app link or the battery report, straight to the right place. the know-how and the lists give real addresses: use them, never guess one. a search (the top 5 of something, flights, a product, a video) opens its results page straight away: [OPEN:https://www.google.com/search?q=top+5+open+source+ai+models], [OPEN:https://www.google.com/travel/flights?q=flights+from+dubai+to+calicut+on+22+november], [OPEN:https://www.youtube.com/results?search_query=...], [OPEN:https://www.amazon.com/s?k=...]. that's one step, not typing into a search box.
 2. what they need is already open (check the open windows)? bring it forward with [FOCUS:...]. never open again what's already open, and never say something didn't open when the open windows show it: it may be behind another window or still drawing.
 3. a keyboard shortcut with [KEYS:...] when it gets there faster than clicking.
 4. a click on a listed element with [CLICK:#id:...].
@@ -172,7 +201,7 @@ reply with the single next step only:
 - then, on the first step and whenever the route changes, [PLAN:...]: the steps after this one, in order, separated by |, each the click with the exact name they'll see on screen and a few spoken words for it, like [PLAN:click "YouTube Studio": now pick youtube studio from the menu | click "Customisation": then customisation, on the left]. a press is press "win+i": words. leave out what you can't foresee.
 
 windows marked admin (task manager often is) hide their buttons and the user's clicks from clixy: point with a box from the screenshot and say any next click in the same sentence; when that click is the last thing to do, add [DONE] after the box.
-when the goal is reached on screen, say so in one short, happy sentence and add [DONE]. if there's a quicker way for next time than the route taken (a shortcut, a run command, a direct page), add it in a few words, like "faster next time, press windows and i", and tag it [FASTER:win+i] (the keys, or what to open).
+when the goal is reached on screen, say so in one short, happy sentence and add [DONE]. when the goal was finding something out (a search, prices, flights), the results being up isn't the end: tell them what you see in two or three natural sentences (the top few, the cheapest, the time), then [DONE]. if there's a quicker way for next time than the route taken (a shortcut, a run command, a direct page), add it in a few words, like "faster next time, press windows and i", and tag it [FASTER:win+i] (the keys, or what to open).
 if the goal isn't something to do on this computer (a general question), answer it fully, in natural speech, then [DONE].
 if the last step didn't do what you expected, say so kindly and give the step that fixes it.
 never refuse and never say you can't point: there's always something to open, bring forward, press or click. apart from opening things and bringing windows forward, never click or type for them; they do each step and you see the result.
@@ -367,7 +396,14 @@ class _EarlySpeech:
         cut = head.find("[")
         region = head if cut < 0 else head[:cut]
         start = 0
-        for m in _SENTENCE_END.finditer(region):
+        if self.first_at is None:           # a long first sentence starts on a short phrase
+            from tts import first_phrase, with_pause
+            end = _SENTENCE_END.search(region)
+            if (at := first_phrase(region[:end.end()] if end else region)) and (phrase := _speakable(region[:at])):
+                self.first_at = self.clock()
+                self.speak(with_pause(phrase))
+                start = at
+        for m in _SENTENCE_END.finditer(region, start):
             sentence = _speakable(region[start:m.end()])
             start = m.end()
             if sentence:

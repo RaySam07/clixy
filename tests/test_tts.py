@@ -1313,3 +1313,25 @@ class TestOpenStreamSafety:
         tts_obj.speak_sentence("old answer.")
         time.sleep(0.5)
         assert owner.get("fired") and not [w for w in log["writes"] if w[1].any()]
+
+
+# --- The first words, sooner --------------------------------------------------------
+
+def test_a_long_first_sentence_starts_on_a_short_phrase():
+    from tts import first_phrase, with_pause
+    text = "i'll open chrome for you so you can search for the top open source ai models."
+    cut = first_phrase(text)
+    assert text[:cut] == "i'll open chrome for you"
+    assert with_pause(text[:cut]) == "i'll open chrome for you,"
+    assert first_phrase("sure, on it.") == 0                      # short already
+    assert first_phrase("one two three four five six seven eight nine ten eleven") == 0   # no natural break
+    comma = "click the round picture of you, then pick youtube studio from the menu that drops down."
+    assert comma[:first_phrase(comma)] == "click the round picture of you,"
+
+
+def test_the_answer_voice_starts_on_the_first_phrase():
+    from app import flush_sentences
+    said, rest = flush_sentences("i'll open chrome for you so you can search for the top open source ", clause=True)
+    assert said == ["i'll open chrome for you"] and rest.strip().startswith("so you can")
+    said, _ = flush_sentences("i'll open chrome for you so you can search for the top open source ", clause=False)
+    assert said == []

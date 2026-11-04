@@ -144,16 +144,21 @@ _SKETCH_WORDS = re.compile(
     re.IGNORECASE,
 )
 _NOT_LEARNING = re.compile(
-    r"^\s*(?:hey|hi|hello|thanks|thank you|ok|okay|open|launch|start|close|play|pause|stop|go to|click|where (?:is|are|do|can))\b",
+    r"^\s*(?:hey|hi|hello|thanks|thank you|ok|okay|open|launch|start|close|play|pause|stop|go to|click|where (?:is|are|do|can)"
+    r"|how are (?:you|things)|how'?s it going|what'?s up|how have you been)\b",
     re.IGNORECASE,
 )
 
 
 def wants_sketch(question: str) -> bool:
     """Anything someone is trying to learn or understand gets a note (the
-    model can still pass); small talk and "open/where is" don't."""
-    q = (question or "").strip()
+    model can still pass); small talk and "open/where is" don't. A hello in front
+    ("hey, clixy, can you show me how a plane works") doesn't make it small talk."""
+    q = _HELLO.sub("", (question or "").strip(), count=1)
     return len(q.split()) >= 3 and not _NOT_LEARNING.search(q) and bool(_SKETCH_WORDS.search(q))
+
+
+_HELLO = re.compile(r"^\s*(?:hey|hi|hello|ok(?:ay)?)\b[\s,!.]*(?:[\w-]+[,!.]\s*)?", re.IGNORECASE)
 
 
 VOICE_HINT = ("(a note card is showing this to them right now, in 3d when it helps, while you talk. teach the "

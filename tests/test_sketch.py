@@ -308,3 +308,10 @@ def test_the_voice_is_told_a_card_is_coming_and_never_to_narrate_the_screen():
     assert "don't mention the screen" in sketch.VOICE_HINT
     for prompt in (ai._CLICKY_SYSTEM_PROMPT, ai._CLICKY_ANNOTATION_SYSTEM_PROMPT):
         assert "never mention the screen" in prompt and "i can't dissect it" in prompt
+
+
+def test_a_hello_in_front_still_gets_a_note_but_small_talk_does_not():
+    assert sketch.wants_sketch("Hey, Quick-See, can you show me how an airplane works on 3D?")
+    assert sketch.wants_sketch("hello, clixy, why is the sky blue")
+    assert not sketch.wants_sketch("hey how are you")
+    assert not sketch.wants_sketch("hey clixy open spotify")

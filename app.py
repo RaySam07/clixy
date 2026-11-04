@@ -77,7 +77,7 @@ import mic
 from memory import MemoryStore
 from overlay import OverlayController
 from stt import AssemblyAIStreamingSTT, create_stt_client
-from tts import CartesiaSonicTTS
+from tts import CartesiaSonicTTS, first_phrase, with_pause
 
 ANNOTATION_MODE: str = _ANNOTATION_MODE_AT_START
 """Draw on screen, "on" or "off". Read once here and refreshed when
@@ -107,9 +107,17 @@ def flush_sentences(buffer: str, clause: bool = False) -> tuple[list[str], str]:
     to avoid abbreviations like 'e.g.' so false splits are rare.
     With ``clause`` (nothing spoken yet), a first sentence still being written
     is cut at its first comma, semicolon or colon after four words, so the
-    voice starts on a short phrase instead of waiting for the whole sentence.
+    voice starts on a short phrase instead of waiting for the whole sentence;
+    a long first sentence is cut at a natural break too (``tts.first_phrase``),
+    finished or not, since a short phrase is ready to hear much sooner.
     """
     sentences: list[str] = []
+    if clause:
+        end = _SENTENCE_END_RE.search(buffer)
+        cut = first_phrase(buffer[:end.end()] if end else buffer)
+        if cut:
+            sentences.append(buffer[:cut].strip())
+            buffer = buffer[cut:]
     while (m := _SENTENCE_END_RE.search(buffer)):
         end = m.end()
         sentences.append(buffer[:end].strip())
@@ -1368,7 +1376,7 @@ class ClickyApp(QObject):
                         for s in sentences:
                             if cancel.is_set():
                                 return
-                            self._tts.speak_sentence(s)
+                            self._tts.speak_sentence(with_pause(s) if not flushed else s)
                             self.sig_island_say.emit(s)
                             if first_sentence_s is None:
                                 first_sentence_s = time.monotonic() - getattr(self, "_released_at", time.monotonic())
