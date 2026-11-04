@@ -768,3 +768,10 @@ def test_a_click_elsewhere_that_changes_nothing_keeps_the_step():
 ])
 def test_his_whatsapp_and_spaceship_jobs_are_done(said, does):
     assert guide.does_it(said) is does
+
+
+def test_the_guide_knows_his_laptop():
+    g, log = _guide(["switching to your whatsapp tab. [DONE]"], [], habits="he browses in chrome (not edge); "
+                    "sites he uses, most first: WhatsApp, Hark (chrome app window)")
+    g.run("go to whatsapp", _capture(scale=1.0))
+    assert "his laptop, learned from using it with him: he browses in chrome" in log["prompts"][0]

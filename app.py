@@ -32,6 +32,7 @@ from PyQt6.QtWidgets import QApplication
 
 import apps
 import guide
+import laptop
 import kb
 import model3d
 import sketch
@@ -1260,7 +1261,7 @@ class ClickyApp(QObject):
                 return
 
             user_text = transcript
-            about = sysinfo.profile()
+            about = "; ".join(part for part in (sysinfo.profile(), laptop.summary()) if part)
             if about:
                 user_text = f"[this computer, use silently: {about}]\n{user_text}"
             if memory_context:
@@ -1823,6 +1824,7 @@ class ClickyApp(QObject):
             cancelled=cancel.is_set,
             foreground=snap.foreground,
             about=sysinfo.profile(),
+            habits=laptop.summary(),
             refine=snap.refine,
             open=apps.open_target,
             speak=self._tts.speak_sentence,
@@ -2423,6 +2425,12 @@ if __name__ == "__main__":
     try:
         import sfx
         sfx.warm()
+    except Exception:
+        pass
+
+    # Clixy learns this laptop as you use it: which apps, which sites and where they live.
+    try:
+        laptop.watch(get_foreground_app)
     except Exception:
         pass
 

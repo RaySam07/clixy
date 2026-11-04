@@ -138,3 +138,10 @@ Clixy is Rayan Sameer's Windows AI buddy (PyQt6). This folder is the local dev c
   to the hands, a sketch waits for it too. "How do I..." always shows, even naming a job.
   And when he clicks something else and the page changes, the guide follows him within
   ~0.5 s (`Guide._screen_moved`, outcome "moved") instead of waiting 40 s on step one.
+- 4 Nov 2026, "it should know my laptop ins and outs": `laptop.py` keeps a map of what he
+  uses, by name only ("(95) WhatsApp - Google Chrome" -> site WhatsApp in Chrome; Hark in a
+  Chrome app window; apps Claude, VoiceStudio...). Learned from the window in front every
+  20 s while Clixy runs, seeded once from past sessions, kept in the memory folder
+  (laptop.json) only while history is on. Guide steps get it as "his laptop" (with: switch
+  to an open tab, ctrl+shift+a, rather than opening again), answers get it with sysinfo,
+  and links open in the browser it says he lives in. Tests keep it in tmp (conftest).

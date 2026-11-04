@@ -700,6 +700,7 @@ class Guide:
     foreground: object
     watch: object = field(default_factory=InputWatch)
     about: str = ""
+    habits: str = ""                 # laptop.summary(): his apps, his sites and where they live, his browser
     refine: object = None            # snap.refine, for BOX steps
     open: object = None              # apps.open_target, for OPEN steps
     speak: object = None             # tts.speak_sentence: the voice, sentence by sentence as it streams
@@ -841,7 +842,7 @@ class Guide:
         try:
             # Step one's look, with the know-how for the app in front fetched alongside.
             wins0 = self._windows()
-            self._browser = self._browser or usual_browser(wins0)
+            self._browser = self._browser or usual_browser(wins0) or _browser_in(self.habits)
             know = threading.Thread(target=self._know, args=(goal, wins0), name="clixy-guide-know", daemon=True)
             know.start()
             found = self._elements(capture.monitor)
@@ -1289,6 +1290,8 @@ class Guide:
         parts = [f'goal: "{goal.strip()}"']
         if self.about:
             parts.append(f"this computer: {self.about}")
+        if self.habits:
+            parts.append(f"his laptop, learned from using it with him: {self.habits}")
         if wins:
             parts.append("open windows, front first:\n" + "\n".join(window_lines(wins)))
         parts.append("done so far: " + ("; ".join(f"{i}. {d}" for i, d in enumerate(done, 1)) if done else "nothing yet"))
@@ -1645,6 +1648,12 @@ def usual_browser(wins: list) -> str:
     found = [_BROWSER_EXES[(w.exe or "").lower()] for w in wins if (w.exe or "").lower() in _BROWSER_EXES]
     others = [b for b in found if b != "msedge"]
     return (others or found or [""])[0]
+
+
+def _browser_in(habits: str) -> str:
+    """The browser the laptop map says he lives in ("he browses in chrome" -> "chrome")."""
+    m = re.search(r"\bhe browses in (\w+)", habits or "")
+    return {"edge": "msedge"}.get(m.group(1), m.group(1)) if m else ""
 
 
 def _inside(x: int, y: int, rect: tuple, margin: int = 8) -> bool:

@@ -104,3 +104,11 @@ def _jobs_in_tmp(tmp_path, monkeypatch):
     jobs.clear_queue()
     yield
     jobs.clear_queue()
+
+
+@pytest.fixture(autouse=True)
+def _laptop_map_in_tmp(tmp_path, monkeypatch):
+    """The laptop map lives in a temp folder, never the real memory folder, and starts empty."""
+    import laptop
+    monkeypatch.setattr(laptop, "_path", lambda: tmp_path / "memory" / "laptop.json")
+    monkeypatch.setattr(laptop, "_map", None)
