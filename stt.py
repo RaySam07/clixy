@@ -1040,6 +1040,14 @@ def _downloaded(size: str) -> bool:
         return False
 
 
+def _echoes(text: str, hotwords: str) -> bool:
+    """Whisper wrote out the name hints instead of what was said ("Clixy, Claude, ChatGPT...")."""
+    import re
+    words = re.findall(r"[a-z0-9]+", text.lower())
+    hints = set(re.findall(r"[a-z0-9]+", hotwords.lower()))
+    return len(words) >= 3 and sum(w in hints for w in words) / len(words) >= 0.6
+
+
 def _pcm_to_float(data: bytes):
     import numpy as np
     return np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0
@@ -1203,7 +1211,12 @@ class FasterWhisperSTT(STT):
         if self.hotwords:
             options["hotwords"] = self.hotwords        # names it would otherwise mishear ("Clixy")
         segments, _info = self._model.transcribe(audio, **options)
-        return " ".join(seg.text for seg in segments).strip()
+        text = " ".join(seg.text for seg in segments).strip()
+        if self.hotwords and _echoes(text, self.hotwords):      # it "heard" the hints: listen without them
+            options.pop("hotwords")
+            segments, _info = self._model.transcribe(audio, **options)
+            text = " ".join(seg.text for seg in segments).strip()
+        return text
 
     def _early_loop(self, take: int) -> None:
         """While you talk: transcribe what's been said so far every ``early_every_s``,

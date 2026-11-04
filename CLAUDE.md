@@ -123,3 +123,10 @@ Clixy is Rayan Sameer's Windows AI buddy (PyQt6). This folder is the local dev c
   (`hands.scroll`), [WAIT:3] for a page or an AI's answer, and in drive mode sure moves
   chain in one reply ([CLICK][TYPE][KEYS:enter]) with no look between (`Guide._chain`,
   stopping at anything theirs_to_do). A question to an AI or search box isn't "sending".
+- 4 Nov 2026, "it's late, doesn't keep up with my speed, so it lags and draws in the wrong
+  places": what he does while a step is being decided is read first (`Guide._ahead`, from
+  `InputWatch.pending`): a click on the very thing counts the step done (no mark), anything
+  else means a fresh look before any mark or click; doing it, twice in a row hands it over.
+  Every step after the first answers without thinking (`app._quick_ai`). Links open in the
+  browser he uses (`guide.usual_browser`, not Edge when another is open). Whisper retries
+  without the hints when it "hears" them (`stt._echoes`).

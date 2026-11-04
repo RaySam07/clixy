@@ -129,6 +129,9 @@ _SEARCH = r"(?:search|google|look)(?: (?:up|out|for))?"
 _DO_TASK = re.compile(
     rf"^\W*{_FILLER}for me\b|"
     r"\bi (?:want|need) you to\b|"
+    rf"^\W*{_FILLER}(?:i'?m on [\w ]{{1,20}}? and )?(?:open(?: up)?|play|put on|pull up|find) (?:me )?"
+    r"(?:the |my |a |an )?(?:[\w'-]+ ){0,4}?(?:latest|newest|last|new|recent|first)\b|"
+    rf"^\W*{_FILLER}play\b.{{1,60}}\bon (?:spotify|youtube|apple music|soundcloud|netflix)\b|"
     r"\bask (?!me\b|you\b|yourself\b|him\b|her\b|them\b)\w[\w.-]* (?:what|when|where|who|why|how|if|whether|to|for|"
     r"about)\b|"
     r"(?:can|could|will|would) you\b[^.?!]{0,80}\bfor me\b|"
@@ -582,6 +585,13 @@ class InputWatch:
         while self.get(0) is not None:
             pass
 
+    def pending(self) -> list:
+        """Everything you did since it was last read, without waiting."""
+        out = []
+        while (event := self.get(0)) is not None:
+            out.append(event)
+        return out
+
     def stop(self) -> None:
         for listener in self._listeners:
             try:
@@ -818,11 +828,13 @@ class Guide:
         self.watch.start()
         plan: list[Planned] = []     # the steps the model foresaw, still to come
         last_click = ""              # the element the last step clicked: a planned repeat of it is skipped
+        overtaken = 0                # steps in a row where they'd moved on before Clixy showed it
         if self.driving and self.speak is not None:
             self._speak("on it.")    # doing it: a word now, then quiet till the result
         try:
             # Step one's look, with the know-how for the app in front fetched alongside.
             wins0 = self._windows()
+            self._browser = self._browser or usual_browser(wins0)
             know = threading.Thread(target=self._know, args=(goal, wins0), name="clixy-guide-know", daemon=True)
             know.start()
             found = self._elements(capture.monitor)
@@ -914,11 +926,33 @@ class Guide:
                     return last
                 before = self.foreground()
                 admin = next((w for w in wins if w.front and w.admin), None) if step.action == "box" else None
-                driven = self._drive_step(step, ids, marks, target, capture, wins) if self.driving else ""
+                # Quicker than Clixy? What they did while it decided comes first: never a mark or
+                # a click on a screen that's already moved on.
+                ahead = self._ahead(step, target)
+                if ahead == "cancel":
+                    return last
+                if ahead == "moved":
+                    overtaken += 1
+                    if self.driving and overtaken >= 2:
+                        self.set_drive(False)
+                        self._aside("okay, you're on it. i'll point the way.")
+                    self._log(f"GUIDE: step {n}: they'd moved on while it decided, so it looks again first")
+                    n -= 1
+                    plan = []
+                    fix = ("they've moved on by themselves since your last look (they clicked or typed). work "
+                           "from the screen as it is now and don't repeat what they've done.")
+                    capture, found = self._look(capture)
+                    continue
+                overtaken = 0
+                driven = "" if ahead == "did it" else (
+                    self._drive_step(step, ids, marks, target, capture, wins) if self.driving else "")
                 chained: list = []
                 if driven == "cancel":
                     return last
-                if driven == "done":
+                if ahead == "did it":       # they beat Clixy to it: that's this step done
+                    self._log(f"GUIDE: step {n}: they'd already done it")
+                    outcome = "done"
+                elif driven == "done":
                     outcome = "done"
                     if step.then:          # the moves it was sure of from this screen: straight after
                         chained = self._chain(step.then, ids, wins, capture)
@@ -1021,7 +1055,8 @@ class Guide:
         if self.open is None:
             return ""
         try:
-            if self._browser:            # "search it on Chrome": its links open in Chrome
+            import apps
+            if self._browser and apps.kind_of(target) == "web":   # links open in the browser they use
                 return self.open(target, browser=self._browser) or ""
             return self.open(target) or ""
         except Exception:
@@ -1300,6 +1335,31 @@ class Guide:
         self._log(f"GUIDE: drive: {self._describe(step, ids)} ({'ok' if ok else 'failed'})")
         return "done" if ok else "yours"
 
+    def _ahead(self, step: Step, target) -> str:
+        """What they did while Clixy was deciding this step: "cancel" (Esc), "did it" (they
+        clicked that very thing or pressed its keys: they beat Clixy to it), "moved" (they
+        clicked or typed something else, so this screen is old), or "" (nothing: go on)."""
+        pending = getattr(self.watch, "pending", None)
+        if not callable(pending):
+            return ""
+        want = combo_tokens(step.keys) if step.action == "keys" else frozenset()
+        seen, moves = "", 0
+        for event in pending():
+            kind = event[0]
+            if kind == "combo" and event[1] == frozenset({"esc"}):
+                return "cancel"
+            if kind == "click" and target is not None and _inside(event[1], event[2], target):
+                seen = "did it"
+            elif kind == "combo" and want and event[1] == want:
+                seen = "did it"
+            elif kind == "move":
+                moves += 1
+            elif seen != "did it":
+                seen = "moved"
+        if not seen and self.driving and moves >= self.take_over_moves:
+            seen = "moved"
+        return seen
+
     def _chain(self, moves: list, ids: dict, wins: list, capture) -> list:
         """Moves the model was sure of from this screen (type, press, scroll), done straight
         after the first with no look and no model call between. Stops at anything that's
@@ -1534,6 +1594,18 @@ class Guide:
     def _log(self, line: str) -> None:
         if self.dbg is not None:
             self.dbg.log(line)
+
+
+_BROWSER_EXES = {"chrome.exe": "chrome", "msedge.exe": "msedge", "firefox.exe": "firefox", "brave.exe": "brave",
+                 "opera.exe": "opera"}
+
+
+def usual_browser(wins: list) -> str:
+    """The browser they're using: the one nearest the front, and not Edge when another is
+    open too (Edge windows are often only there because links fell into Windows' default)."""
+    found = [_BROWSER_EXES[(w.exe or "").lower()] for w in wins if (w.exe or "").lower() in _BROWSER_EXES]
+    others = [b for b in found if b != "msedge"]
+    return (others or found or [""])[0]
 
 
 def _inside(x: int, y: int, rect: tuple, margin: int = 8) -> bool:

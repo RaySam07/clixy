@@ -664,3 +664,66 @@ def test_clixy_scrolls_and_waits_itself():
     assert acted == [("scroll", 640, 400, 5)], "the middle of the screen, five notches down"
     assert 3.0 in slept
     assert "scrolled down 5" in log["prompts"][1] and "waited 3 s" in log["prompts"][2]
+
+
+# --- Keeping pace with someone quicker than Clixy -----------------------------------------------
+
+class PacedWatch(FakeWatch):
+    """What they did while Clixy was deciding each step (pending), apart from what they do
+    once a step shows (the scripted events)."""
+
+    def __init__(self, events, ahead):
+        super().__init__(events)
+        self.ahead = list(ahead)
+
+    def pending(self):
+        return self.ahead.pop(0) if self.ahead else []
+
+
+def test_a_step_they_did_while_it_decided_is_never_shown():
+    a = Element("button", "Settings", (10, 10, 60, 40))
+    g, log = _guide(["click settings. [CLICK:#1:settings][STEP:1/2]", "that's it. [DONE]"], [], elements=[a])
+    g.watch = PacedWatch([], [[("click", 30, 20)]])
+    g.run("open settings", _capture(scale=1.0))
+    assert log["shown"] == [], "no mark for a step already done"
+    assert 'clicked "Settings"' in log["prompts"][1]
+
+
+def test_moving_on_while_it_decided_means_a_fresh_look_before_any_mark():
+    a = Element("button", "Settings", (10, 10, 60, 40))
+    b = Element("button", "Display", (100, 10, 160, 40))
+    g, log = _guide(["click settings. [CLICK:#1:settings][STEP:1/3]", "now display. [CLICK:#2:display][STEP:2/3]",
+                     "done. [DONE]"], [("click", 130, 25)], elements=[a, b])
+    g.watch = PacedWatch([("click", 130, 25)], [[("click", 700, 500)]])
+    g.run("open display settings", _capture(scale=1.0))
+    assert log["shown"][0] == [Box(100, 10, 160, 40)], "the stale settings mark never showed"
+    assert "they've moved on by themselves" in log["prompts"][1]
+
+
+def test_doing_it_two_steps_they_got_to_first_hands_it_over():
+    acted = []
+    a = Element("button", "Settings", (10, 10, 60, 40))
+    g, log = _guide(["opening settings. [CLICK:#1:settings][STEP:1/2]", "opening settings. [CLICK:#1:settings][STEP:1/2]",
+                     "over to you. [DONE]"],
+                    [], elements=[a], hands=_hands(acted))
+    g.watch = PacedWatch([], [[("click", 700, 500)], [("combo", frozenset({"a"}))]])
+    g.set_drive(True)
+    g.max_steps = 2
+    g.run("open settings for me", _capture(scale=1.0))
+    assert acted == [] and not g.driving, "once is a fresh look; twice in a row, it's theirs"
+
+
+def test_links_open_in_the_browser_they_use():
+    win = lambda exe: SimpleNamespace(exe=exe)
+    assert guide.usual_browser([win("Code.exe"), win("chrome.exe"), win("msedge.exe")]) == "chrome"
+    assert guide.usual_browser([win("msedge.exe"), win("chrome.exe")]) == "chrome", "not Edge when another is open"
+    assert guide.usual_browser([win("msedge.exe")]) == "msedge"
+    assert guide.usual_browser([win("Spotify.exe")]) == ""
+
+
+@pytest.mark.parametrize("said", [
+    "I'm on YouTube and open up Raj Mani's latest podcast with Sam Altman",
+    "play the newest mkbhd video", "play lofi beats on spotify",
+])
+def test_play_and_open_the_latest_are_jobs(said):
+    assert guide.does_it(said)

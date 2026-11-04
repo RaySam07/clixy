@@ -1739,9 +1739,9 @@ class ClickyApp(QObject):
 
         def ask(cap, text: str):
             # Streams: the guide speaks each sentence the moment it's in, before the tags arrive.
-            # Doing it for them, the first step plans the route (thinking); the rest answer
-            # straight away, a few words and a tag, so each move follows the last quickly.
-            client = quick_ai if session.driving and session.progress()["n"] >= 1 else self._smart_ai
+            # The first step plans the route (thinking); the rest answer straight away, so
+            # each step keeps up with them.
+            client = quick_ai if session.progress()["n"] >= 1 else self._smart_ai
             with client.ask_stream(images=[(cap.image, cap.label)], transcript=text, history=[],
                                    system_prompt=guide.system_prompt()) as stream:
                 yield from stream.text_deltas()

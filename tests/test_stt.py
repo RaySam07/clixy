@@ -590,6 +590,22 @@ class TestFasterWhisperSTT:
             stt.FasterWhisperSTT(model_size="auto", device="auto")._default_model_factory()
             assert made == [(want, "cuda")], "never downloads 1.6 GB by itself"
 
+    def test_it_never_hears_the_name_hints_themselves(self, mocker):
+        import numpy as np
+        from stt import FasterWhisperSTT, _echoes
+        assert _echoes("Clixy, Claude, ChatGPT, Zoom, WhatsApp,", "Clixy, Claude, ChatGPT, GPT, WhatsApp")
+        assert not _echoes("open chrome and search for claude", "Clixy, Claude, ChatGPT")
+        model = mocker.MagicMock()
+        model.transcribe.side_effect = lambda audio, **kw: (
+            [self._seg("Clixy, Claude, ChatGPT, WhatsApp" if "hotwords" in kw else "open whatsapp")], None)
+        stt = FasterWhisperSTT(model_factory=lambda: model, audio_stream_factory=lambda cb: mocker.MagicMock())
+        stt.connect()
+        stt._model_ready.wait(2)
+        stt.early_every_s = 0
+        stt.start_recording()
+        stt._on_audio(b"\x01\x00" * 1024, 1024, None, None)
+        assert stt.stop_recording() == "open whatsapp", "listened again without the hints"
+
     def test_lazy_no_faster_whisper_import_when_using_di(self):
         import sys
         sys.modules.pop("faster_whisper", None)
