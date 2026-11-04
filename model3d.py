@@ -34,6 +34,7 @@ CACHE = Path.home() / ".clixy" / "cache" / "3d"
 CACHE_VERSION = 5
 MAX_PARTS = 60
 MAX_SHAPES = 240          # all parts together
+MAX_PART_SHAPES = 64      # in one part
 F = np.float32
 
 # Colours that read as real materials, not crayons. Any "#rrggbb" works too.
@@ -676,7 +677,7 @@ class Part:
         self.shapes: list[Shape] = []
         raw = spec.get("shapes")
         raw = raw if isinstance(raw, list) else [spec] if spec.get("shape") else []
-        for s in raw[:40]:
+        for s in raw[:MAX_PART_SHAPES]:
             shape = make_shape(s)
             if shape is not None:
                 self.shapes.append(shape)
@@ -1398,7 +1399,7 @@ def spec_from_note(note: dict) -> Spec | None:
                     p["label"] = ""
                 if show is not None and isinstance(p.get("labels"), list):
                     p["labels"] = [m for m in p["labels"] if isinstance(m, dict) and str(m.get("text", "")).lower() in show]
-                names = {str(p.get("label", "")).lower()}
+                names = {str(p.get("label", "")).lower(), str(p.get("name", "")).lower()} - {""}
                 names |= {str(m.get("text", "")).lower() for m in p.get("labels") or [] if isinstance(m, dict)}
                 if highlight and not (names & highlight):
                     p["dim"] = True

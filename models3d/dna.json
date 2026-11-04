@@ -1,0 +1,119 @@
+{
+  "title": "DNA: the double helix",
+  "subtitle": "Two backbones twist round each other; A pairs with T, G with C",
+  "aliases": ["double helix", "deoxyribonucleic acid", "dna molecule", "dna structure", "b-dna", "base pairs", "dna double helix", "genetic code", "nucleotides"],
+  "view": {"turn": 20, "tilt": 8, "ground": false},
+  "resolution": 220,
+  "parts": [
+    {"name": "sugar-phosphate backbone", "color": "#4d5d85", "material": "glossy", "blend": 0.07, "move": {"spin": "z", "about": [0, 0, 0], "speed": 14}, "shapes": [
+      {"shape": "helix", "at": [0, 0, -2.55], "r": 0.92, "pitch": 3.4, "turns": 0.5, "tube": 0.19, "turn": [0, 0, 0]},
+      {"shape": "sphere", "at": [0.825, 0.6, -3.06], "r": 0.185, "color": "#8494b8"},
+      {"shape": "sphere", "at": [0.315, 0.97, -2.72], "r": 0.185, "color": "#8494b8"},
+      {"shape": "sphere", "at": [-0.315, 0.97, -2.38], "r": 0.185, "color": "#8494b8"},
+      {"shape": "sphere", "at": [-0.825, 0.6, -2.04], "r": 0.185, "color": "#8494b8"}
+    ]},
+    {"label": "sugar-phosphate backbone", "name": "sugar-phosphate backbone", "color": "#4d5d85", "material": "glossy", "blend": 0.07, "move": {"spin": "z", "about": [0, 0, 0], "speed": 14}, "shapes": [
+      {"shape": "helix", "at": [0, 0, -0.85], "r": 0.92, "pitch": 3.4, "turns": 0.5, "tube": 0.19, "turn": [0, 0, 180]},
+      {"shape": "sphere", "at": [-1.02, 0, -1.7], "r": 0.185, "color": "#8494b8"},
+      {"shape": "sphere", "at": [-0.825, -0.6, -1.36], "r": 0.185, "color": "#8494b8"},
+      {"shape": "sphere", "at": [-0.315, -0.97, -1.02], "r": 0.185, "color": "#8494b8"},
+      {"shape": "sphere", "at": [0.315, -0.97, -0.68], "r": 0.185, "color": "#8494b8"},
+      {"shape": "sphere", "at": [0.825, -0.6, -0.34], "r": 0.185, "color": "#8494b8"}
+    ]},
+    {"name": "sugar-phosphate backbone", "color": "#4d5d85", "material": "glossy", "blend": 0.07, "move": {"spin": "z", "about": [0, 0, 0], "speed": 14}, "shapes": [
+      {"shape": "helix", "at": [0, 0, 0.85], "r": 0.92, "pitch": 3.4, "turns": 0.5, "tube": 0.19, "turn": [0, 0, 360]},
+      {"shape": "sphere", "at": [1.02, 0, 0], "r": 0.185, "color": "#8494b8"},
+      {"shape": "sphere", "at": [0.825, 0.6, 0.34], "r": 0.185, "color": "#8494b8"},
+      {"shape": "sphere", "at": [0.315, 0.97, 0.68], "r": 0.185, "color": "#8494b8"},
+      {"shape": "sphere", "at": [-0.315, 0.97, 1.02], "r": 0.185, "color": "#8494b8"},
+      {"shape": "sphere", "at": [-0.825, 0.6, 1.36], "r": 0.185, "color": "#8494b8"}
+    ]},
+    {"name": "sugar-phosphate backbone", "color": "#4d5d85", "material": "glossy", "blend": 0.07, "move": {"spin": "z", "about": [0, 0, 0], "speed": 14}, "shapes": [
+      {"shape": "helix", "at": [0, 0, 2.55], "r": 0.92, "pitch": 3.4, "turns": 0.5, "tube": 0.19, "turn": [0, 0, 540]},
+      {"shape": "sphere", "at": [-1.02, 0, 1.7], "r": 0.185, "color": "#8494b8"},
+      {"shape": "sphere", "at": [-0.825, -0.6, 2.04], "r": 0.185, "color": "#8494b8"},
+      {"shape": "sphere", "at": [-0.315, -0.97, 2.38], "r": 0.185, "color": "#8494b8"},
+      {"shape": "sphere", "at": [0.315, -0.97, 2.72], "r": 0.185, "color": "#8494b8"},
+      {"shape": "sphere", "at": [0.825, -0.6, 3.06], "r": 0.185, "color": "#8494b8"}
+    ]},
+    {"name": "sugar-phosphate backbone", "color": "#4d5d85", "material": "glossy", "blend": 0.07, "move": {"spin": "z", "about": [0, 0, 0], "speed": 14}, "shapes": [
+      {"shape": "helix", "at": [0, 0, -2.55], "r": 0.92, "pitch": 3.4, "turns": 0.5, "tube": 0.19, "turn": [0, 0, 140]},
+      {"shape": "sphere", "at": [-1.018, 0.071, -3.06], "r": 0.185, "color": "#8494b8"},
+      {"shape": "sphere", "at": [-0.865, -0.541, -2.72], "r": 0.185, "color": "#8494b8"},
+      {"shape": "sphere", "at": [-0.382, -0.946, -2.38], "r": 0.185, "color": "#8494b8"},
+      {"shape": "sphere", "at": [0.247, -0.99, -2.04], "r": 0.185, "color": "#8494b8"}
+    ]},
+    {"name": "sugar-phosphate backbone", "color": "#4d5d85", "material": "glossy", "blend": 0.07, "move": {"spin": "z", "about": [0, 0, 0], "speed": 14}, "shapes": [
+      {"shape": "helix", "at": [0, 0, -0.85], "r": 0.92, "pitch": 3.4, "turns": 0.5, "tube": 0.19, "turn": [0, 0, 320]},
+      {"shape": "sphere", "at": [0.781, -0.656, -1.7], "r": 0.185, "color": "#8494b8"},
+      {"shape": "sphere", "at": [1.018, -0.071, -1.36], "r": 0.185, "color": "#8494b8"},
+      {"shape": "sphere", "at": [0.865, 0.541, -1.02], "r": 0.185, "color": "#8494b8"},
+      {"shape": "sphere", "at": [0.382, 0.946, -0.68], "r": 0.185, "color": "#8494b8"},
+      {"shape": "sphere", "at": [-0.247, 0.99, -0.34], "r": 0.185, "color": "#8494b8"}
+    ]},
+    {"name": "sugar-phosphate backbone", "color": "#4d5d85", "material": "glossy", "blend": 0.07, "move": {"spin": "z", "about": [0, 0, 0], "speed": 14}, "shapes": [
+      {"shape": "helix", "at": [0, 0, 0.85], "r": 0.92, "pitch": 3.4, "turns": 0.5, "tube": 0.19, "turn": [0, 0, 500]},
+      {"shape": "sphere", "at": [-0.781, 0.656, 0], "r": 0.185, "color": "#8494b8"},
+      {"shape": "sphere", "at": [-1.018, 0.071, 0.34], "r": 0.185, "color": "#8494b8"},
+      {"shape": "sphere", "at": [-0.865, -0.541, 0.68], "r": 0.185, "color": "#8494b8"},
+      {"shape": "sphere", "at": [-0.382, -0.946, 1.02], "r": 0.185, "color": "#8494b8"},
+      {"shape": "sphere", "at": [0.247, -0.99, 1.36], "r": 0.185, "color": "#8494b8"}
+    ]},
+    {"name": "sugar-phosphate backbone", "color": "#4d5d85", "material": "glossy", "blend": 0.07, "move": {"spin": "z", "about": [0, 0, 0], "speed": 14}, "shapes": [
+      {"shape": "helix", "at": [0, 0, 2.55], "r": 0.92, "pitch": 3.4, "turns": 0.5, "tube": 0.19, "turn": [0, 0, 680]},
+      {"shape": "sphere", "at": [0.781, -0.656, 1.7], "r": 0.185, "color": "#8494b8"},
+      {"shape": "sphere", "at": [1.018, -0.071, 2.04], "r": 0.185, "color": "#8494b8"},
+      {"shape": "sphere", "at": [0.865, 0.541, 2.38], "r": 0.185, "color": "#8494b8"},
+      {"shape": "sphere", "at": [0.382, 0.946, 2.72], "r": 0.185, "color": "#8494b8"},
+      {"shape": "sphere", "at": [-0.247, 0.99, 3.06], "r": 0.185, "color": "#8494b8"}
+    ]},
+    {"label": "adenine", "color": "#e04b3a", "material": "glossy", "move": {"spin": "z", "about": [0, 0, 0], "speed": 14}, "shapes": [
+      {"shape": "box", "at": [0.399, 0.301, -3.23], "size": [0.913, 0.46, 0.17], "round": 0.06, "turn": [11, 0, 178]},
+      {"shape": "box", "at": [-0.498, 0.044, -2.89], "size": [0.913, 0.46, 0.17], "round": 0.06, "turn": [-11, 0, 34]},
+      {"shape": "box", "at": [0.377, -0.328, -1.53], "size": [0.913, 0.46, 0.17], "round": 0.06, "turn": [-11, 0, 178]},
+      {"shape": "box", "at": [-0.146, -0.478, -1.19], "size": [0.913, 0.46, 0.17], "round": 0.06, "turn": [11, 0, 34]},
+      {"shape": "box", "at": [-0.112, 0.487, -0.17], "size": [0.913, 0.46, 0.17], "round": 0.06, "turn": [-11, 0, -38]},
+      {"shape": "box", "at": [0.399, 0.301, 0.17], "size": [0.913, 0.46, 0.17], "round": 0.06, "turn": [11, 0, 178]},
+      {"shape": "box", "at": [-0.499, -0.009, 1.53], "size": [0.913, 0.46, 0.17], "round": 0.06, "turn": [11, 0, -38]},
+      {"shape": "box", "at": [0.377, -0.328, 1.87], "size": [0.913, 0.46, 0.17], "round": 0.06, "turn": [-11, 0, 178]},
+      {"shape": "box", "at": [0.498, -0.044, 2.21], "size": [0.913, 0.46, 0.17], "round": 0.06, "turn": [-11, 0, -146]},
+      {"shape": "box", "at": [0.499, 0.009, 3.23], "size": [0.913, 0.46, 0.17], "round": 0.06, "turn": [11, 0, 142]}
+    ]},
+    {"label": "thymine", "color": "#f2b134", "material": "glossy", "move": {"spin": "z", "about": [0, 0, 0], "speed": 14}, "shapes": [
+      {"shape": "box", "at": [-0.48, 0.332, -3.23], "size": [0.706, 0.46, 0.17], "round": 0.06, "turn": [-11, 0, -2]},
+      {"shape": "box", "at": [0.232, 0.536, -2.89], "size": [0.706, 0.46, 0.17], "round": 0.06, "turn": [11, 0, -146]},
+      {"shape": "box", "at": [-0.502, -0.297, -1.53], "size": [0.706, 0.46, 0.17], "round": 0.06, "turn": [11, 0, -2]},
+      {"shape": "box", "at": [0.584, 0.014, -1.19], "size": [0.706, 0.46, 0.17], "round": 0.06, "turn": [-11, 0, -146]},
+      {"shape": "box", "at": [0.581, -0.055, -0.17], "size": [0.706, 0.46, 0.17], "round": 0.06, "turn": [11, 0, 142]},
+      {"shape": "box", "at": [-0.48, 0.332, 0.17], "size": [0.706, 0.46, 0.17], "round": 0.06, "turn": [-11, 0, -2]},
+      {"shape": "box", "at": [0.194, -0.551, 1.53], "size": [0.706, 0.46, 0.17], "round": 0.06, "turn": [-11, 0, 142]},
+      {"shape": "box", "at": [-0.502, -0.297, 1.87], "size": [0.706, 0.46, 0.17], "round": 0.06, "turn": [11, 0, -2]},
+      {"shape": "box", "at": [-0.232, -0.536, 2.21], "size": [0.706, 0.46, 0.17], "round": 0.06, "turn": [11, 0, 34]},
+      {"shape": "box", "at": [-0.194, 0.551, 3.23], "size": [0.706, 0.46, 0.17], "round": 0.06, "turn": [-11, 0, -38]}
+    ]},
+    {"label": "guanine", "color": "#2f74c8", "material": "glossy", "move": {"spin": "z", "about": [0, 0, 0], "speed": 14}, "shapes": [
+      {"shape": "box", "at": [-0.163, 0.472, -2.55], "size": [0.913, 0.46, 0.17], "round": 0.06, "turn": [11, 0, -110]},
+      {"shape": "box", "at": [-0.196, -0.46, -2.21], "size": [0.913, 0.46, 0.17], "round": 0.06, "turn": [-11, 0, 106]},
+      {"shape": "box", "at": [-0.499, -0.009, -1.87], "size": [0.913, 0.46, 0.17], "round": 0.06, "turn": [11, 0, -38]},
+      {"shape": "box", "at": [0.428, 0.257, -0.85], "size": [0.913, 0.46, 0.17], "round": 0.06, "turn": [-11, 0, -110]},
+      {"shape": "box", "at": [0.196, 0.46, -0.51], "size": [0.913, 0.46, 0.17], "round": 0.06, "turn": [-11, 0, -74]},
+      {"shape": "box", "at": [0.146, 0.478, 0.51], "size": [0.913, 0.46, 0.17], "round": 0.06, "turn": [11, 0, -146]},
+      {"shape": "box", "at": [-0.163, 0.472, 0.85], "size": [0.913, 0.46, 0.17], "round": 0.06, "turn": [11, 0, -110]},
+      {"shape": "box", "at": [-0.196, -0.46, 1.19], "size": [0.913, 0.46, 0.17], "round": 0.06, "turn": [-11, 0, 106]},
+      {"shape": "box", "at": [0.428, 0.257, 2.55], "size": [0.913, 0.46, 0.17], "round": 0.06, "turn": [-11, 0, -110]},
+      {"shape": "box", "at": [0.409, -0.286, 2.89], "size": [0.913, 0.46, 0.17], "round": 0.06, "turn": [11, 0, 106]}
+    ]},
+    {"label": "cytosine", "color": "#36a77c", "material": "glossy", "move": {"spin": "z", "about": [0, 0, 0], "speed": 14}, "shapes": [
+      {"shape": "box", "at": [-0.464, -0.354, -2.55], "size": [0.706, 0.46, 0.17], "round": 0.06, "turn": [-11, 0, 70]},
+      {"shape": "box", "at": [-0.438, 0.386, -2.21], "size": [0.706, 0.46, 0.17], "round": 0.06, "turn": [11, 0, -74]},
+      {"shape": "box", "at": [0.194, -0.551, -1.87], "size": [0.706, 0.46, 0.17], "round": 0.06, "turn": [-11, 0, 142]},
+      {"shape": "box", "at": [0.128, -0.57, -0.85], "size": [0.706, 0.46, 0.17], "round": 0.06, "turn": [11, 0, 70]},
+      {"shape": "box", "at": [0.438, -0.386, -0.51], "size": [0.706, 0.46, 0.17], "round": 0.06, "turn": [11, 0, 106]},
+      {"shape": "box", "at": [-0.584, -0.014, 0.51], "size": [0.706, 0.46, 0.17], "round": 0.06, "turn": [-11, 0, 34]},
+      {"shape": "box", "at": [-0.464, -0.354, 0.85], "size": [0.706, 0.46, 0.17], "round": 0.06, "turn": [-11, 0, 70]},
+      {"shape": "box", "at": [-0.438, 0.386, 1.19], "size": [0.706, 0.46, 0.17], "round": 0.06, "turn": [11, 0, -74]},
+      {"shape": "box", "at": [0.128, -0.57, 2.55], "size": [0.706, 0.46, 0.17], "round": 0.06, "turn": [11, 0, 70]},
+      {"shape": "box", "at": [0.167, 0.559, 2.89], "size": [0.706, 0.46, 0.17], "round": 0.06, "turn": [-11, 0, -74]}
+    ]}
+  ]
+}

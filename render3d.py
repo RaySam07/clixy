@@ -763,6 +763,7 @@ class RealModel:
             inv = np.linalg.inv(vp)
             rest = [np.linalg.inv(m) for m in r.matrices(0.0)]   # what was seen (at t=0), back where the part rests
             ph, pw = ids.shape
+            taken = []      # anchors already chosen (pixels), so labels don't all point at one spot
             for lb in self.labels:
                 if lb.fixed:
                     ndc = vp @ np.append(lb.anchor, 1.0)
@@ -788,7 +789,14 @@ class RealModel:
                         pick = int(np.argmin(xs_)) if mid < pw / 2 else int(np.argmax(xs_))
                         yy, xx = int(ys_[pick]), int(xs_[pick])
                     else:
-                        yy, xx = np.unravel_index(int(np.argmax(inner)), inner.shape)
+                        score = inner.copy()
+                        if taken:
+                            gy, gx = np.mgrid[0:ph, 0:pw]
+                            sigma2 = (0.07 * math.hypot(pw, ph)) ** 2
+                            for ty, tx in taken:
+                                score *= 1 - 0.85 * np.exp(-((gy - ty) ** 2 + (gx - tx) ** 2) / sigma2)
+                        yy, xx = np.unravel_index(int(np.argmax(score)), score.shape)
+                    taken.append((yy, xx))
                     sx = (xx + 0.5) / pw * 2 - 1
                     sy = 1 - (yy + 0.5) / ph * 2
                     dz = float(z[yy, xx]) * 2 - 1

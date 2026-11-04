@@ -111,7 +111,9 @@ overlap), and `blend` (its own smoothness for this join).
 | `gear` | `at`, `r`, `teeth`, `thickness`, `hole`, `turn` (axis is local z) |
 
 Smallest detail that shows: about 1/120 of the model's size (a tube thinner than that
-breaks up). The whole model can have 60 parts and 240 shapes.
+breaks up). The whole model can have 60 parts and 240 shapes, a part at most 64. A part's
+cost grows with its box times its shapes: spread many small pieces over several parts
+(or use `repeat`). `highlight` matches a part's `label`, its spot `labels` and its `name`.
 
 ### Colours
 

@@ -1,0 +1,97 @@
+{
+  "title": "The plant cell",
+  "subtitle": "Cut open: a cell wall, a big vacuole and chloroplasts",
+  "aliases": ["plant cell", "plant cell structure", "leaf cell", "palisade cell", "plant organelles", "eukaryotic plant cell"],
+  "view": {"turn": 38, "tilt": 32, "zoom": 1.1},
+  "resolution": 190,
+  "parts": [
+    {"label": "cell wall", "color": "#a9c16a", "material": "wood", "shapes": [
+      {"shape": "box", "at": [0, 0, 0], "size": [4.4, 3.1, 2.5], "round": 0.32},
+      {"shape": "box", "at": [3.05, 3.28, 3.5], "size": [8, 8, 8], "subtract": true, "blend": 0, "color": "#c7d38f"}
+    ]},
+    {"label": "cell membrane", "color": "#d27a68", "material": "flesh", "shapes": [
+      {"shape": "box", "at": [0, 0, 0], "size": [4.1, 2.8, 2.2], "round": 0.17},
+      {"shape": "box", "at": [3.062, 3.292, 3.512], "size": [8, 8, 8], "subtract": true, "blend": 0},
+      {"shape": "box", "at": [2.95, 3.18, 3.4], "size": [8, 8, 8], "intersect": true, "blend": 0}
+    ]},
+    {"label": "cytoplasm", "color": "#dfe7b4", "material": "jelly", "opacity": 1, "shapes": [
+      {"shape": "box", "at": [0, 0, 0], "size": [4, 2.7, 2.1], "round": 0.12},
+      {"shape": "box", "at": [3.074, 3.304, 3.524], "size": [8, 8, 8], "subtract": true, "blend": 0},
+      {"shape": "box", "at": [2.95, 3.18, 3.4], "size": [8, 8, 8], "intersect": true, "blend": 0}
+    ]},
+    {"label": "vacuole", "color": "#b6d6f2", "material": "jelly", "opacity": 1, "blend": 0.05, "shapes": [
+      {"shape": "box", "at": [0.05, -0.02, 0.06], "size": [2.6, 1.6, 1.64], "round": 0.62, "color": "#5f8fd2"},
+      {"shape": "box", "at": [0.05, -0.02, 0.06], "size": [2.5, 1.5, 1.54], "round": 0.57, "color": "#b6d6f2"},
+      {"shape": "box", "at": [3.086, 3.316, 3.536], "size": [8, 8, 8], "subtract": true, "blend": 0},
+      {"shape": "sphere", "at": [-0.66, 0.74, -0.24], "r": 0.63, "subtract": true, "blend": 0.05}
+    ]},
+    {"label": "nucleus", "color": "#6c45a8", "material": "flesh", "shapes": [
+      {"shape": "sphere", "at": [-0.66, 0.74, -0.24], "r": 0.56},
+      {"shape": "box", "at": [3.34, 4.72, 3.74], "size": [8, 8, 8], "subtract": true, "blend": 0, "color": "#9a7cc6"}
+    ]},
+    {"name": "nucleus", "color": "#b897de", "material": "flesh", "bumps": {"size": 0.08, "depth": 0.015, "style": "ridged"}, "shapes": [
+      {"shape": "sphere", "at": [-0.66, 0.74, -0.24], "r": 0.5},
+      {"shape": "box", "at": [3.362, 4.742, 3.762], "size": [8, 8, 8], "subtract": true, "blend": 0},
+      {"shape": "box", "at": [3.24, 4.62, 3.64], "size": [8, 8, 8], "intersect": true, "blend": 0}
+    ]},
+    {"name": "nucleus", "color": "#47206e", "material": "flesh", "bumps": {"size": 0.06, "depth": 0.012}, "shapes": [
+      {"shape": "sphere", "at": [-0.6, 0.78, -0.19], "r": 0.17}
+    ]},
+    {"label": "chloroplast", "color": "#3e9a3a", "material": "flesh", "shapes": [
+      {"shape": "ellipsoid", "at": [1.08, 0.95, -0.315], "size": [0.5, 0.31, 0.17], "turn": [0, 0, 12]},
+      {"shape": "ellipsoid", "at": [1.08, 0.95, -0.315], "size": [0.47, 0.28, 0.14], "turn": [0, 0, 12], "subtract": true, "color": "#9fd476"},
+      {"shape": "cylinder", "at": [0.776, 0.937, -0.423], "r": 0.068, "height": 0.032, "round": 0.012, "color": "#1d5a22"},
+      {"shape": "cylinder", "at": [0.776, 0.937, -0.373], "r": 0.068, "height": 0.032, "round": 0.012, "color": "#1d5a22"},
+      {"shape": "cylinder", "at": [0.776, 0.937, -0.323], "r": 0.068, "height": 0.032, "round": 0.012, "color": "#1d5a22"},
+      {"shape": "cylinder", "at": [0.983, 0.827, -0.423], "r": 0.068, "height": 0.032, "round": 0.012, "color": "#1d5a22"},
+      {"shape": "cylinder", "at": [0.983, 0.827, -0.373], "r": 0.068, "height": 0.032, "round": 0.012, "color": "#1d5a22"},
+      {"shape": "cylinder", "at": [0.983, 0.827, -0.323], "r": 0.068, "height": 0.032, "round": 0.012, "color": "#1d5a22"},
+      {"shape": "cylinder", "at": [1.13, 1.053, -0.423], "r": 0.068, "height": 0.032, "round": 0.012, "color": "#1d5a22"},
+      {"shape": "cylinder", "at": [1.13, 1.053, -0.373], "r": 0.068, "height": 0.032, "round": 0.012, "color": "#1d5a22"},
+      {"shape": "cylinder", "at": [1.13, 1.053, -0.323], "r": 0.068, "height": 0.032, "round": 0.012, "color": "#1d5a22"},
+      {"shape": "cylinder", "at": [1.345, 0.955, -0.423], "r": 0.068, "height": 0.032, "round": 0.012, "color": "#1d5a22"},
+      {"shape": "cylinder", "at": [1.345, 0.955, -0.373], "r": 0.068, "height": 0.032, "round": 0.012, "color": "#1d5a22"},
+      {"shape": "cylinder", "at": [1.345, 0.955, -0.323], "r": 0.068, "height": 0.032, "round": 0.012, "color": "#1d5a22"},
+      {"shape": "cylinder", "at": [0.973, 1.07, -0.423], "r": 0.068, "height": 0.032, "round": 0.012, "color": "#1d5a22"},
+      {"shape": "cylinder", "at": [0.973, 1.07, -0.373], "r": 0.068, "height": 0.032, "round": 0.012, "color": "#1d5a22"},
+      {"shape": "cylinder", "at": [0.973, 1.07, -0.323], "r": 0.068, "height": 0.032, "round": 0.012, "color": "#1d5a22"},
+      {"shape": "rod", "from": [0.776, 0.937, -0.373], "to": [0.983, 0.827, -0.373], "r": 0.014, "color": "#1d5a22"},
+      {"shape": "rod", "from": [0.983, 0.827, -0.373], "to": [1.13, 1.053, -0.373], "r": 0.014, "color": "#1d5a22"},
+      {"shape": "rod", "from": [1.13, 1.053, -0.373], "to": [1.345, 0.955, -0.373], "r": 0.014, "color": "#1d5a22"},
+      {"shape": "box", "at": [1.2, 1.1, 0.289], "size": [1.2, 1.2, 1.2], "turn": [0, 18.624, 51.34], "subtract": true},
+      {"shape": "ellipsoid", "at": [1.68, 0.3, -0.44], "size": [0.42, 0.25, 0.15], "turn": [0, 0, 95]},
+      {"shape": "ellipsoid", "at": [1.66, -0.3, -0.44], "size": [0.42, 0.25, 0.15], "turn": [0, 0, 80]},
+      {"shape": "ellipsoid", "at": [0.3, 1.06, -0.44], "size": [0.42, 0.25, 0.15], "turn": [0, 0, 10]},
+      {"shape": "ellipsoid", "at": [-0.3, 1.08, -0.44], "size": [0.42, 0.25, 0.15], "turn": [0, 0, -8]},
+      {"shape": "ellipsoid", "at": [-0.95, 1.1, 0.25], "size": [0.42, 0.25, 0.15], "turn": [80, 0, 90]},
+      {"shape": "ellipsoid", "at": [-0.95, 0.25, 0.97], "size": [0.42, 0.25, 0.15], "turn": [80, 0, 90]},
+      {"shape": "ellipsoid", "at": [-0.95, 1.05, 0.85], "size": [0.42, 0.25, 0.15], "turn": [80, 0, 90]},
+      {"shape": "ellipsoid", "at": [1.5, -0.72, 0.5], "size": [0.42, 0.25, 0.15], "turn": [80, 0, 0]},
+      {"shape": "ellipsoid", "at": [0.95, -0.72, 0.97], "size": [0.42, 0.25, 0.15], "turn": [80, 0, 0]},
+      {"shape": "ellipsoid", "at": [1.68, -0.72, 0.9], "size": [0.42, 0.25, 0.15], "turn": [80, 0, 0]},
+      {"shape": "ellipsoid", "at": [0.1, -0.72, 0.97], "size": [0.42, 0.25, 0.15], "turn": [80, 0, 0]}
+    ]},
+    {"label": "mitochondrion", "color": "#d65a2a", "material": "flesh", "shapes": [
+      {"shape": "rod", "from": [1.424, 0.632, -0.33], "to": [1.776, 0.928, -0.33], "r": 0.19},
+      {"shape": "rod", "from": [1.424, 0.632, -0.33], "to": [1.776, 0.928, -0.33], "r": 0.164, "subtract": true},
+      {"shape": "rod", "from": [1.424, 0.632, -0.33], "to": [1.776, 0.928, -0.33], "r": 0.15, "color": "#f6b07a"},
+      {"shape": "rod", "from": [1.424, 0.632, -0.33], "to": [1.776, 0.928, -0.33], "r": 0.125, "subtract": true, "color": "#a8412a"},
+      {"shape": "ellipsoid", "at": [1.403, 0.673, -0.33], "size": [0.022, 0.105, 0.12], "turn": [0, 0, 40], "color": "#f6b07a"},
+      {"shape": "ellipsoid", "at": [1.545, 0.675, -0.33], "size": [0.022, 0.105, 0.12], "turn": [0, 0, 40], "color": "#f6b07a"},
+      {"shape": "ellipsoid", "at": [1.571, 0.814, -0.33], "size": [0.022, 0.105, 0.12], "turn": [0, 0, 40], "color": "#f6b07a"},
+      {"shape": "ellipsoid", "at": [1.713, 0.816, -0.33], "size": [0.022, 0.105, 0.12], "turn": [0, 0, 40], "color": "#f6b07a"},
+      {"shape": "ellipsoid", "at": [1.74, 0.956, -0.33], "size": [0.022, 0.105, 0.12], "turn": [0, 0, 40], "color": "#f6b07a"},
+      {"shape": "box", "at": [1.68, 0.88, 0.069], "size": [0.8, 0.8, 0.8], "turn": [0, 18.624, 51.34], "subtract": true},
+      {"shape": "rod", "from": [-0.307, 1.02, -0.33], "to": [0.147, 0.94, -0.33], "r": 0.19},
+      {"shape": "rod", "from": [-0.307, 1.02, -0.33], "to": [0.147, 0.94, -0.33], "r": 0.164, "subtract": true},
+      {"shape": "rod", "from": [-0.307, 1.02, -0.33], "to": [0.147, 0.94, -0.33], "r": 0.15, "color": "#f6b07a"},
+      {"shape": "rod", "from": [-0.307, 1.02, -0.33], "to": [0.147, 0.94, -0.33], "r": 0.125, "subtract": true, "color": "#a8412a"},
+      {"shape": "ellipsoid", "at": [-0.289, 1.063, -0.33], "size": [0.022, 0.105, 0.12], "turn": [0, 0, -10], "color": "#f6b07a"},
+      {"shape": "ellipsoid", "at": [-0.196, 0.955, -0.33], "size": [0.022, 0.105, 0.12], "turn": [0, 0, -10], "color": "#f6b07a"},
+      {"shape": "ellipsoid", "at": [-0.072, 1.024, -0.33], "size": [0.022, 0.105, 0.12], "turn": [0, 0, -10], "color": "#f6b07a"},
+      {"shape": "ellipsoid", "at": [0.021, 0.917, -0.33], "size": [0.022, 0.105, 0.12], "turn": [0, 0, -10], "color": "#f6b07a"},
+      {"shape": "ellipsoid", "at": [0.144, 0.986, -0.33], "size": [0.022, 0.105, 0.12], "turn": [0, 0, -10], "color": "#f6b07a"},
+      {"shape": "box", "at": [0, 1.08, 0.069], "size": [0.8, 0.8, 0.8], "turn": [0, 18.624, 51.34], "subtract": true}
+    ]}
+  ]
+}
