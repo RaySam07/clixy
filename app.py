@@ -1784,9 +1784,9 @@ class ClickyApp(QObject):
         # Home's Done today and Up next (jobs.py): a finished job is kept (history on) and
         # the next in line starts; a job stopped short (Esc, Stop, a new question) clears the line.
         import jobs
-        if session.finished and not cancel.is_set():
+        if getattr(session, "finished", False) and not cancel.is_set():
             if keep:
-                jobs.record(goal, did=session.drove, steps=max(1, len(session.progress()["done"])))
+                jobs.record(goal, did=getattr(session, "drove", False), steps=max(1, len(session.progress()["done"])))
             following = jobs.next_job()
             if following:
                 dbg.log(f"GUIDE: next in line: {following!r}")
