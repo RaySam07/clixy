@@ -544,7 +544,7 @@ def test_battery_and_cpu_in_one_move():
     assert desk.arranged, "side by side"
     assert len(log["prompts"]) == 2, "two model calls, not six"
     assert log["spoken"][0].startswith("i'll open task manager")
-    assert any("first words after 2200 ms" in line for line in lines), "spoken at the first full stop"
+    assert any("first words after 1900 ms" in line for line in lines), "spoken at the first natural break, not the full stop"
     assert isinstance(log["shown"][-1][0], Box), "the last click is marked even though clixy can't see it"
     assert "admin" in log["prompts"][1] and "[task manager]" in log["prompts"][0]
     last_word = [e for e in log["events"] if e[0] == "speak"][-1][1]
