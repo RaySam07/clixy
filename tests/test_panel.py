@@ -1,5 +1,6 @@
-"""The Clixy panel (panel.py): it grows out of the notch, shows your newest
-sketch note, takes a typed question, and follows a running guide."""
+"""The Clixy panel (panel.py): it grows out of the notch, shows what Clixy is doing
+and what's waiting (a running job live, Your call, Up next, Done today), takes a typed
+question or job, and drives a running guide."""
 from __future__ import annotations
 
 import datetime as dt
@@ -43,15 +44,51 @@ def notes(tmp_path):
 
 @pytest.fixture
 def panel(qapp, tmp_path, monkeypatch):
+    import jobs
     import panel as panel_mod
     monkeypatch.setattr(panel_mod, "_key_down", lambda vk: False)
     monkeypatch.setattr(panel_mod, "_start", lambda path: None)
+    monkeypatch.setattr(jobs, "log_path", lambda: tmp_path / "jobs.jsonl")     # never his real log
+    jobs.clear_queue()
     widget = panel_mod.ClixyPanel()
     widget.notes_folder = tmp_path / "empty-notes"
     widget.name = "Rayan"
     yield widget
     widget._tick.stop()
     widget.close()
+    jobs.clear_queue()
+
+
+def _today_note(folder, minutes: int, title: str) -> dict:
+    """A note kept today (at 00:mm), as sketch.save_note keeps it."""
+    import json
+    stamp = (dt.datetime.now().replace(hour=0, minute=0) + dt.timedelta(minutes=minutes)).strftime("%Y-%m-%d %H%M")
+    data = {"title": title, "items": [{"type": "text", "text": "hi"}], "followups": []}
+    (folder / f"{stamp} {title}.json").write_text(json.dumps(data), encoding="utf-8")
+    return data
+
+
+def _live_info(**changes) -> dict:
+    """A running guide's progress, as guide.Guide.progress() reports it."""
+    from PyQt6.QtGui import QColor, QImage
+    screen = QImage(1366, 768, QImage.Format.Format_RGB32)
+    screen.fill(QColor("#FFFFFF"))
+    info = {"goal": "find flights to calicut", "done": ["Opened Google Flights"], "now": "Type 22 December",
+            "keys": "", "n": 2, "total": 3, "shortcut": "", "plan": ["read you the cheapest three"],
+            "driving": True, "asking": False, "can_drive": True, "started": time.time() - 60,
+            "view": (screen, (300.0, 294.0, 660.0, 348.0))}
+    info.update(changes)
+    return info
+
+
+def _wait_for(done, ms: int = 2000) -> bool:
+    """Let Qt run until ``done()`` (a busy machine can be slow), at most ``ms``."""
+    from PyQt6.QtTest import QTest
+    for _ in range(ms // 10):
+        if done():
+            return True
+        QTest.qWait(10)
+    return done()
 
 
 def _settle(widget, frames=240):
@@ -67,24 +104,11 @@ def test_notes_are_newest_first_with_their_real_titles_and_times(notes):
     assert [n.title for n in found] == ["Two strokes, one power cycle", "Polynomials approximating cosine",
                                         "Wrapping a wave around a circle"]
     assert found[0].when == dt.datetime(2026, 11, 4, 0, 20)
-    now = dt.datetime(2026, 11, 4, 9, 0)
-    assert panel_mod.when_text(found[0].when, now) == "12:20 am"
-    assert panel_mod.when_text(dt.datetime(2026, 11, 3, 15, 5), now) == "Yesterday"
-    assert panel_mod.when_text(dt.datetime(2026, 10, 30, 15, 5), now) == "30 Oct"
-    assert panel_mod.when_text(dt.datetime(2026, 11, 4, 13, 5), now) == "1:05 pm"
 
 
 def test_a_missing_folder_is_no_notes(tmp_path):
     import panel as panel_mod
     assert panel_mod.load_notes(tmp_path / "nope") == []
-
-
-def test_the_drawing_is_cut_from_the_saved_card(qapp, notes):
-    import panel as panel_mod
-    png = next(notes.glob("*.png"))
-    drawing = panel_mod.drawing_of(png)
-    assert drawing is not None and drawing.width() < 1012 and drawing.height() < 776 * 0.6, \
-        "just the sketch: no band, title or follow-up buttons"
 
 
 def test_it_grows_out_of_the_notch_and_settles_on_home(panel, notes):
@@ -94,29 +118,11 @@ def test_it_grows_out_of_the_notch_and_settles_on_home(panel, notes):
     assert panel.isVisible() and (panel._w, panel._h) == panel_mod.NOTCH, "starts as the notch"
     _settle(panel)
     assert (panel._w, panel._h) == panel_mod.HOME and panel._fade == 1.0
-    assert panel.view == "home"
-    stack = panel.home.stack
-    assert stack.current.title == "Two strokes, one power cycle" and len(stack._backs()) == 2
-    assert stack.open_btn.isVisible() and stack.ask_btn.isVisible()
+    assert panel.view == "home" and not panel.home.info, "nothing running"
+    home = panel.home
+    assert home.do_it.isVisible() and home.done.isVisible() and not home.call.isVisible() and not home.next.isVisible()
+    assert not hasattr(home, "stack"), "no note card on Home: drawings show on the screen"
     panel.grab()
-
-
-def test_no_notes_yet_shows_the_paper_hint(panel):
-    panel.open_on()
-    _settle(panel)
-    assert panel.home.stack.current is None
-    assert not panel.home.stack.open_btn.isVisible()
-    panel.grab()
-
-
-def test_older_notes_come_forward(panel, notes):
-    panel.notes_folder = notes
-    panel.open_on()
-    stack = panel.home.stack
-    stack.show_index(1)
-    assert stack.current.title == "Polynomials approximating cosine" and len(stack._backs()) == 1
-    stack.show_index(9)
-    assert stack.index == 1, "past the oldest: stays"
 
 
 def test_a_typed_question_goes_to_the_app_and_the_panel_tucks_away(panel):
@@ -128,26 +134,12 @@ def test_a_typed_question_goes_to_the_app_and_the_panel_tucks_away(panel):
     panel.home.ask.edit.setText("  what is a fourier transform  ")
     panel.home.ask.edit.returnPressed.emit()
     assert not panel.isVisible(), "gone before the screenshot"
-    QTest.qWait(200)
+    _wait_for(lambda: bool(asked))
     assert asked == ["what is a fourier transform"]
     panel.home.ask.edit.setText("   ")
     panel.home.ask.send.click()
     QTest.qWait(150)
     assert asked == ["what is a fourier transform"], "nothing to ask"
-
-
-def test_a_follow_up_names_the_note(panel, notes):
-    from PyQt6.QtTest import QTest
-    asked = []
-    panel.asked.connect(asked.append)
-    panel.notes_folder = notes
-    panel.open_on()
-    panel.home.stack.ask_btn.click()
-    assert "Two strokes" in panel.home.ask.edit.placeholderText()
-    panel.home.ask.edit.setText("why does it smoke")
-    panel.home.ask.edit.returnPressed.emit()
-    QTest.qWait(200)
-    assert asked == ['why does it smoke (about my sketch note "Two strokes, one power cycle")']
 
 
 def test_a_click_outside_or_esc_closes_it(panel, monkeypatch):
@@ -190,8 +182,8 @@ def test_settings_and_folders(panel, monkeypatch):
     panel.home.settings_btn.click()
     assert wanted == [True] and not panel.isVisible(), "then the Settings window, as before"
     panel.open_on()
-    panel.home.all_notes.click()
-    assert opened == [panel.notes_folder] and panel.notes_folder.is_dir()
+    panel.home.memory.click()
+    assert opened == [panel_mod.memory_dir()]
 
 
 def test_it_wears_the_buddys_colour(panel):
@@ -200,33 +192,149 @@ def test_it_wears_the_buddys_colour(panel):
     for buddy in ("ember", "splash", "mochi"):
         theme.set_avatar(buddy, persist=False)
         assert panel_mod.accent() == theme.current_palette().flood
-        shadow = panel.home.stack.open_btn._shadow.color()
+        shadow = panel.home.live.primary_btn._shadow.color()
         assert (shadow.red(), shadow.green(), shadow.blue()) == theme.current_palette().flood.getRgb()[:3]
         top, mid, bottom = panel_mod.gloss(panel_mod.accent())
         assert top.lightness() > mid.lightness() > bottom.lightness()
     theme.set_avatar(theme.DEFAULT_AVATAR, persist=False)
 
 
-def test_a_running_guide_shows_the_working_view(panel):
-    info = {"goal": "how do I project my screen", "done": ["Opened Settings"], "now": "Click Duplicate",
-            "keys": "", "n": 2, "total": 3, "shortcut": ""}
-    state = {"info": info}
+def test_a_running_job_turns_home_live(panel, monkeypatch):
+    import panel as panel_mod
+    activated = []
+    monkeypatch.setattr(panel, "_activate", lambda: activated.append(True))
+    state = {"info": _live_info()}
     panel.guide_fn = lambda: state["info"]
+    panel.open_on(focus_ask=True)
+    _settle(panel)
+    home = panel.home
+    assert panel.view == "home" and (panel._w, panel._h) == panel_mod.HOME
+    assert activated == [], "a job watches the front window: the panel leaves the keyboard alone"
+    assert home.info and home.live.primary_btn.text() == "Take over" and home.live.stop_btn.isVisible()
+    assert home.call.isVisible() and home.next.isVisible()
+    assert not home.do_it.isVisible() and not home.done.isVisible()
+    assert home.call.switch_btn.text() == "Let me click" and not home.call.yes_btn.isVisible()
+    assert home.ask.edit.placeholderText() == "Add a job, or ask anything"
+    home.live._cut(home.live._frame())
+    assert home.live._picture is not None and home.live._ring is not None, "your screen, a ring on the target"
+    panel.grab()
+    state["info"] = _live_info(driving=False)
+    for _ in range(16):
+        panel._animate()
+    assert home.live.primary_btn.text() == "I did it" and home.call.switch_btn.text() == "Do it for me"
+    state["info"] = None
+    for _ in range(16):
+        panel._animate()
+    assert not home.info and home.do_it.isVisible() and home.done.isVisible(), "the job ended: idle again"
+
+
+def test_jobs_typed_while_one_runs_wait_their_turn(panel, monkeypatch):
+    import jobs
+    from PyQt6.QtTest import QTest
+    asked = []
+    panel.asked.connect(asked.append)
+    monkeypatch.setattr(panel, "_activate", lambda: None)
+    panel.guide_fn = lambda: _live_info()
     panel.open_on()
     _settle(panel)
-    assert panel.view == "working"
-    assert panel._h < 400, "shorter than home"
-    kinds = [row[0] for row in panel.working._rows()]
-    assert kinds == ["done", "now", "next"]
-    assert panel.working.did_it.isVisible()
+    panel.home.ask.edit.setText("clone mum's voice")
+    panel.home.ask.edit.returnPressed.emit()
+    QTest.qWait(150)
+    assert asked == [] and panel.is_open, "it waits its turn instead of stopping the job"
+    assert jobs.queued() == ["clone mum's voice"] and panel.home.next.jobs == ["clone mum's voice"]
     panel.grab()
-    state["info"] = None
-    for _ in range(20):
-        panel._animate()
-    assert panel.view == "home", "the guide ended: back home"
+    stopped = []
+    panel.stopped.connect(lambda: stopped.append(True))
+    panel.home.live.stop_btn.click()
+    assert jobs.queued() == [] and stopped == [True], "Stop clears the line too"
 
 
-def test_the_working_view_drives_the_real_guide(panel, monkeypatch):
+def test_your_call_says_yes_or_hands_it_back(panel, monkeypatch):
+    import panel as panel_mod
+    calls = []
+
+    class FakeGuide:
+        driving = False
+
+        def approve(self):
+            calls.append("approve")
+
+        def set_drive(self, on):
+            calls.append(("drive", on))
+            FakeGuide.driving = on
+
+        def do_this_one(self):
+            calls.append("do this one")
+
+        def confirm(self):
+            calls.append("confirm")
+
+    monkeypatch.setattr(panel_mod, "_running_guide", lambda: FakeGuide())
+    panel.guide_fn = lambda: _live_info(driving=False, asking=True, now="Click Book")
+    panel.open_on()
+    _settle(panel)
+    call = panel.home.call
+    assert call.yes_btn.isVisible() and call.mine_btn.isVisible() and not call.switch_btn.isVisible()
+    panel.grab()
+    call.yes_btn.click()
+    call.mine_btn.click()
+    panel.home.live.primary_btn.click()           # you're clicking: I did it
+    assert calls == ["approve", ("drive", False), "confirm"]
+    panel.guide_fn = lambda: _live_info(driving=False)
+    panel._follow_job()
+    assert call.switch_btn.isVisible() and call.switch_btn.text() == "Do it for me"
+    call.switch_btn.click()
+    assert calls[-2:] == [("drive", True), "do this one"], "switched on, it does the step on show now"
+
+
+def test_nothing_running_offers_jobs_to_try_then_yours(panel):
+    import jobs
+    import panel as panel_mod
+    from PyQt6.QtTest import QTest
+    panel.open_on()
+    _settle(panel)
+    live = panel.home.live
+    assert not panel.home.info and live.mine is False
+    assert [b.text() for b in live.idea_btns if b.isVisible()] == list(panel_mod.EXAMPLES)
+    jobs.record("find flights to calicut", did=True, steps=3)
+    panel.refresh()
+    assert live.mine and live.idea_btns[0].text() == "Find flights to calicut"
+    assert not live.idea_btns[1].isVisible()
+    panel.grab()
+    asked = []
+    panel.asked.connect(asked.append)
+    live.idea_btns[0].click()
+    _wait_for(lambda: bool(asked))
+    assert asked == ["Find flights to calicut"]
+
+
+def test_done_today_lists_finished_jobs_and_todays_notes(panel, tmp_path):
+    import jobs
+    from PyQt6.QtCore import QEvent, QPointF, Qt
+    from PyQt6.QtGui import QMouseEvent
+    folder = tmp_path / "kept"
+    folder.mkdir()
+    note = _today_note(folder, 5, "Why the sky is blue")
+    _today_note(folder, 1, "The heart, cut open")
+    (folder / "2020-01-01 1000 Old note.json").write_text('{"title": "Old note"}', encoding="utf-8")
+    jobs.record("top 5 ai models", did=True, steps=1)
+    panel.notes_folder = folder
+    opened = []
+    panel.note_opened.connect(opened.append)
+    panel.open_on()
+    _settle(panel)
+    done = panel.home.done
+    labels = [i["label"] for i in done.items]
+    assert labels == ["Top 5 ai models", "Why the sky is blue", "The heart, cut open"], "newest first, today only"
+    panel.grab()
+    rect = next(r for r, i in done._rows() if i["label"] == "Why the sky is blue")
+    at = QPointF(rect.center())
+    done.mousePressEvent(QMouseEvent(QEvent.Type.MouseButtonPress, at, at, Qt.MouseButton.LeftButton,
+                                     Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier))
+    assert opened == [note] and not panel.is_open, "a note shown today opens its card again"
+
+
+def test_the_live_card_drives_the_real_guide(panel, monkeypatch):
     """I did it moves the guide on; Stop ends it. Neither shows what Clixy said."""
     import guide
     from snap import Element
@@ -269,15 +377,17 @@ def test_the_working_view_drives_the_real_guide(panel, monkeypatch):
     assert progress["done"] == ["Opened Settings"] and progress["now"] == "Click Duplicate"
     assert progress["goal"] == "how do I project my laptop"
     assert not any(s in str(progress) for s in said), "never the spoken sentences"
+    assert progress["plan"] == [] and progress["driving"] is False and progress["started"] > 0
     panel.guide_fn = panel_mod.guide_progress
     panel.open_on()
-    assert panel.view == "working"
-    panel.working.did_it.click()
+    assert panel.view == "home" and panel.home.info["now"] == "Click Duplicate"
+    assert panel.home.live.primary_btn.text() == "I did it"
+    panel.home.live.primary_btn.click()
     assert wait_for(lambda: (panel_mod.guide_progress() or {}).get("n") == 3)
     assert panel_mod.guide_progress()["done"] == ["Opened Settings", "Clicked Duplicate"]
     stopped = []
     panel.stopped.connect(lambda: stopped.append(True))
-    panel.working.stop.click()
+    panel.home.live.stop_btn.click()
     worker.join(2)
     assert not worker.is_alive() and guide.current() is None and stopped == [True]
 
@@ -493,7 +603,7 @@ def test_a_new_look_previews_live_and_back_puts_it_back(panel, stored, monkeypat
     assert panel.show_settings("look")
     page = panel.settings
     page._look_cards["dark"].click()
-    assert ui_kit.skin() is ui_kit.MIDNIGHT, "the whole panel turns Midnight right away"
+    assert ui_kit.skin() is ui_kit.MIDNIGHT, "the whole panel turns Charcoal right away"
     panel.grab()
     page.back.click()
     assert ui_kit.appearance() == "light" and "APPEARANCE" not in stored
@@ -555,28 +665,6 @@ def test_every_section_has_its_tile_and_header(panel, stored):
     assert panel.settings.pages["about"].isVisible()
 
 
-def test_open_note_brings_back_the_real_note_card(panel, tmp_path, monkeypatch):
-    import json
-    import panel as panel_mod
-    folder = tmp_path / "kept"
-    folder.mkdir()
-    note = {"title": "Why the sky is blue", "items": [{"type": "text", "text": "short waves scatter"}],
-            "followups": ["Why are sunsets red?"]}
-    (folder / "2026-11-04 1000 Why the sky is blue.json").write_text(json.dumps(note), encoding="utf-8")
-    started = []
-    monkeypatch.setattr(panel_mod, "_start", started.append)
-    opened = []
-    panel.note_opened.connect(opened.append)
-    panel.notes_folder = folder
-    panel.open_on()
-    _settle(panel)
-    stack = panel.home.stack
-    assert stack.current.drawable and stack.open_btn.isEnabled(), "no picture, but it can be drawn again"
-    stack.open_btn.click()
-    assert opened == [note] and started == [], "the note card, not a picture in another app"
-    assert not panel.is_open
-
-
 def test_a_note_card_opened_again_is_not_kept_twice(qapp, monkeypatch):
     import sketch
     kept = []
@@ -592,16 +680,6 @@ def test_a_note_card_opened_again_is_not_kept_twice(qapp, monkeypatch):
         card.close()
 
 
-def test_home_is_colourful_tiles_with_real_counts(panel, notes):
-    panel.notes_folder = notes
-    panel.open_on()
-    _settle(panel)
-    home = panel.home
-    assert home.all_notes.line == "3 drawn so far", "the real count (none of these is 3D)"
-    assert len(home.all_notes.pictures) == 3, "real thumbnails fanned on the tile"
-    panel.grab()
-
-
 def test_the_do_it_for_me_tile_asks_what_to_do_and_hands_it_over(panel, monkeypatch):
     asked = []
     panel.asked.connect(asked.append)
@@ -612,19 +690,5 @@ def test_the_do_it_for_me_tile_asks_what_to_do_and_hands_it_over(panel, monkeypa
     panel.home.ask.edit.setText("turn on dark mode")
     panel.home.ask.edit.returnPressed.emit()
     from PyQt6.QtTest import QTest
-    QTest.qWait(200)
+    _wait_for(lambda: bool(asked))
     assert asked == ["turn on dark mode for me"]
-
-
-def test_the_arrows_in_the_notes_corner_flip_through_them(panel, notes):
-    from PyQt6.QtCore import QEvent, QPointF, Qt
-    from PyQt6.QtGui import QMouseEvent
-    panel.notes_folder = notes
-    panel.open_on()
-    _settle(panel)
-    stack = panel.home.stack
-    prev, _mid, nxt = stack._nav()
-    at = QPointF(nxt.center())
-    stack.mousePressEvent(QMouseEvent(QEvent.Type.MouseButtonPress, at, at, Qt.MouseButton.LeftButton,
-                                      Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier))
-    assert stack.index == 1

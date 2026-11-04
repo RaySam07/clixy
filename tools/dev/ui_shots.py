@@ -1,7 +1,11 @@
 """Pictures of Clixy's notch, panel and Settings, drawn exactly as on screen, to review
 the look without clicking anything.
 
-    python tools/dev/ui_shots.py OUT_DIR [--only notch,home,settings,working] [--back desk.png] [--skin dark]
+    python tools/dev/ui_shots.py OUT_DIR [--only notch,home,live,settings] [--back desk.png] [--skin dark]
+
+home is Home with nothing running (your real done jobs and notes from today); live is Home
+while a job runs (Clixy clicking through a flights search, two jobs waiting) and while a
+step waits for your yes.
 
 Each picture is the real widget painted over a backdrop (a screenshot of your desktop
 with --back, else a plain wallpaper gradient). Needs no keys and calls no AI.
@@ -17,8 +21,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from PyQt6.QtCore import QPoint, QRect, Qt  # noqa: E402
-from PyQt6.QtGui import QColor, QImage, QLinearGradient, QPainter  # noqa: E402
+from PyQt6.QtCore import QPoint, QRect, QRectF, Qt  # noqa: E402
+from PyQt6.QtGui import QColor, QFont, QImage, QLinearGradient, QPainter  # noqa: E402
 from PyQt6.QtWidgets import QApplication  # noqa: E402
 
 
@@ -98,7 +102,49 @@ def notch_shots(out: Path, back, dpr) -> None:
     isl.close()
 
 
-def panel_shots(out: Path, back, dpr, only, note_index: int = 0) -> None:
+def fake_screen() -> tuple[QImage, tuple[float, float, float, float]]:
+    """A browser on a flights page, as a screenshot the live card can show, and the date
+    box's place in it."""
+    img = QImage(1366, 768, QImage.Format.Format_RGB32)
+    img.fill(QColor("#FFFFFF"))
+    p = QPainter(img)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    p.fillRect(0, 0, 1366, 74, QColor("#EEF0F6"))
+    p.setPen(Qt.PenStyle.NoPen)
+    for i, c in enumerate(("#FF6B6B", "#FFC24B", "#3DD68C")):
+        p.setBrush(QColor(c))
+        p.drawEllipse(20 + i * 22, 20, 12, 12)
+    p.setBrush(QColor("#FFFFFF"))
+    p.drawRoundedRect(QRectF(110, 40, 900, 26), 13, 13)
+    f = QFont("Segoe UI", 11)
+    p.setFont(f)
+    p.setPen(QColor("#8A8FA0"))
+    p.drawText(QRectF(126, 40, 600, 26), Qt.AlignmentFlag.AlignVCenter, "google.com/travel/flights")
+    p.setFont(QFont("Segoe UI", 26, QFont.Weight.DemiBold))
+    p.setPen(QColor("#3A3F4E"))
+    p.drawText(QRectF(300, 130, 600, 60), Qt.AlignmentFlag.AlignVCenter, "Flights")
+    p.setFont(QFont("Segoe UI", 13))
+    boxes = [(300, 220, 360, 54, "Dubai DXB"), (680, 220, 360, 54, "Calicut CCJ"), (300, 294, 360, 54, "Mon, 22 Dec")]
+    for x, y, w, h, text in boxes:
+        p.setPen(QColor("#DADDE6"))
+        p.setBrush(QColor("#FFFFFF"))
+        p.drawRoundedRect(QRectF(x, y, w, h), 10, 10)
+        p.setPen(QColor("#3A3F4E"))
+        p.drawText(QRectF(x + 18, y, w - 20, h), Qt.AlignmentFlag.AlignVCenter, text)
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(QColor("#E8EEFF"))
+    p.drawRoundedRect(QRectF(680, 294, 150, 54), 27, 27)
+    p.setPen(QColor("#3B5BDB"))
+    p.drawText(QRectF(680, 294, 150, 54), Qt.AlignmentFlag.AlignCenter, "Search")
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(QColor("#ECEEF4"))
+    for i in range(4):
+        p.drawRoundedRect(QRectF(300, 400 + i * 70, 740 - i * 90, 40), 10, 10)
+    p.end()
+    return img, (300.0, 294.0, 660.0, 348.0)
+
+
+def panel_shots(out: Path, back, dpr, only) -> None:
     import panel as panel_mod
     panel_mod._key_down = lambda vk: False
     pn = panel_mod.ClixyPanel()
@@ -110,16 +156,31 @@ def panel_shots(out: Path, back, dpr, only, note_index: int = 0) -> None:
     pn.hide()
     if "home" in only:
         settle(pn)
-        stack = pn.home.stack
-        if note_index:
-            stack.show_index(note_index)
-            settle(pn)
-        if stack._model is not None:            # a 3D note: wait for its model, then show it settled
-            stack._model.wait(120)
-            stack._shown_at -= 30
-            stack.grab()                        # the first paint starts the model on the GPU
-            stack._shown_at -= 30
         over(pn, back, dpr).save(str(out / "panel-home.png"))
+    if "live" in only:
+        import jobs
+        screen, box = fake_screen()
+        info = {"goal": "find flights from Dubai to Calicut on 22 Dec", "done": ["Opened Google Flights"],
+                "now": "Type 22 December into the date box", "keys": "", "n": 2, "total": 3, "shortcut": "",
+                "plan": ["read you the cheapest three"], "driving": True, "asking": False, "can_drive": True,
+                "started": time.time() - 95, "view": (screen, box)}
+        jobs.clear_queue()
+        jobs.enqueue("clone Mum's voice in VoiceStudio")
+        jobs.enqueue("add a calendar panel in Hark")
+        pn.guide_fn = lambda: info
+        pn.refresh()
+        settle(pn)
+        pn.hide()
+        over(pn, back, dpr).save(str(out / "panel-live.png"))
+        info = dict(info, now="Click Book on the 9:40 flyDubai", driving=False, asking=True, n=3,
+                    done=["Opened Google Flights", "Typed 22 December"], plan=[])
+        pn.refresh()
+        settle(pn)
+        pn.hide()
+        over(pn, back, dpr).save(str(out / "panel-live-your-call.png"))
+        jobs.clear_queue()
+        pn.guide_fn = None
+        pn.refresh()
     if "settings" in only:
         for key, _title in __import__("panel_settings").SECTIONS:
             pn.show_settings(key)
@@ -130,14 +191,6 @@ def panel_shots(out: Path, back, dpr, only, note_index: int = 0) -> None:
             pn.hide()
             over(pn, back, dpr).save(str(out / f"settings-{key}.png"))
         pn.settings.discard()
-    if "working" in only:
-        info = {"question": "How do I turn on dark mode?", "steps": ["Open Settings", "Go to Personalisation"],
-                "now": "Click Colours", "n": 3, "total": 4}
-        pn.guide_fn = lambda: info
-        pn.refresh()
-        settle(pn)
-        pn.hide()
-        over(pn, back, dpr).save(str(out / "panel-working.png"))
     pn._tick.stop()
     pn.close()
 
@@ -145,9 +198,8 @@ def panel_shots(out: Path, back, dpr, only, note_index: int = 0) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("out")
-    ap.add_argument("--only", default="notch,home,settings,working")
+    ap.add_argument("--only", default="notch,home,live,settings")
     ap.add_argument("--back", default="")
-    ap.add_argument("--note", type=int, default=0, help="which kept note is in front on Home (0: the newest)")
     ap.add_argument("--skin", default="", help="light, dark or system (default: the stored one)")
     a = ap.parse_args()
     app = QApplication.instance() or QApplication(sys.argv)
@@ -165,8 +217,8 @@ def main() -> int:
     only = a.only.split(",")
     if "notch" in only:
         notch_shots(out, back, dpr)
-    if {"home", "settings", "working"} & set(only):
-        panel_shots(out, back, dpr, only, a.note)
+    if {"home", "live", "settings"} & set(only):
+        panel_shots(out, back, dpr, only)
     print("saved to", out)
     return 0
 

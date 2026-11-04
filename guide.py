@@ -358,6 +358,20 @@ def element_lines(elements: list, capture) -> tuple[list[str], dict[int, object]
     return lines, ids
 
 
+def _view_of(capture, target) -> tuple | None:
+    """The screen as Clixy last saw it and the target's box in that picture's pixels
+    (None for a key step), for the panel's live card."""
+    image = getattr(capture, "image", None)
+    if image is None:
+        return None
+    if target is None:
+        return image, None
+    m = capture.monitor
+    sx, sy = capture.scale_x or 1.0, capture.scale_y or 1.0
+    l, t, r, b = target
+    return image, ((l - m["left"]) / sx, (t - m["top"]) / sy, (r - m["left"]) / sx, (b - m["top"]) / sy)
+
+
 def _to_physical(box: Box, capture) -> Box:
     from capture import unscale_claude_coords
 
@@ -674,15 +688,31 @@ class Guide:
     _showing: str = field(default="", init=False, repr=False)      # the step on show: "" (Clixy may do it) or why not
     _know_cache: dict = field(default_factory=dict, init=False, repr=False)
     _browser: str = field(default="", init=False, repr=False)      # the browser the goal names ("chrome")
+    _upcoming: list = field(default_factory=list, init=False, repr=False)  # the plan's words, still to come
+    _view: object = field(default=None, init=False, repr=False)    # (screen image, target box in its pixels)
+    _started: float = field(default=0.0, init=False, repr=False)   # wall time the guide began
+    _ever_drove: bool = field(default=False, init=False, repr=False)
+    finished: bool = field(default=False, init=False)              # the goal was reached (after run())
 
     # --- For the panel (any thread) -------------------------------------------------
 
     def progress(self) -> dict:
         """Where the guide is: the goal (your own words), the steps done, the
         step now ("Press Win + P"), its keys if it is a shortcut, n and total.
-        Never the spoken sentences."""
+        Never the spoken sentences. For the panel's live card too: the plan still
+        to come, whether Clixy is clicking (driving) or waiting for your yes
+        (asking), when it started, and the screen as it last saw it with the
+        target's box in that picture's pixels (view)."""
         return {"goal": self._goal, "done": list(self._done_labels), "now": self._now,
-                "keys": self._keys, "n": self._n, "total": self._total, "shortcut": self._shortcut}
+                "keys": self._keys, "n": self._n, "total": self._total, "shortcut": self._shortcut,
+                "plan": list(self._upcoming), "driving": self.driving, "asking": self._asking,
+                "can_drive": self.hands is not None,
+                "started": self._started, "view": self._view}
+
+    @property
+    def drove(self) -> bool:
+        """Clixy did the clicking at some point (Do it for me), rather than only pointing."""
+        return self._ever_drove
 
     def confirm(self) -> None:
         """"I did it": count this step as done and look at the screen again."""
@@ -696,6 +726,7 @@ class Guide:
         """Do the steps yourself (True) or point the way (False). Any thread."""
         if on:
             self._drive.set()
+            self._ever_drove = self.hands is not None
         else:
             self._drive.clear()
         watch_moves = getattr(self.watch, "watch_moves", None)
@@ -743,6 +774,8 @@ class Guide:
         fix = ""
         finished = False
         self._goal = " ".join((goal or "").split())
+        self._started, self._upcoming, self._view, self.finished = time.time(), [], None, False
+        self._ever_drove = self._ever_drove or self.driving
         _current = self
         hint = self._route_hint(goal)
         import apps
@@ -795,10 +828,12 @@ class Guide:
                     elif plan:
                         plan = plan[1:]  # this step was (most likely) the plan's next one
                 spoke, fix = False, ""
+                self._upcoming = [p.say or str(p) for p in plan]
                 wins = self._windows()
                 n += 1
                 total = max(step.total, step.n, n) if (step.total or step.n) else 0
                 marks, target = self._marks(step, ids, capture)
+                self._view = _view_of(capture, target)
                 self._n, self._total = n, total
                 self._now = step_label(step, ids)
                 self._keys = step.keys if step.action == "keys" else ""
@@ -889,6 +924,7 @@ class Guide:
             return last
         finally:
             self.watch.stop()
+            self.finished = finished
             if finished:
                 self._remember(goal, route)
             if _current is self:

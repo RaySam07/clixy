@@ -3,19 +3,18 @@
 Click the notch (island.py) and the panel drops down from the top of the
 screen, its shoulders flaring into the screen edge like the notch's own. It
 leaves the notch black and blooms into the skin's colours as it grows
-(ui_kit: bright Daylight by default, or deep Midnight), with a breath of the
+(ui_kit: bright Daylight by default, or Charcoal), with a breath of the
 buddy's colour at the top. Everything in it is tactile: buttons sink and
-spring back, the front note tilts toward the mouse, the cards behind lift,
-and each move has its little sound (sfx.py, through ui_kit.sound):
+spring back, tiles lift, and each move has its little sound (sfx.py, through
+ui_kit.sound):
 
-- Home: a hello with your real shortcut as keycaps; your newest sketch note on
-  warm paper (the two before it tucked behind, tilted), with Open note and Ask
-  a follow-up; All notes, What Clixy remembers, and a box to type a question.
-  A 3D note shows its real model, live on the GPU (render3d), rocking gently:
-  drag it to turn it. Open note brings the note back as the pad it first
-  appeared on (sketch.NoteCard), drawing itself again, not a flat picture.
-- Working: while a guide runs (guide.py), what you asked, the steps done, the
-  step now in your buddy's colour, I did it and Stop.
+- Home (board J, 4 Nov 2026): what Clixy is doing now and what's waiting, no
+  note card (drawings show on the screen when asked). While a job runs (a
+  guide, guide.py): the job, its steps, your screen with a ring on the next
+  click, I did it or Take over, Stop; Your call when a step needs your yes; Up
+  next (jobs typed meanwhile wait their turn, jobs.py); today's done jobs.
+  When nothing runs: jobs to do again, Do it for me and Done today (a note in
+  it opens its card again, sketch.NoteCard).
 - Settings: the gear turns the panel into Settings (panel_settings.py), all
   in one place, saved through settings_dialog.SettingsDialog's own logic.
 
@@ -25,8 +24,8 @@ shows the words of Clixy's spoken answers: those are only ever heard.
 The accent everywhere is your buddy's colour (theme.current_palette().flood).
 
 Threading: Qt main thread only. A guide runs on a worker thread; the panel
-reads its progress (guide.current().progress()) and calls confirm()/stop(),
-which are thread-safe.
+reads its progress (guide.current().progress()) and calls confirm(), stop(),
+approve() and set_drive(), which are thread-safe.
 """
 from __future__ import annotations
 
@@ -53,9 +52,7 @@ from PyQt6.QtGui import (
     QPainterPath,
     QPalette,
     QPen,
-    QPixmap,
     QRadialGradient,
-    QTransform,
 )
 from PyQt6.QtWidgets import (
     QAbstractButton,
@@ -69,24 +66,16 @@ from PyQt6.QtWidgets import (
 
 import theme
 import ui_kit
-from island import paint_light, tab_path
+from island import tab_path
 from ui_kit import Motion, Tactile, skin, sound
 
 # --- Colours and sizes -------------------------------------------------------------------------------
 # The panel's own colours come from the skin (ui_kit.skin()); these are the note paper's.
 
-PAPER = QColor("#FBF8F2")
-PAPER_BAND = QColor("#F2EDE4")
-PAPER_DOT = QColor("#DCD3C3")
 INK = QColor("#1D1B18")
-BAND_TEXT = QColor("#6B655B")
-NOTE_META = QColor("#7A7366")
-PAPER_MUTED = QColor("#8A8274")
-PAPER_RING = QColor("#CFC6B5")
 
 NOTCH = (150.0, 24.0)          # where it grows from (island.SideIsland.NOTCH)
 HOME = (880.0, 650.0)
-WORK_W = 720.0
 SHOULDER = 22.0
 PAD_X, PAD_B = 84, 96          # room around the panel for its shadow
 MAX_H = 720.0
@@ -458,6 +447,12 @@ class _Edit(QLineEdit):
 
     focus_changed = pyqtSignal(bool)
 
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        activate = getattr(self.window(), "_activate", None)   # the panel opened without the keyboard (a job runs)
+        if callable(activate) and not self.window().isActiveWindow():
+            activate()
+        super().mousePressEvent(event)
+
     def focusInEvent(self, event) -> None:  # noqa: N802
         super().focusInEvent(event)
         self.focus_changed.emit(True)
@@ -473,7 +468,7 @@ class AskField(Motion, QWidget):
     that pops forward once there's something to send."""
 
     submitted = pyqtSignal(str)
-    PLACEHOLDER = "Type a question"
+    PLACEHOLDER = "Ask anything, or tell me what to do"
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -639,457 +634,6 @@ def load_notes(folder: Path | None = None) -> list[Note]:
     return notes
 
 
-def when_text(when: dt.datetime, now: dt.datetime | None = None) -> str:
-    """'12:09 am' today, 'Yesterday' or '3 Nov' before."""
-    now = now or dt.datetime.now()
-    if when.date() == now.date():
-        hour = when.hour % 12 or 12
-        return f"{hour}:{when.minute:02d} {'am' if when.hour < 12 else 'pm'}"
-    if when.date() == (now - dt.timedelta(days=1)).date():
-        return "Yesterday"
-    return f"{when.day} {when:%b}"
-
-
-def drawing_of(png: Path) -> QImage | None:
-    """The drawing in a saved note's picture: the sketch.NoteCard's grid area,
-    without its band, title and buttons (we draw our own)."""
-    image = QImage(str(png))
-    if image.isNull():
-        return None
-    try:
-        from sketch import NoteCard
-        card_w, card_h, margin = float(NoteCard.W), float(NoteCard.H), float(NoteCard._M)
-    except Exception:
-        card_w, card_h, margin = 470.0, 352.0, 18.0
-    full_w, full_h = card_w + 2 * margin, card_h + 2 * margin
-    k = image.width() / full_w
-    if abs(image.height() / k - full_h) > 0.04 * full_h:
-        return image  # not the card we know: show it whole
-    top, bottom = margin + 89, margin + card_h - 47     # under the subtitle, above the follow-ups
-    crop = QRectF(margin + 3, top, card_w - 6, bottom - top)
-    part = image.copy(QRect(round(crop.left() * k), round(crop.top() * k), round(crop.width() * k),
-                            round(crop.height() * k)))
-    return _feather(part.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied), round(14 * k))
-
-
-def _feather(image: QImage, edge: int) -> QImage:
-    """Fade the picture's edges out, so the drawing melts into our paper."""
-    w, h = image.width(), image.height()
-    p = QPainter(image)
-    p.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
-    for start, end, rect in (((0, 0), (edge, 0), QRectF(0, 0, edge, h)), ((w, 0), (w - edge, 0), QRectF(w - edge, 0, edge, h)),
-                             ((0, 0), (0, edge), QRectF(0, 0, w, edge)), ((0, h), (0, h - edge), QRectF(0, h - edge, w, edge))):
-        g = QLinearGradient(QPointF(*start), QPointF(*end))
-        g.setColorAt(0.0, QColor(0, 0, 0, 0))
-        g.setColorAt(1.0, QColor(0, 0, 0, 255))
-        p.fillRect(rect, QBrush(g))
-    p.end()
-    return image
-
-
-def _dot_brush(dpr: float) -> QBrush:
-    """The paper's faint dot grid: one dot every 14 px."""
-    tile = QPixmap(round(14 * dpr), round(14 * dpr))
-    tile.setDevicePixelRatio(dpr)
-    tile.fill(QColor(0, 0, 0, 0))
-    p = QPainter(tile)
-    p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-    p.setPen(Qt.PenStyle.NoPen)
-    p.setBrush(PAPER_DOT)
-    p.drawEllipse(QPointF(7, 7), 1.15, 1.15)
-    p.end()
-    return QBrush(tile)
-
-
-def paint_paper(painter: QPainter, rect: QRectF, radius: float, band_h: float = 0.0,
-                dpr: float = 1.0) -> QPainterPath:
-    """Warm paper with a faint dot grid and, if asked, its header strip."""
-    shape = QPainterPath()
-    shape.addRoundedRect(rect, radius, radius)
-    painter.fillPath(shape, PAPER)
-    brush = _dot_brush(dpr)
-    brush.setTransform(QTransform.fromTranslate(rect.left(), rect.top()))
-    painter.fillPath(shape, brush)
-    if band_h:
-        painter.save()
-        painter.setClipPath(shape)
-        painter.fillRect(QRectF(rect.left(), rect.top(), rect.width(), band_h), PAPER_BAND)
-        painter.restore()
-    return shape
-
-
-class NoteStack(Motion, QWidget):
-    """Your newest note, big, on warm paper held by a strip of tape, with your buddy
-    peeking over its top edge. It lifts under the mouse with a sheen that follows it
-    (and the buddy pops up a little); a 3D note's model turns live (drag it, double-click
-    to reset); the ‹ › in its corner, the wheel or the arrow keys bring the older notes
-    forward, with a paper sound."""
-
-    open_note = pyqtSignal(object)
-    follow_up = pyqtSignal(object)
-
-    TOP = 40.0                       # room above the card for the tape and the buddy peeking over
-    BAND = 34.0                      # the card's first line: when, 3D, ‹ 1 of 13 ›
-    SHADOW = 30.0                    # room below the card for its shadow
-    SIDE = 18.0                      # and either side of it
-
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.notes: list[Note] = []
-        self.index = 0
-        self._drawings: dict = {}
-        self._mouse = QPointF(-1, -1)
-        self._model = None            # the front note's live 3D model (render3d.RealModel), if it's a 3D note
-        self._model_for = None
-        self._shown_at = 0.0
-        self._orbit_from: QPointF | None = None
-        self._spin = QTimer(self)     # a 3D model rocks gently (30 frames a second while the panel shows it)
-        self._spin.timeout.connect(self._spin_tick)
-        self.open_btn = PanelButton("Open note", "glossy", self, px=14, weight=800, pad=(10, 19))
-        self.ask_btn = PanelButton("Ask a follow-up", "paper", self, px=14, weight=700, pad=(9, 16))
-        self.open_btn.clicked.connect(lambda: self.current and self.open_note.emit(self.current))
-        self.ask_btn.clicked.connect(lambda: self.current and self.follow_up.emit(self.current))
-        self.setMouseTracking(True)
-        self.spring("lift", 0.0, 380.0, 28.0)
-        self.spring("enter", 1.0, 300.0, 22.0)
-        self.resize(round(553 + 2 * self.SIDE), round(418 + self.TOP + self.SHADOW))
-        self._place()
-
-    @property
-    def current(self) -> Note | None:
-        return self.notes[self.index] if 0 <= self.index < len(self.notes) else None
-
-    def set_notes(self, notes: list[Note]) -> None:
-        self.notes = notes
-        self.index = 0
-        self._place()
-        self._use_model()
-        self.update()
-
-    def resizeEvent(self, _event) -> None:  # noqa: N802
-        self._place()
-
-    # --- The live 3D model --------------------------------------------------------------------
-    def _title_font(self) -> QFont:
-        f = theme.hand_font(10)
-        f.setPixelSize(30)
-        return f
-
-    def _slot(self) -> QRectF:
-        """Where the drawing (or the model) goes on the card."""
-        card = self._card().translated(0, self._lift_px())
-        top = card.top() + self.BAND + QFontMetricsF(self._title_font()).height() + 2
-        return QRectF(card.left() + 14, top, card.width() - 28, self.open_btn.y() - 8 - top)
-
-    def _use_model(self) -> None:
-        """Build (or keep) the live model for the front note; let go of any other."""
-        note = self.current
-        key = (str(note.png), note.title, note.when) if note is not None and note.three_d else None
-        if key == self._model_for:
-            return
-        self.release_model()
-        self._model_for = key
-        if key is None:
-            return
-        try:
-            import model3d
-            import render3d
-            self._model = render3d.RealModel.from_note(model3d.upgrade_note(note.data))
-        except Exception:
-            self._model = None
-        if self._model is not None:
-            import time
-            self._model.captions = []        # the takeaway is on the note itself; here, just the model
-            self._shown_at = time.monotonic()
-            if self.isVisible():
-                self._spin.start(33)
-
-    def release_model(self) -> None:
-        """Free the model's GPU buffers (the panel closed, or another note came forward)."""
-        self._spin.stop()
-        if self._model is not None:
-            try:
-                self._model.release()
-            except Exception:
-                pass
-        self._model = None
-        self._model_for = None
-
-    def _spin_tick(self) -> None:
-        if self._model is None or not self.isVisible():
-            self._spin.stop()
-            return
-        self.update(self._slot().adjusted(-60, -30, 60, 30).toAlignedRect())
-
-    def showEvent(self, event) -> None:  # noqa: N802
-        super().showEvent(event)
-        self._use_model()
-        if self._model is not None:
-            self._spin.start(33)
-
-    def hideEvent(self, event) -> None:  # noqa: N802
-        super().hideEvent(event)
-        self._spin.stop()
-
-    # --- Where things are -------------------------------------------------------------------
-    def _card(self) -> QRectF:
-        return QRectF(self.SIDE, self.TOP, self.width() - 2 * self.SIDE, self.height() - self.TOP - self.SHADOW)
-
-    def _backs(self) -> list[Note]:
-        """The notes after this one (up to two): what › brings forward next."""
-        return self.notes[self.index + 1:self.index + 3]
-
-    def _lift_px(self) -> float:
-        return -4.0 * self.val("lift") + 26.0 * (1.0 - self.val("enter"))
-
-    def _nav(self) -> tuple[QRectF, QRectF, QRectF] | None:
-        """The ‹, the "1 of 13" and the › in the card's corner (None with one note)."""
-        if len(self.notes) < 2:
-            return None
-        card = self._card().translated(0, self._lift_px())
-        f = font(12, 800)
-        count = f"{self.index + 1} of {len(self.notes)}"
-        cw = QFontMetricsF(f).horizontalAdvance(count) + 8
-        cy = card.top() + self.BAND / 2 + 4
-        nxt = QRectF(card.right() - 16 - 26, cy - 13, 26, 26)
-        mid = QRectF(nxt.left() - cw, cy - 13, cw, 26)
-        prev = QRectF(mid.left() - 26, cy - 13, 26, 26)
-        return prev, mid, nxt
-
-    def _place(self) -> None:
-        card = self._card().translated(0, self._lift_px())
-        has = self.current is not None
-        for b in (self.open_btn, self.ask_btn):
-            b.setVisible(has)
-        if not has:
-            return
-        self.open_btn.setEnabled(self.current.png is not None or self.current.drawable)
-        y = card.bottom() - 16 - self.open_btn.height()
-        self.open_btn.move(round(card.left() + 18), round(y))
-        self.ask_btn.move(round(card.left() + 18 + self.open_btn.width() + 10),
-                          round(y + (self.open_btn.height() - self.ask_btn.height()) / 2))
-
-    def _motion_step(self, dt: float) -> bool:
-        moving = super()._motion_step(dt)
-        self._place()                     # the buttons ride on the card as it lifts
-        return moving
-
-    def _drawing(self, note: Note) -> QImage | None:
-        if note.png is None:
-            return None
-        key = str(note.png)
-        if key not in self._drawings:
-            if len(self._drawings) > 12:
-                self._drawings.clear()
-            self._drawings[key] = drawing_of(note.png)
-        return self._drawings[key]
-
-    # --- The mouse --------------------------------------------------------------------------
-    def _nav_at(self, pos: QPointF) -> int:
-        nav = self._nav()
-        if nav is None:
-            return 0
-        if nav[0].contains(pos):
-            return -1
-        if nav[2].contains(pos):
-            return 1
-        return 0
-
-    def mouseMoveEvent(self, event) -> None:  # noqa: N802
-        pos = event.position()
-        if self._orbit_from is not None and self._model is not None:
-            self._model.drag(pos.x() - self._orbit_from.x(), pos.y() - self._orbit_from.y())
-            self._orbit_from = pos
-            self.update()
-            return
-        on_model = self._model is not None and self._slot().contains(pos)
-        self.setCursor(Qt.CursorShape.PointingHandCursor if self._nav_at(pos)
-                       else Qt.CursorShape.OpenHandCursor if on_model else Qt.CursorShape.ArrowCursor)
-        on_card = self._card().contains(pos)
-        self.go("lift", 1.0 if on_card else 0.0)
-        self._mouse = pos
-        if on_card:
-            self.update()
-
-    def leaveEvent(self, _event) -> None:  # noqa: N802
-        self.go("lift", 0.0)
-
-    def mousePressEvent(self, event) -> None:  # noqa: N802
-        step = self._nav_at(event.position())
-        if step:
-            self.show_index(self.index + step)
-        elif self._model is not None and self._slot().contains(event.position()):
-            self._orbit_from = event.position()          # turn the model by hand
-            self.setCursor(Qt.CursorShape.ClosedHandCursor)
-
-    def mouseReleaseEvent(self, _event) -> None:  # noqa: N802
-        if self._orbit_from is not None:
-            self._orbit_from = None
-            self.setCursor(Qt.CursorShape.OpenHandCursor)
-
-    def mouseDoubleClickEvent(self, event) -> None:  # noqa: N802
-        if self._model is not None and self._slot().contains(event.position()):
-            self._model.reset_view()
-            self.update()
-
-    def wheelEvent(self, event) -> None:  # noqa: N802
-        step = -1 if event.angleDelta().y() > 0 else 1
-        self.show_index(self.index + step)
-
-    def show_index(self, i: int) -> None:
-        if self.notes and 0 <= i < len(self.notes) and i != self.index:
-            self.index = i
-            self.go("enter", 0.0, snap=True)      # the new note slides up into place
-            self.go("enter", 1.0)
-            sound("slide")
-            self._place()
-            self._use_model()
-            self.update()
-
-    # --- Painting ---------------------------------------------------------------------------
-    def paintEvent(self, _event) -> None:  # noqa: N802
-        p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        p.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
-        p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
-        dpr = self.devicePixelRatioF()
-        sk = skin()
-        lift = self.val("lift")
-        enter = max(0.0, min(1.2, self.val("enter")))
-        card = self._card().translated(0, self._lift_px())
-        note = self.current
-
-        # The buddy, peeking over the top edge (the card hides its lower half). It pops up a
-        # little when you point at the card.
-        t = float(self.window().property("t") or 0.0) if self.window() else 0.0
-        device = max(1, int(2.6 * dpr + 0.25))
-        peek = QRectF(card.right() - 92, card.top() - 31 - 8 * lift, 52, 54)
-        theme.paint_avatar_in(p, peek, t=t, scale=device / (2 * dpr), device_pixel_ratio=dpr,
-                              mood="happy" if lift > 0.5 else "idle")
-        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-
-        shape = QPainterPath()
-        shape.addRoundedRect(card, 22, 22)
-        p.setOpacity(min(1.0, 0.25 + 0.75 * enter))
-        shadow = _rgba(sk.shadow, min(1.0, sk.shadow.alphaF() * 1.9))
-        draw_shadow(p, shape, dy=8 + 6 * lift, blur=22, color=shadow, key=("card", card.width(), card.height(), sk.name))
-        paint_paper(p, card, 22, 0, dpr)
-        if lift > 0.01 and card.contains(self._mouse):
-            # A sheen on the paper that follows the mouse: it feels like a real card.
-            sheen = QRadialGradient(self._mouse, 240)
-            sheen.setColorAt(0.0, QColor(255, 255, 255, round(70 * lift)))
-            sheen.setColorAt(1.0, QColor(255, 255, 255, 0))
-            p.save()
-            p.setClipPath(shape)
-            p.fillRect(card, QBrush(sheen))
-            p.restore()
-        p.setPen(QPen(QColor(0, 0, 0, 22) if not sk.dark else QColor(255, 255, 255, 20), 1.0))
-        p.setBrush(Qt.BrushStyle.NoBrush)
-        p.drawRoundedRect(card.adjusted(-0.5, -0.5, 0.5, 0.5), 22.5, 22.5)
-        _paint_tape(p, QPointF(card.left() + 60, card.top() + 1), -4.0)
-
-        band = QRectF(card.left() + 18, card.top() + 8, card.width() - 36, self.BAND - 8)
-        p.setFont(font(12, 700))
-        p.setPen(NOTE_META)
-        if note is None:
-            p.drawText(band, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, "Sketch notes")
-            title = self._title_font()
-            p.setFont(title)
-            p.setPen(INK)
-            p.drawText(QRectF(card.left() + 18, card.top() + self.BAND + 18, card.width() - 36, 40),
-                       Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, "No notes yet")
-            p.setFont(font(15, 600))
-            p.setPen(BAND_TEXT)
-            p.drawText(QRectF(card.left() + 18, card.top() + self.BAND + 66, card.width() - 36, 80),
-                       Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop | Qt.TextFlag.TextWordWrap,
-                       "Ask Clixy to explain something and a note draws itself here, in 3D when it helps.")
-            p.end()
-            return
-        when = ("Latest note · " if self.index == 0 else "Note · ") + when_text(note.when)
-        p.drawText(band, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, when)
-        if note.three_d:
-            wf = QFontMetricsF(font(12, 700)).horizontalAdvance(when)
-            chip = QRectF(band.left() + wf + 10, band.center().y() - 10, 30, 20)
-            p.fillPath(_pill(chip), QColor("#F1E2FF"))
-            p.setFont(font(10.5, 800))
-            p.setPen(QColor("#6B2BB8"))
-            p.drawText(chip, Qt.AlignmentFlag.AlignCenter, "3D")
-        nav = self._nav()
-        if nav is not None:
-            prev, mid, nxt = nav
-            p.setFont(font(12, 800))
-            p.setPen(NOTE_META)
-            p.drawText(mid, Qt.AlignmentFlag.AlignCenter, f"{self.index + 1} of {len(self.notes)}")
-            for rect, glyph, on in ((prev, "‹", self.index > 0), (nxt, "›", self.index < len(self.notes) - 1)):
-                hover = rect.contains(self._mouse)
-                if hover and on:
-                    p.fillPath(_pill(rect), QColor(0, 0, 0, 16))
-                p.setFont(font(19, 800))
-                p.setPen(INK if on else PAPER_RING)
-                p.drawText(rect.translated(0, -1.5), Qt.AlignmentFlag.AlignCenter, glyph)
-        title_font = self._title_font()
-        tfm = QFontMetricsF(title_font)
-        top = card.top() + self.BAND
-        p.setFont(title_font)
-        p.setPen(INK)
-        p.drawText(QRectF(card.left() + 18, top, card.width() - 36, tfm.height()),
-                   Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-                   tfm.elidedText(note.title, Qt.TextElideMode.ElideRight, card.width() - 36))
-        slot = self._slot()
-        if self._model is not None and not self._model.failed:
-            import time
-            seen = time.monotonic() - self._shown_at
-            try:
-                self._model.paint(p, slot, turn=self._model.TURN * 0.7 * math.sin(seen * 0.5), t=seen,
-                                  reveal=seen + 0.3)
-                p.end()
-                return
-            except Exception:
-                self._model.failed = True       # its picture instead
-        drawing = self._drawing(note)
-        if drawing is not None and slot.height() > 20:
-            k = min(slot.width() / drawing.width(), slot.height() / drawing.height())
-            w, h = drawing.width() * k, drawing.height() * k
-            target = QRectF(slot.center().x() - w / 2, slot.top() + (slot.height() - h) / 2, w, h)
-            p.save()
-            p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Multiply)
-            p.drawImage(target, drawing)
-            p.restore()
-        p.end()
-
-
-def _paint_tape(p: QPainter, centre: QPointF, angle: float, size: tuple[float, float] = (78.0, 21.0)) -> None:
-    """A strip of washi tape holding the note down: translucent gold with fine stripes
-    and torn ends."""
-    w, h = size
-    p.save()
-    p.translate(centre)
-    p.rotate(angle)
-    strip = QPainterPath()
-    teeth = 5
-    strip.moveTo(-w / 2, -h / 2)
-    strip.lineTo(w / 2, -h / 2)
-    for i in range(teeth):                      # the torn right end
-        y0 = -h / 2 + h * i / teeth
-        strip.lineTo(w / 2 - (3 if i % 2 == 0 else 0), y0 + h / teeth / 2)
-        strip.lineTo(w / 2, y0 + h / teeth)
-    strip.lineTo(-w / 2, h / 2)
-    for i in range(teeth):                      # and the left
-        y0 = h / 2 - h * i / teeth
-        strip.lineTo(-w / 2 + (3 if i % 2 == 0 else 0), y0 - h / teeth / 2)
-        strip.lineTo(-w / 2, y0 - h / teeth)
-    strip.closeSubpath()
-    p.fillPath(strip.translated(0, 1.5), QColor(0, 0, 0, 18))
-    p.fillPath(strip, QColor(255, 214, 120, 228))
-    p.setClipPath(strip)
-    p.setPen(QPen(QColor(255, 236, 182, 200), 2.0))
-    x = -w / 2
-    while x < w / 2:
-        p.drawLine(QPointF(x, -h / 2), QPointF(x, h / 2))
-        x += 7
-    p.restore()
-
-
 # --- The pages -------------------------------------------------------------------------------------
 
 def _greeting(name: str, now: dt.datetime | None = None) -> str:
@@ -1098,15 +642,132 @@ def _greeting(name: str, now: dt.datetime | None = None) -> str:
     return f"{part}, {name}" if name else f"Good {part.lower()}"
 
 
+def _sentence(text: str) -> str:
+    text = " ".join((text or "").split())
+    return text[:1].upper() + text[1:]
+
+
+def _clock(t: float) -> str:
+    """A wall time as "11:42" (12-hour, no am or pm)."""
+    when = dt.datetime.fromtimestamp(t)
+    return f"{when.hour % 12 or 12}:{when.minute:02d}"
+
+
+def _qimage(image) -> QImage | None:
+    """A screenshot (a PIL image, or already a QImage) as a QImage."""
+    if image is None or isinstance(image, QImage):
+        return image
+    try:
+        rgb = image.convert("RGB")
+        data = rgb.tobytes("raw", "RGB")
+        return QImage(data, rgb.width, rgb.height, 3 * rgb.width, QImage.Format.Format_RGB888).copy()
+    except Exception:
+        return None
+
+
+def _live_key(info: dict | None) -> tuple | None:
+    """What the live card shows, to tell when it changed (the picture by identity)."""
+    if not info:
+        return None
+    view = info.get("view") or (None, None)
+    return (info.get("goal"), info.get("n"), info.get("total"), info.get("now"), tuple(info.get("done") or ()),
+            tuple(info.get("plan") or ()), bool(info.get("driving")), bool(info.get("asking")),
+            bool(info.get("can_drive", True)), id(view[0]), view[1])
+
+
 BUDDY_SPOT = QRectF(14, 14, 36, 40)      # the buddy in the top bar: point at it and it hops
 VIOLET = ("#C29BFF", "#8C5CFF", "#6538EC")
 SUNNY = ("#FFD970", "#FFAE3D", "#FF8A1F")
+MINT = ("#8FF0C0", "#34C77B", "#1FA463")
+SUNNY_INK, MINT_INK = "#3B2200", "#06331C"
+EXAMPLES = ("For me, open my display settings", "Show my battery and CPU side by side", "Help me turn on dark mode")
+"""Jobs to try on Home before any of yours are done."""
+
+
+def paint_tile_face(p: QPainter, rect: QRectF, colors, *, hover: float = 0.0) -> QPainterPath:
+    """A colourful tile's face: a glossy gradient with a soft circle of light in its corner,
+    a shine across the top and a light rim, over a shadow in its own colour."""
+    top, mid, bottom = (QColor(c) for c in colors)
+    shape = QPainterPath()
+    shape.addRoundedRect(rect, 24, 24)
+    ui_kit.soft_shadow(p, shape, dy=6 + 4 * hover, spread=10 + 6 * hover, color=_rgba(bottom, 0.32 + 0.16 * hover))
+    grad = QLinearGradient(rect.topLeft(), rect.bottomRight())
+    grad.setColorAt(0.0, _mix(top, QColor(255, 255, 255), 0.06 * hover))
+    grad.setColorAt(0.55, mid)
+    grad.setColorAt(1.0, bottom)
+    p.fillPath(shape, QBrush(grad))
+    p.save()
+    p.setClipPath(shape)
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(QColor(255, 255, 255, 34))
+    p.drawEllipse(QPointF(rect.right() - 24 + 6 * hover, rect.top() + 20 - 4 * hover), 64, 64)
+    shine = QLinearGradient(rect.topLeft(), QPointF(rect.left(), rect.top() + rect.height() * 0.45))
+    shine.setColorAt(0.0, QColor(255, 255, 255, 70))
+    shine.setColorAt(1.0, QColor(255, 255, 255, 0))
+    p.fillRect(rect, QBrush(shine))
+    p.restore()
+    p.setPen(QPen(QColor(255, 255, 255, 70), 1.0))
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.drawRoundedRect(rect.adjusted(0.5, 0.5, -0.5, -0.5), 23.5, 23.5)
+    return shape
+
+
+def paint_caps(p: QPainter, text: str, x: float, y: float, color: QColor, px: float = 11) -> float:
+    """A small spaced-out capitals label ("LIVE NOW") with its top at ``y``; its width."""
+    f = font(px, 800, 0.08)
+    fm = QFontMetricsF(f)
+    text = text.upper()
+    w = fm.horizontalAdvance(text)
+    p.setFont(f)
+    p.setPen(color)
+    p.drawText(QRectF(x, y, w + 4, fm.height()), Qt.AlignmentFlag.AlignVCenter, text)
+    return w
+
+
+def paint_count(p: QPainter, n: int, x: float, cy: float, ink: QColor, fill: QColor) -> None:
+    """A little number pill beside a label ("UP NEXT  2")."""
+    f = font(11, 800)
+    text = str(n)
+    w = max(20.0, QFontMetricsF(f).horizontalAdvance(text) + 14)
+    pill = QRectF(x, cy - 9, w, 18)
+    p.fillPath(_pill(pill), fill)
+    p.setFont(f)
+    p.setPen(ink)
+    p.drawText(pill, Qt.AlignmentFlag.AlignCenter, text)
+
+
+def paint_lines(p: QPainter, text: str, rect: QRectF, f: QFont, color: QColor, max_lines: int) -> float:
+    """``text`` wrapped into ``rect`` from its top, up to ``max_lines``; the height used."""
+    fm = QFontMetricsF(f)
+    lines = _wrap(text, fm, rect.width(), max_lines) if text else []
+    p.setFont(f)
+    p.setPen(color)
+    y = rect.top()
+    for line in lines:
+        p.drawText(QRectF(rect.left(), y, rect.width(), fm.height()), Qt.AlignmentFlag.AlignVCenter, line)
+        y += fm.height()
+    return y - rect.top()
+
+
+def _check(p: QPainter, centre: QPointF, r: float, *, fill: QColor | None = None, tick: QColor | None = None) -> None:
+    """A round mint tick (done)."""
+    p.setPen(Qt.PenStyle.NoPen)
+    if fill is None:
+        grad = QLinearGradient(QPointF(centre.x(), centre.y() - r), QPointF(centre.x(), centre.y() + r))
+        for at, c in zip((0.0, 0.6, 1.0), MINT):
+            grad.setColorAt(at, QColor(c))
+        p.setBrush(QBrush(grad))
+    else:
+        p.setBrush(fill)
+    p.drawEllipse(centre, r, r)
+    s = r * 0.55
+    paint_icon(p, "check", QRectF(centre.x() - s, centre.y() - s, 2 * s, 2 * s), tick or QColor("#FFFFFF"), 3.4)
 
 
 class Tile(Tactile, QAbstractButton):
-    """A big colourful tile on Home: a glossy gradient with a soft circle of light in its
-    corner, a picture (an icon, or a fan of real note thumbnails), a title and a line.
-    It lifts under the mouse, its shadow glowing in its own colour, and sinks when pressed."""
+    """A big colourful tile on Home (Do it for me): a glossy gradient, an icon, a title
+    and a line. It lifts under the mouse, its shadow glowing in its own colour, and
+    sinks when pressed."""
 
     def __init__(self, title: str, line: str, colors: tuple[str, str, str], *, icon: str = "",
                  ink: str = "#FFFFFF", parent: QWidget | None = None) -> None:
@@ -1114,10 +775,9 @@ class Tile(Tactile, QAbstractButton):
         self.setText(title)
         self.setAccessibleName(title)
         self.line = line
-        self.colors = tuple(QColor(c) for c in colors)
+        self.colors = colors
         self.icon = icon
         self.ink = QColor(ink)
-        self.pictures: list[QImage] = []
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._tactile_init()
@@ -1126,94 +786,649 @@ class Tile(Tactile, QAbstractButton):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         p.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
-        p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
         hover, press = self.val("hover"), self.val("press")
         rect = QRectF(self.rect()).adjusted(4, 6, -4, -12).translated(0, -3.0 * hover * (1 - press))
         self.squish(p, rect, 0.03)
-        top, mid, bottom = self.colors
-        shape = QPainterPath()
-        shape.addRoundedRect(rect, 24, 24)
-        ui_kit.soft_shadow(p, shape, dy=6 + 4 * hover, spread=10 + 6 * hover,
-                           color=_rgba(bottom, 0.32 + 0.16 * hover))
-        grad = QLinearGradient(rect.topLeft(), rect.bottomRight())
-        grad.setColorAt(0.0, _mix(top, QColor(255, 255, 255), 0.06 * hover))
-        grad.setColorAt(0.55, mid)
-        grad.setColorAt(1.0, bottom)
-        p.fillPath(shape, QBrush(grad))
-        p.save()
-        p.setClipPath(shape)
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QColor(255, 255, 255, 34))
-        p.drawEllipse(QPointF(rect.right() - 24 + 6 * hover, rect.top() + 20 - 4 * hover), 64, 64)
-        shine = QLinearGradient(rect.topLeft(), QPointF(rect.left(), rect.top() + rect.height() * 0.45))
-        shine.setColorAt(0.0, QColor(255, 255, 255, 70))
-        shine.setColorAt(1.0, QColor(255, 255, 255, 0))
-        p.fillRect(rect, QBrush(shine))
-        p.restore()
-        p.setPen(QPen(QColor(255, 255, 255, 70), 1.0))
-        p.setBrush(Qt.BrushStyle.NoBrush)
-        p.drawRoundedRect(rect.adjusted(0.5, 0.5, -0.5, -0.5), 23.5, 23.5)
-
-        if self.pictures:
-            self._paint_fan(p, QRectF(rect.left() + 16, rect.top() + 16, rect.width() - 32, 70), hover)
-        elif self.icon:
+        paint_tile_face(p, rect, self.colors, hover=hover)
+        if self.icon:
             box = QRectF(rect.left() + 16, rect.top() + 16, 42, 42)
             p.fillPath(ui_kit.squircle(box, 0.32), QColor(255, 255, 255, 58))
             ui_kit.paint_icon(p, self.icon, box.adjusted(10, 10, -10, -10), self.ink, 2.3)
-        tf = font(18, 800, -0.01)
         lf = font(12.5, 600)
         lfm = QFontMetricsF(lf)
         lines = _wrap(self.line, lfm, rect.width() - 32, 2) if self.line else []
         y = rect.bottom() - 16 - len(lines) * (lfm.height() + 1)
-        p.setFont(tf)
+        p.setFont(font(18, 800, -0.01))
         p.setPen(self.ink)
-        p.drawText(QRectF(rect.left() + 16, y - 26, rect.width() - 32, 24), Qt.AlignmentFlag.AlignVCenter,
-                   self.text())
-        p.setFont(lf)
+        p.drawText(QRectF(rect.left() + 16, y - 26, rect.width() - 32, 24), Qt.AlignmentFlag.AlignVCenter, self.text())
         faint = QColor(self.ink)
         faint.setAlphaF(0.88)
-        p.setPen(faint)
-        for line in lines:
-            p.drawText(QRectF(rect.left() + 16, y, rect.width() - 32, lfm.height()), Qt.AlignmentFlag.AlignVCenter,
-                       line)
-            y += lfm.height() + 1
+        paint_lines(p, self.line, QRectF(rect.left() + 16, y, rect.width() - 32, 99), lf, faint, 2)
         p.end()
 
-    def _paint_fan(self, p: QPainter, area: QRectF, hover: float) -> None:
-        """Up to three note thumbnails fanned out like photos; they spread a little on hover."""
-        w, h = 82.0, 56.0
-        for i, (picture, angle) in enumerate(zip(self.pictures[:3], (-8.0, 5.0, -3.0))):
-            spread = 48 + 10 * hover
-            c = QPointF(area.left() + w / 2 + i * spread, area.top() + h / 2 + (6 if i != 1 else 0))
-            p.save()
-            p.translate(c)
-            p.rotate(angle * (1 + 0.4 * hover))
-            frame = QRectF(-w / 2, -h / 2, w, h)
+
+class InkButton(Tactile, QPushButton):
+    """A small pill on a colourful tile: solid ink ("Yes, go on") or soft white ("I'll do it")."""
+
+    def __init__(self, text: str, fill, fg, parent: QWidget | None = None, *, px: float = 13) -> None:
+        super().__init__(text, parent)
+        self.fill, self.fg = QColor(fill), QColor(fg)
+        self._font = font(px, 800)
+        self.setFont(self._font)
+        self.setAccessibleName(text)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._tactile_init()
+        self.resize(self.sizeHint())
+
+    def sizeHint(self) -> QSize:  # noqa: N802
+        fm = QFontMetricsF(self._font)
+        return QSize(round(fm.horizontalAdvance(self.text()) + 28), round(fm.height() + 14))
+
+    def paintEvent(self, _event) -> None:  # noqa: N802
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        p.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
+        rect = QRectF(self.rect())
+        self.squish(p, rect, 0.05)
+        fill = QColor(self.fill)
+        if fill.alpha() == 255:
+            fill = _mix(fill, QColor(255, 255, 255), 0.14 * self.val("hover"))
+        else:
+            fill.setAlphaF(min(1.0, fill.alphaF() + 0.18 * self.val("hover")))
+        p.fillPath(_pill(rect), fill)
+        p.setFont(self._font)
+        p.setPen(self.fg)
+        p.drawText(rect, Qt.AlignmentFlag.AlignCenter, self.text())
+        p.end()
+
+
+class SideTile(QWidget):
+    """A colourful tile in Home's right column. Its face sits inside room for its
+    shadow, like ``Tile``'s; subclasses paint their words and own their buttons."""
+
+    def __init__(self, colors, ink: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.colors = colors
+        self.ink = QColor(ink)
+
+    def face(self) -> QRectF:
+        return QRectF(self.rect()).adjusted(4, 6, -4, -12)
+
+    def faint(self, alpha: float = 0.86) -> QColor:
+        c = QColor(self.ink)
+        c.setAlphaF(alpha)
+        return c
+
+    def paintEvent(self, _event) -> None:  # noqa: N802
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        p.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
+        face = self.face()
+        paint_tile_face(p, face, self.colors)
+        self.paint_words(p, face)
+        p.end()
+
+    def paint_words(self, p: QPainter, face: QRectF) -> None:
+        pass
+
+    def paint_title(self, p: QPainter, face: QRectF, title: str, line: str) -> None:
+        """A title and a line at the tile's foot (an empty tile)."""
+        lf = font(12.5, 600)
+        lines = _wrap(line, QFontMetricsF(lf), face.width() - 32, 2)
+        y = face.bottom() - 16 - len(lines) * QFontMetricsF(lf).height()
+        p.setFont(font(18, 800, -0.01))
+        p.setPen(self.ink)
+        p.drawText(QRectF(face.left() + 16, y - 28, face.width() - 32, 26), Qt.AlignmentFlag.AlignVCenter, title)
+        paint_lines(p, line, QRectF(face.left() + 16, y, face.width() - 32, 99), lf, self.faint(), 2)
+
+
+class CallTile(SideTile):
+    """Sunny, while a job runs. When a step is yours to say yes to (paying, sending,
+    deleting): "Your call", with Yes, go on and I'll do it. Otherwise who's clicking,
+    with a button to swap: "I'm clicking" (Let me click) or "You're clicking" (Do it for me)."""
+
+    yes = pyqtSignal()
+    mine = pyqtSignal()
+    switch = pyqtSignal()
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(SUNNY, SUNNY_INK, parent)
+        self.info: dict = {}
+        self.yes_btn = InkButton("Yes, go on", SUNNY_INK, "#FFFFFF", self)
+        self.mine_btn = InkButton("I'll do it", QColor(255, 255, 255, 140), SUNNY_INK, self)
+        self.switch_btn = InkButton("Do it for me", SUNNY_INK, "#FFFFFF", self)
+        self.yes_btn.clicked.connect(self.yes)
+        self.mine_btn.clicked.connect(self.mine)
+        self.switch_btn.clicked.connect(self.switch)
+
+    def set_info(self, info: dict) -> None:
+        self.info = dict(info or {})
+        asking = bool(self.info.get("asking"))
+        driving = bool(self.info.get("driving"))
+        self.yes_btn.setVisible(asking)
+        self.mine_btn.setVisible(asking)
+        self.switch_btn.setText("Let me click" if driving else "Do it for me")
+        self.switch_btn.setAccessibleName(self.switch_btn.text())
+        self.switch_btn.resize(self.switch_btn.sizeHint())
+        self.switch_btn.setVisible(not asking and (driving or bool(self.info.get("can_drive", True))))
+        self._place()
+        self.update()
+
+    def resizeEvent(self, _event) -> None:  # noqa: N802
+        self._place()
+
+    def _place(self) -> None:
+        face = self.face()
+        x, y = round(face.left() + 16), round(face.bottom() - 16 - self.yes_btn.height())
+        self.yes_btn.move(x, y)
+        self.mine_btn.move(x + self.yes_btn.width() + 8, y)
+        self.switch_btn.move(x, y)
+
+    def paint_words(self, p: QPainter, face: QRectF) -> None:
+        x, w = face.left() + 16, face.width() - 32
+        if self.info.get("asking"):
+            cw = paint_caps(p, "Your call", x, face.top() + 16, self.ink)
+            paint_count(p, 1, x + cw + 8, face.top() + 16 + 8, self.ink, QColor(255, 255, 255, 115))
+            step = _sentence(self.info.get("now") or "This step").rstrip(".?!")
+            used = paint_lines(p, f"{step}?", QRectF(x, face.top() + 42, w, 60), font(17, 800, -0.01), self.ink, 2)
+            paint_lines(p, "That one's always yours to say yes to.", QRectF(x, face.top() + 46 + used, w, 40),
+                        font(12.5, 600), self.faint(), 2)
+            return
+        driving = bool(self.info.get("driving"))
+        paint_caps(p, "Doing it for you" if driving else "Showing you", x, face.top() + 16, self.ink)
+        p.setFont(font(18, 800, -0.01))
+        p.setPen(self.ink)
+        p.drawText(QRectF(x, face.top() + 40, w, 26), Qt.AlignmentFlag.AlignVCenter,
+                   "I'm clicking" if driving else "You're clicking")
+        paint_lines(p, "Touch the mouse and it's yours again" if driving else "I point, you click, I see each step",
+                    QRectF(x, face.top() + 68, w, 40), font(12.5, 600), self.faint(), 2)
+
+
+class UpNextTile(SideTile):
+    """Violet, while a job runs: the jobs waiting their turn (jobs.queued()), in order."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(VIOLET, "#FFFFFF", parent)
+        self.jobs: list[str] = []
+
+    def set_jobs(self, queued: list[str]) -> None:
+        self.jobs = list(queued)
+        self.update()
+
+    def paint_words(self, p: QPainter, face: QRectF) -> None:
+        x, w = face.left() + 16, face.width() - 32
+        if not self.jobs:
+            paint_caps(p, "Up next", x, face.top() + 16, self.ink)
+            self.paint_title(p, face, "Nothing queued", "Type a job below and it joins the line")
+            return
+        cw = paint_caps(p, "Up next", x, face.top() + 16, self.ink)
+        paint_count(p, len(self.jobs), x + cw + 8, face.top() + 16 + 8, self.ink, QColor(255, 255, 255, 56))
+        y = face.top() + 44
+        room = int((face.bottom() - 14 - y + 8) // 54)
+        shown = self.jobs[:max(1, room)]
+        for i, job in enumerate(shown):
+            row = QRectF(x, y, w, 46)
             shape = QPainterPath()
-            shape.addRoundedRect(frame, 10, 10)
-            ui_kit.soft_shadow(p, shape, dy=3, spread=5, color=QColor(0, 0, 0, 60))
-            p.fillPath(shape, QColor("#FFFFFF"))
-            inner = frame.adjusted(2.5, 2.5, -2.5, -2.5)
-            clip = QPainterPath()
-            clip.addRoundedRect(inner, 8, 8)
-            p.setClipPath(clip)
-            p.fillRect(inner, PAPER)
-            k = max(inner.width() / picture.width(), inner.height() / picture.height())
-            pw, ph = picture.width() * k, picture.height() * k
-            p.drawImage(QRectF(inner.center().x() - pw / 2, inner.center().y() - ph / 2, pw, ph), picture)
+            shape.addRoundedRect(row, 14, 14)
+            p.fillPath(shape, QColor(255, 255, 255, 40))
+            p.setPen(QPen(QColor(255, 255, 255, 60), 1.0))
+            p.drawLine(QPointF(row.left() + 12, row.top() + 0.5), QPointF(row.right() - 12, row.top() + 0.5))
+            badge = QRectF(row.left() + 9, row.top() + 9, 28, 28)
+            p.fillPath(ui_kit.squircle(badge, 0.32), QColor(255, 255, 255, 230))
+            p.setFont(font(13, 800))
+            p.setPen(QColor(VIOLET[2]))
+            p.drawText(badge, Qt.AlignmentFlag.AlignCenter, str(i + 1))
+            tf = font(13.5, 800)
+            p.setFont(tf)
+            p.setPen(self.ink)
+            tw = row.width() - 56
+            p.drawText(QRectF(row.left() + 46, row.top() + 5, tw, 20), Qt.AlignmentFlag.AlignVCenter,
+                       QFontMetricsF(tf).elidedText(_sentence(job), Qt.TextElideMode.ElideRight, tw))
+            p.setFont(font(11.5, 600))
+            p.setPen(self.faint(0.85))
+            p.drawText(QRectF(row.left() + 46, row.top() + 24, tw, 16), Qt.AlignmentFlag.AlignVCenter,
+                       "when this one's done" if i == 0 else "after that")
+            y += 54
+        if len(self.jobs) > len(shown):
+            p.setFont(font(12, 700))
+            p.setPen(self.faint())
+            p.drawText(QRectF(x, face.bottom() - 30, w, 18), Qt.AlignmentFlag.AlignVCenter,
+                       f"and {len(self.jobs) - len(shown)} more")
+
+
+class DoneTile(SideTile):
+    """Mint, when nothing runs: what got done today, newest first. A note in the list
+    opens its card again (``open_note``)."""
+
+    open_note = pyqtSignal(object)
+
+    ROW = 24.0
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(MINT, MINT_INK, parent)
+        self.items: list[dict] = []
+        self.setMouseTracking(True)
+
+    def set_items(self, items: list[dict]) -> None:
+        self.items = list(items)
+        self.update()
+
+    def _rows(self) -> list[tuple[QRectF, dict]]:
+        face = self.face()
+        y = face.top() + 44
+        rows = []
+        for item in self.items:
+            if y + self.ROW > face.bottom() - 30:
+                break
+            rows.append((QRectF(face.left() + 16, y, face.width() - 32, self.ROW), item))
+            y += self.ROW
+        return rows
+
+    def _note_at(self, pos: QPointF):
+        for rect, item in self._rows():
+            if rect.contains(pos) and item.get("note") is not None:
+                return item["note"]
+        return None
+
+    def mouseMoveEvent(self, event) -> None:  # noqa: N802
+        on = self._note_at(event.position()) is not None
+        self.setCursor(Qt.CursorShape.PointingHandCursor if on else Qt.CursorShape.ArrowCursor)
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        note = self._note_at(event.position())
+        if note is not None:
+            sound("press")
+            self.open_note.emit(note)
+
+    def paint_words(self, p: QPainter, face: QRectF) -> None:
+        x = face.left() + 16
+        cw = paint_caps(p, "Done today", x, face.top() + 16, self.ink)
+        if not self.items:
+            self.paint_title(p, face, "Nothing yet today", "The jobs I finish and the notes I show land here")
+            return
+        paint_count(p, len(self.items), x + cw + 8, face.top() + 16 + 8, self.ink, QColor(255, 255, 255, 115))
+        rows = self._rows()
+        tf = font(13, 800)
+        for rect, item in rows:
+            _check(p, QPointF(rect.left() + 7, rect.center().y()), 7, fill=QColor(255, 255, 255, 120), tick=self.ink)
+            p.setFont(tf)
+            p.setPen(self.ink)
+            p.drawText(QRectF(rect.left() + 22, rect.top(), rect.width() - 22, rect.height()),
+                       Qt.AlignmentFlag.AlignVCenter,
+                       QFontMetricsF(tf).elidedText(item["label"], Qt.TextElideMode.ElideRight, rect.width() - 22))
+        if len(self.items) > len(rows):
+            p.setFont(font(12, 700))
+            p.setPen(self.faint())
+            p.drawText(QRectF(x, face.bottom() - 30, face.width() - 32, 18), Qt.AlignmentFlag.AlignVCenter,
+                       f"and {len(self.items) - len(rows)} more")
+
+
+class IdeaButton(Tactile, QAbstractButton):
+    """A job to do again (or to try), on the idle card: a small gel play key and its words."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._tactile_init()
+
+    def paintEvent(self, _event) -> None:  # noqa: N802
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        p.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
+        sk = skin()
+        rect = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        hover = self.val("hover")
+        self.squish(p, rect, 0.02)
+        shape = QPainterPath()
+        shape.addRoundedRect(rect, 16, 16)
+        base = sk.canvas_top if not sk.dark else sk.raised
+        p.fillPath(shape, _mix(base, accent(), 0.07 * hover))
+        p.setPen(QPen(_mix(sk.border, accent(), 0.4 * hover), 1.0))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawPath(shape)
+        key = QRectF(rect.left() + 10, rect.center().y() - 13, 26, 26)
+        paint_glossy(p, key, accent(), radius=9)
+        tri = QPainterPath(QPointF(key.left() + 10, key.top() + 7.5))
+        tri.lineTo(key.left() + 19, key.center().y())
+        tri.lineTo(key.left() + 10, key.bottom() - 7.5)
+        tri.closeSubpath()
+        p.fillPath(tri, on_accent(accent()))
+        tf = font(14, 700)
+        p.setFont(tf)
+        p.setPen(sk.text)
+        tw = rect.width() - 60
+        p.drawText(QRectF(key.right() + 12, rect.top(), tw, rect.height()), Qt.AlignmentFlag.AlignVCenter,
+                   QFontMetricsF(tf).elidedText(self.text(), Qt.TextElideMode.ElideRight, tw))
+        p.end()
+
+
+class LiveCard(QWidget):
+    """Home's big card. While a job runs: LIVE NOW, who's clicking, when it started,
+    the job, the steps (the last ones done, the one now, the next one planned) and
+    your screen as Clixy last saw it with a ring on what it's about to click, then
+    I did it (you're clicking) or Take over (Clixy is), and Stop. When nothing runs:
+    "Give me a job and watch me do it" and up to three jobs to do again."""
+
+    TOP, SIDE, BOTTOM = 34.0, 14.0, 22.0     # room for the buddy peeking over it and for its shadow
+    IDEA_H = 44
+
+    primary = pyqtSignal()
+    stop = pyqtSignal()
+    picked = pyqtSignal(str)
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.info: dict = {}
+        self.ideas: list[str] = []
+        self.mine = False
+        self.primary_btn = PanelButton("I did it", "glossy", self, px=14, weight=800, pad=(10, 18))
+        self.stop_btn = PanelButton("Stop", "frost", self, px=14, weight=700, pad=(9, 16))
+        self.primary_btn.clicked.connect(self.primary)
+        self.stop_btn.clicked.connect(self.stop)
+        self.idea_btns = [IdeaButton(self) for _ in range(3)]
+        for b in self.idea_btns:
+            b.clicked.connect(lambda _c=False, b=b: self.picked.emit(b.text()))
+        self._picture: QImage | None = None      # the screen, cut and scaled for the frame
+        self._picture_key = None
+        self._ring: QRectF | None = None
+        self.set_live({})
+
+    def card(self) -> QRectF:
+        return QRectF(self.SIDE, self.TOP, self.width() - 2 * self.SIDE, self.height() - self.TOP - self.BOTTOM)
+
+    def set_live(self, info: dict | None) -> None:
+        self.info = dict(info or {})
+        live = bool(self.info)
+        driving = bool(self.info.get("driving"))
+        self.primary_btn.setText("Take over" if driving else "I did it")
+        self.primary_btn.setAccessibleName(self.primary_btn.text())
+        self.primary_btn.resize(self.primary_btn.sizeHint())
+        self.primary_btn.setVisible(live)
+        self.stop_btn.setVisible(live)
+        for i, b in enumerate(self.idea_btns):
+            b.setVisible(not live and i < len(self.ideas))
+        self._place()
+        self.update()
+
+    def set_ideas(self, ideas: list[str], mine: bool) -> None:
+        self.ideas, self.mine = [_sentence(i) for i in ideas[:3]], mine
+        for i, b in enumerate(self.idea_btns):
+            text = self.ideas[i] if i < len(self.ideas) else ""
+            b.setText(text)
+            b.setAccessibleName(text)
+        self.set_live(self.info)
+
+    def resizeEvent(self, _event) -> None:  # noqa: N802
+        self._picture_key = None
+        self._place()
+
+    def _place(self) -> None:
+        card = self.card()
+        x = round(card.left() + 18)
+        y = round(card.bottom() - 18 - self.primary_btn.height())
+        self.primary_btn.move(x, y)
+        self.stop_btn.move(x + self.primary_btn.width() + 8, y + (self.primary_btn.height() - self.stop_btn.height()) // 2)
+        n = len(self.ideas)
+        top = card.bottom() - 18 - n * self.IDEA_H - max(0, n - 1) * 8
+        for i, b in enumerate(self.idea_btns):
+            b.setGeometry(x, round(top + i * (self.IDEA_H + 8)), round(card.width() - 36), self.IDEA_H)
+
+    # --- The screen, as Clixy last saw it ---------------------------------------------
+
+    def _frame(self) -> QRectF:
+        card = self.card()
+        top = card.top() + 16 + 24 + 36
+        bottom = card.bottom() - 18 - self.primary_btn.height() - 16
+        return QRectF(card.left() + 18 + 212, top, card.width() - 36 - 212, max(40.0, bottom - top))
+
+    def _cut(self, frame: QRectF) -> None:
+        """Cut the part of the screen around the target, sized for the frame (once per look)."""
+        view = self.info.get("view") or (None, None)
+        key = (id(view[0]), view[1], round(frame.width()), round(frame.height()))
+        if key == self._picture_key:
+            return
+        self._picture_key, self._picture, self._ring = key, None, None
+        image = _qimage(view[0])
+        if image is None or image.isNull():
+            return
+        iw, ih = image.width(), image.height()
+        aspect = frame.width() / frame.height()
+        box = view[1]
+        if box:
+            bw = max(1.0, box[2] - box[0])
+            cw = min(float(iw), max(bw * 3.2, iw * 0.34))
+            cx, cy = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
+        else:
+            cw, cx, cy = float(iw), iw / 2, ih / 2
+        ch = cw / aspect
+        if ch > ih:
+            ch, cw = float(ih), ih * aspect
+        left = min(max(0.0, cx - cw / 2), iw - cw)
+        top = min(max(0.0, cy - ch / 2), ih - ch)
+        dpr = self.devicePixelRatioF()
+        cut = image.copy(QRect(round(left), round(top), max(1, round(cw)), max(1, round(ch))))
+        self._picture = cut.scaled(max(1, round(frame.width() * dpr)), max(1, round(frame.height() * dpr)),
+                                   Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
+        self._picture.setDevicePixelRatio(dpr)
+        if box:
+            k = frame.width() / cw
+            self._ring = QRectF((box[0] - left) * k, (box[1] - top) * k, (box[2] - box[0]) * k, (box[3] - box[1]) * k)
+
+    # --- Painting -----------------------------------------------------------------------
+
+    def _t(self) -> float:
+        win = self.window()
+        return float(win.property("t") or 0.0) if win is not None else 0.0
+
+    def buddy_box(self) -> QRect:
+        card = self.card()
+        if self.info:
+            return QRectF(card.right() - 28 - 50, 0, 54, card.top() + 20).toAlignedRect()
+        return QRectF(card.right() - 190, card.top(), 190, 170).toAlignedRect()
+
+    def _buddy(self, p: QPainter, rect: QRectF, cells: float) -> None:
+        dpr = self.devicePixelRatioF()
+        device = max(1, int(cells * dpr + 0.25))      # whole device pixels per sprite cell
+        theme.paint_avatar_in(p, rect, t=self._t(), scale=device / (2 * dpr), device_pixel_ratio=dpr)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+
+    def paintEvent(self, _event) -> None:  # noqa: N802
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        p.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
+        p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+        sk = skin()
+        card = self.card()
+        shape = QPainterPath()
+        shape.addRoundedRect(card, 24, 24)
+        ui_kit.soft_shadow(p, shape, dy=8, spread=14, color=sk.shadow)
+        p.fillPath(shape, sk.surface)
+        p.setPen(QPen(sk.border, 1.0))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawRoundedRect(card.adjusted(0.5, 0.5, -0.5, -0.5), 23.5, 23.5)
+        if self.info:
+            self._paint_live(p, card, sk)
+        else:
+            self._paint_idle(p, card, sk)
+        p.end()
+
+    def _strong(self, sk) -> QColor:
+        """The accent as text: deeper on Daylight, lighter on Charcoal."""
+        acc = accent()
+        return gloss(acc)[0] if sk.dark else _mix(acc, QColor("#000000"), 0.22)
+
+    def _paint_live(self, p: QPainter, card: QRectF, sk) -> None:
+        info, acc = self.info, accent()
+        self._buddy(p, QRectF(card.right() - 28 - 46, card.top() - 34, 46, 48), 3.0)
+        x0, y = card.left() + 18, card.top() + 16
+        cw = paint_caps(p, "Live now", x0, y, self._strong(sk))
+        driving = bool(info.get("driving"))
+        chip_text = "Doing it for you" if driving else "Showing you"
+        cf = font(11.5, 800)
+        chip = QRectF(x0 + cw + 10, y - 2, QFontMetricsF(cf).horizontalAdvance(chip_text) + 18, 20)
+        p.fillPath(_pill(chip), _rgba(sk.text, 0.07 if not sk.dark else 0.09))
+        p.setFont(cf)
+        p.setPen(sk.text2)
+        p.drawText(chip, Qt.AlignmentFlag.AlignCenter, chip_text)
+        if info.get("started"):
+            p.setFont(font(12, 700))
+            p.setPen(sk.text3)
+            p.drawText(QRectF(card.right() - 18 - 160, y - 2, 160, 20),
+                       Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, f"started {_clock(info['started'])}")
+        tf = font(22, 800, -0.02)
+        p.setFont(tf)
+        p.setPen(sk.text)
+        tw = card.width() - 36
+        p.drawText(QRectF(x0, y + 22, tw, 32), Qt.AlignmentFlag.AlignVCenter,
+                   QFontMetricsF(tf).elidedText(_sentence(info.get("goal") or "Your job"), Qt.TextElideMode.ElideRight, tw))
+        frame = self._frame()
+        self._paint_steps(p, QRectF(x0, frame.top() + 2, 196, frame.height()), sk)
+        self._paint_screen(p, frame, sk)
+        hint = ("Pointing only? Say “let me do it”" if driving else
+                "Want me to click? Say “do it for me”" if info.get("can_drive", True) else "")
+        if hint:
+            hf = font(12.5, 700)
+            left = self.stop_btn.geometry().right() + 16
+            p.setFont(hf)
+            p.setPen(sk.text3)
+            rect = QRectF(left, self.primary_btn.y(), card.right() - 18 - left, self.primary_btn.height())
+            p.drawText(rect, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+                       QFontMetricsF(hf).elidedText(hint, Qt.TextElideMode.ElideLeft, rect.width()))
+
+    def _paint_steps(self, p: QPainter, area: QRectF, sk) -> None:
+        info, acc = self.info, accent()
+        done = list(info.get("done") or [])
+        n, total = int(info.get("n") or 0), int(info.get("total") or 0)
+        plan = list(info.get("plan") or [])
+        nxt = _sentence(plan[0]) if plan else (f"{total - n} more step{'s' if total - n != 1 else ''} after this"
+                                               if total > n else "Then I check it worked")
+        now_sub = "doing it now" if info.get("driving") else "your turn, I'm watching"
+        rows = [("done", _sentence(d), "") for d in done[-2:]]
+        rows.append(("now", _sentence(info.get("now") or "Looking at your screen"), now_sub))
+        rows.append(("next", nxt, ""))
+        lf, sf = font(13.5, 800), font(12, 600)
+        lfm, sfm = QFontMetricsF(lf), QFontMetricsF(sf)
+        y = area.top()
+        dot_x = area.left() + 11
+        beat = 0.5 + 0.5 * math.sin(self._t() * 5.0)
+        for i, (kind, label, sub) in enumerate(rows):
+            lines = _wrap(label, lfm, area.width() - 34, 2)
+            h = max(22.0, len(lines) * lfm.height() + (sfm.height() if sub else 0)) + 14
+            if y + 22 > area.bottom():
+                break
+            centre = QPointF(dot_x, y + 11)
+            if i < len(rows) - 1:                 # the line down to the next step
+                p.setPen(QPen(QColor(MINT[1]) if kind == "done" else sk.track, 2.0))
+                p.drawLine(QPointF(dot_x, y + 24), QPointF(dot_x, min(area.bottom(), y + h)))
+            if kind == "done":
+                _check(p, centre, 11)
+                colour, f = sk.text, lf
+            elif kind == "now":
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(_rgba(acc, 0.28 * (1 - beat)))
+                p.drawEllipse(centre, 11 + 7 * beat, 11 + 7 * beat)
+                paint_glossy(p, QRectF(centre.x() - 11, centre.y() - 11, 22, 22), acc, radius=11)
+                colour, f = self._strong(sk), lf
+            else:
+                p.setPen(QPen(_rgba(sk.text3, 0.7), 2.0, Qt.PenStyle.DashLine))
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                p.drawEllipse(centre, 10, 10)
+                colour, f = sk.text2, font(13.5, 700)
+            ty = y + 2
+            p.setFont(f)
+            p.setPen(colour)
+            for line in lines:
+                p.drawText(QRectF(area.left() + 34, ty, area.width() - 34, lfm.height()),
+                           Qt.AlignmentFlag.AlignVCenter, line)
+                ty += lfm.height()
+            if sub:
+                p.setFont(sf)
+                p.setPen(sk.text3)
+                p.drawText(QRectF(area.left() + 34, ty, area.width() - 34, sfm.height()),
+                           Qt.AlignmentFlag.AlignVCenter, sub)
+            y += h
+
+    def _paint_screen(self, p: QPainter, frame: QRectF, sk) -> None:
+        acc = accent()
+        shape = QPainterPath()
+        shape.addRoundedRect(frame, 16, 16)
+        ui_kit.soft_shadow(p, shape, dy=5, spread=10, color=_rgba(sk.shadow, sk.shadow.alphaF() * 0.6))
+        self._cut(frame)
+        if self._picture is None:
+            p.fillPath(shape, sk.raised)
+            p.setFont(font(13, 700))
+            p.setPen(sk.text3)
+            p.drawText(frame, Qt.AlignmentFlag.AlignCenter, "Looking at your screen…")
+        else:
+            p.save()
+            p.setClipPath(shape)
+            p.drawImage(frame.topLeft(), self._picture)
+            if self._ring is not None:
+                ring = self._ring.translated(frame.topLeft()).adjusted(-4, -4, 4, 4)
+                p.setPen(QPen(_rgba(acc, 0.28), 6.0))
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                p.drawRoundedRect(ring, 9, 9)
+                p.setPen(QPen(acc, 2.2))
+                p.drawRoundedRect(ring, 9, 9)
+                tip = QPointF(ring.center().x() + min(26.0, ring.width() / 2 - 4), ring.center().y() + 4)
+                arrow = QPainterPath(tip)
+                for dx, dy in ((14, 8), (7.8, 9.6), (5, 16)):
+                    arrow.lineTo(tip.x() + dx, tip.y() + dy)
+                arrow.closeSubpath()
+                p.setPen(QPen(QColor("#FFFFFF"), 1.6))
+                p.setBrush(acc)
+                p.drawPath(arrow)
             p.restore()
+        p.setPen(QPen(sk.border, 1.0))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawRoundedRect(frame.adjusted(0.5, 0.5, -0.5, -0.5), 15.5, 15.5)
+        if self._picture is not None:
+            cf = font(11, 800)
+            text = "Live from your screen"
+            chip = QRectF(frame.left() + 10, frame.bottom() - 10 - 22,
+                          QFontMetricsF(cf).horizontalAdvance(text) + 32, 22)
+            p.fillPath(_pill(chip), QColor(18, 19, 24, 190))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor("#FF5A5A"))
+            p.drawEllipse(QPointF(chip.left() + 12, chip.center().y()), 3, 3)
+            p.setFont(cf)
+            p.setPen(QColor("#FFFFFF"))
+            p.drawText(chip.adjusted(20, 0, 0, 0), Qt.AlignmentFlag.AlignVCenter, text)
+
+    def _paint_idle(self, p: QPainter, card: QRectF, sk) -> None:
+        acc = accent()
+        centre = QPointF(card.right() - 96, card.top() + 84)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(_rgba(acc, 0.13 if not sk.dark else 0.16))
+        p.drawEllipse(centre, 66, 66)
+        bob = 3.0 * math.sin(self._t() * 2.0)
+        self._buddy(p, QRectF(centre.x() - 50, centre.y() - 52 + bob, 100, 104), 6.0)
+        x0, w = card.left() + 22, card.width() - 44 - 170
+        paint_caps(p, "Nothing running", x0, card.top() + 22, self._strong(sk))
+        used = paint_lines(p, "Give me a job and watch me do it", QRectF(x0, card.top() + 44, w, 80),
+                           font(28, 800, -0.03), sk.text, 2)
+        paint_lines(p, "Say “for me” and I click and type it through. Leave it out and I point the way while you click.",
+                    QRectF(x0, card.top() + 54 + used, w, 66), font(14, 600), sk.text2, 3)
+        if self.ideas:
+            top = self.idea_btns[0].y()
+            paint_caps(p, "Again, from your week" if self.mine else "Try one", x0, top - 26, sk.text3)
 
 
 class HomePage(Motion, QWidget):
-    """Home, as colourful tiles: the top bar; a hello with your keys (which press
-    themselves now and then); your newest note big on taped paper with your buddy peeking
-    over it; a violet Do it for me tile and a sunny All your notes tile (real
-    thumbnails); and the ask bar, with What Clixy remembers inside it. The buddy in the
-    top bar hops when you point at it."""
+    """Home, as board J (Rayan, 4 Nov 2026): what Clixy is doing now and what's waiting,
+    no note card (drawings show on the screen when asked). The top bar; a hello (or "On
+    it" with how to take over); the big live card; on the right, while a job runs, a
+    sunny tile (Your call, or who's clicking) and the violet Up next, with today's done
+    jobs in a strip below; when nothing runs, the idle card with jobs to do again, the
+    violet Do it for me and the mint Done today. Then the ask bar, with What Clixy
+    remembers inside it. The buddy in the top bar hops when you point at it."""
 
     SIZE = HOME
     GRID_TOP = 150.0
     GAP = 12.0
+    STRIP = 34.0
 
     def __init__(self, panel: "ClixyPanel") -> None:
         super().__init__(panel._body)
@@ -1222,35 +1437,51 @@ class HomePage(Motion, QWidget):
         self.settings_btn = PanelButton("", "frost", self, icon="sliders", round_=38)
         self.settings_btn.setAccessibleName("Settings")
         self.settings_btn.setToolTip("Settings")
-        self.stack = NoteStack(self)
-        self.do_it = Tile("Do it for me", "Say “for me” and I'll click through it while you watch",
-                          VIOLET, icon="cursor", parent=self)
-        self.all_notes = Tile("All your notes", "", SUNNY, ink="#3B2200", parent=self)
+        self.live = LiveCard(self)
+        self.call = CallTile(self)
+        self.next = UpNextTile(self)
+        self.do_it = Tile("Do it for me", "Type a job and watch it happen", VIOLET, icon="cursor", parent=self)
+        self.done = DoneTile(self)
         self.ask = AskField(self)
         self.memory = PanelButton("What Clixy remembers", "text", None, px=12.5, weight=800, pad=(6, 8))
         self.ask.set_extra(self.memory)
+        self.info: dict | None = None
+        self.queue: list[str] = []
+        self.done_items: list[dict] = []
         self.setMouseTracking(True)
         self._on_buddy = False
         self.spring("hop", 0.0, 260.0, 9.0)
-        self._layout()
+        self._show_mode()
 
-    def set_notes(self, notes: list[Note]) -> None:
-        """Fresh notes: the big card, and the All your notes tile's thumbnails and count."""
-        self.stack.set_notes(notes)
-        three_d = sum(1 for n in notes if n.three_d)
-        if not notes:
-            self.all_notes.line = "Every note Clixy draws for you gathers here"
-        else:
-            self.all_notes.line = (f"{len(notes)} drawn so far" + (f", {three_d} in 3D" if three_d else ""))
-        pictures = []
-        for note in notes[:6]:
-            picture = self.stack._drawing(note)
-            if picture is not None:
-                pictures.append(picture)
-            if len(pictures) == 3:
-                break
-        self.all_notes.pictures = pictures
-        self.all_notes.update()
+    def set_state(self, info: dict | None, queue: list[str], done_items: list[dict], ideas: list[str],
+                  mine: bool = False) -> None:
+        """Everything Home shows: the job running (or None), the line waiting, today's
+        done jobs and notes, and the jobs to offer again (``mine``: from his own week)."""
+        self.done_items = list(done_items)
+        self.done.set_items(self.done_items)
+        self.live.set_ideas(ideas, mine)
+        self.set_live(info, queue)
+
+    def set_live(self, info: dict | None, queue: list[str]) -> None:
+        """The running job changed (a step, who's clicking, a yes wanted) or the line did."""
+        was = bool(self.info)
+        self.info = dict(info) if info else None
+        self.queue = list(queue)
+        self.live.set_live(self.info)
+        self.call.set_info(self.info or {})
+        self.next.set_jobs(self.queue)
+        if was != bool(self.info):
+            self._show_mode()
+        self.update()
+
+    def _show_mode(self) -> None:
+        live = bool(self.info)
+        for w in (self.call, self.next):
+            w.setVisible(live)
+        for w in (self.do_it, self.done):
+            w.setVisible(not live)
+        self.ask.edit.setPlaceholderText("Add a job, or ask anything" if live else AskField.PLACEHOLDER)
+        self._layout()
 
     def mouseMoveEvent(self, event) -> None:  # noqa: N802
         on = BUDDY_SPOT.contains(event.position())
@@ -1268,22 +1499,28 @@ class HomePage(Motion, QWidget):
         self.go("hop", 0.0, kick=-(150.0 if big else 95.0))
         sound("buddy")
 
+    def grid_bottom(self) -> float:
+        return self.height() - 20 - 50 - 14 - ((self.STRIP + 12) if self.info else 0)
+
     def _layout(self) -> None:
         w, h = self.width(), self.height()
         inner = w - 44
         col = (inner - 2 * self.GAP) / 3
         ask_h = 50
-        grid_bottom = h - 20 - ask_h - 14
-        row = (grid_bottom - self.GRID_TOP - self.GAP) / 2
+        bottom = self.grid_bottom()
+        row = (bottom - self.GRID_TOP - self.GAP) / 2
         self.settings_btn.setGeometry(w - 22 - 38, 15, 38, 38)
         big_w = 2 * col + self.GAP
-        self.stack.setGeometry(round(22 - NoteStack.SIDE), round(self.GRID_TOP - NoteStack.TOP),
-                               round(big_w + 2 * NoteStack.SIDE),
-                               round(2 * row + self.GAP + NoteStack.TOP + NoteStack.SHADOW))
+        c = LiveCard
+        self.live.setGeometry(round(22 - c.SIDE), round(self.GRID_TOP - c.TOP), round(big_w + 2 * c.SIDE),
+                              round(bottom - self.GRID_TOP + c.TOP + c.BOTTOM))
         x = 22 + big_w + self.GAP
-        self.do_it.setGeometry(round(x - 4), round(self.GRID_TOP - 6), round(col + 8), round(row + 18))
-        self.all_notes.setGeometry(round(x - 4), round(self.GRID_TOP + row + self.GAP - 6), round(col + 8),
-                                   round(row + 18))
+        top = (round(x - 4), round(self.GRID_TOP - 6), round(col + 8), round(row + 18))
+        low = (round(x - 4), round(self.GRID_TOP + row + self.GAP - 6), round(col + 8), round(row + 18))
+        self.call.setGeometry(*top)
+        self.do_it.setGeometry(*top)
+        self.next.setGeometry(*low)
+        self.done.setGeometry(*low)
         self.ask.setGeometry(22, round(h - 20 - ask_h), inner, ask_h)
 
     def paintEvent(self, _event) -> None:  # noqa: N802
@@ -1292,19 +1529,62 @@ class HomePage(Motion, QWidget):
         p.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
         sk = skin()
         paint_top_bar(p, self, self.panel.status_text(), hop=self.val("hop"))
-        # The hello and your shortcut, on the left.
-        f = font(32, 800, -0.03)
+        live = bool(self.info)
+        f = font(30 if live else 32, 800, -0.03)
         fm = QFontMetricsF(f)
         p.setFont(f)
         p.setPen(sk.text)
+        name = self.panel.name
+        hello = (f"On it, {name}" if name else "On it") if live else _greeting(name)
         p.drawText(QRectF(22, 62, self.width() - 44, fm.height()), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-                   _greeting(self.panel.name))
-        keys = [k for k in self.panel.hotkey.split(" + ") if k]
-        segments: list[tuple[str, str]] = [("text", "Hold")] + [("key", k) for k in keys] + \
-            [("text", "and ask, or type below")]
-        t = float(self.window().property("t") or 0.0) if self.window() else 0.0
-        paint_key_line(p, segments, QPointF(0, 62 + fm.height() + 16), px=14.5, color=sk.text2, press_at=t, left=24)
+                   hello)
+        line_y = 62 + fm.height() + 16
+        if live:
+            first = ("Touch the mouse to take over, or press" if self.info.get("driving")
+                     else "Do each step and I'll see it, or press")
+            paint_key_line(p, [("text", first), ("key", "Esc"), ("text", "to stop")], QPointF(0, line_y),
+                           px=14.5, color=sk.text2, left=24)
+            self._paint_strip(p, sk)
+        else:
+            keys = [k for k in self.panel.hotkey.split(" + ") if k]
+            segments: list[tuple[str, str]] = [("text", "Hold")] + [("key", k) for k in keys] + \
+                [("text", "and ask, or type below")]
+            t = float(self.window().property("t") or 0.0) if self.window() else 0.0
+            paint_key_line(p, segments, QPointF(0, line_y), px=14.5, color=sk.text2, press_at=t, left=24)
         p.end()
+
+    def _paint_strip(self, p: QPainter, sk) -> None:
+        """Today's done jobs and notes as chips under the grid, as many as fit."""
+        y = self.grid_bottom() + 12
+        cy = y + self.STRIP / 2
+        x = 22 + paint_caps(p, "Done today", 22, cy - 8, sk.text3) + 14
+        if not self.done_items:
+            p.setFont(font(12.5, 700))
+            p.setPen(sk.text3)
+            p.drawText(QRectF(x, y, 300, self.STRIP), Qt.AlignmentFlag.AlignVCenter, "nothing yet")
+            return
+        cf = font(12.5, 700)
+        cfm = QFontMetricsF(cf)
+        right = self.width() - 22
+        for i, item in enumerate(self.done_items):
+            label = cfm.elidedText(item["label"], Qt.TextElideMode.ElideRight, 230)
+            w = cfm.horizontalAdvance(label) + 8 + 16 + 8 + 12
+            more = len(self.done_items) - i
+            if x + w > right - (40 if more > 1 else 0):
+                p.setFont(font(12.5, 800))
+                p.setPen(sk.text3)
+                p.drawText(QRectF(x, y, 60, self.STRIP), Qt.AlignmentFlag.AlignVCenter, f"+{more}")
+                return
+            chip = QRectF(x, cy - 15, w, 30)
+            p.fillPath(_pill(chip), sk.surface)
+            p.setPen(QPen(sk.border, 1.0))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawPath(_pill(chip.adjusted(0.5, 0.5, -0.5, -0.5)))
+            _check(p, QPointF(chip.left() + 16, cy), 8)
+            p.setFont(cf)
+            p.setPen(sk.text)
+            p.drawText(QRectF(chip.left() + 30, chip.top(), w - 30, chip.height()), Qt.AlignmentFlag.AlignVCenter, label)
+            x += w + 8
 
 
 def paint_top_bar(p: QPainter, page: QWidget, status: str, *, hop: float = 0.0) -> None:
@@ -1376,178 +1656,6 @@ def paint_key_line(p: QPainter, segments: list[tuple[str, str]], centre: QPointF
         x += w + gap
 
 
-class WorkingPage(QWidget):
-    """While a guide runs: what you asked, the steps done, the step now, I did it and Stop."""
-
-    def __init__(self, panel: "ClixyPanel") -> None:
-        super().__init__(panel._body)
-        self.panel = panel
-        self.info: dict = {}
-        self.did_it = PanelButton("I did it", "glossy", self, px=14, weight=800, pad=(10, 18))
-        self.stop = PanelButton("Stop", "text", self, px=14, weight=700, pad=(10, 6))
-        self.resize(int(WORK_W), 300)
-
-    # Rows of the step list: (kind, label, keys).
-    def _rows(self) -> list[tuple[str, str, str]]:
-        info = self.info
-        done = list(info.get("done") or [])
-        rows = [("done", label, "") for label in done[-3:]]
-        if len(done) > 3:
-            rows.insert(0, ("more", f"{len(done) - 3} earlier step{'s' if len(done) - 3 != 1 else ''} done", ""))
-        now = info.get("now") or ("Looking at your screen" if not done else "Working out the next step")
-        rows.append(("now", now, info.get("keys") or ""))
-        n, total = int(info.get("n") or 0), int(info.get("total") or 0)
-        if total > n > 0:
-            left = total - n
-            rows.append(("next", f"{left} more step{'s' if left != 1 else ''} after this", ""))
-        return rows
-
-    def card_height(self) -> float:
-        rows = self._rows()
-        list_h = len(rows) * 24 + max(0, len(rows) - 1) * 12
-        hint_h = 92 if self.info.get("shortcut") else 0
-        return 36 + 16 + max(list_h, hint_h) + 20
-
-    def page_height(self) -> float:
-        return 16 + 24 + 16 + self.card_height() + 16 + self.did_it.height() + 20
-
-    def set_info(self, info: dict) -> None:
-        self.info = dict(info or {})
-        self.resize(int(WORK_W), round(self.page_height()))
-        y = round(16 + 24 + 16 + self.card_height() + 16)
-        self.did_it.move(20, y)
-        self.did_it.setVisible(bool(self.info.get("now")))
-        self.stop.move(self.width() - 20 - self.stop.width(), y + (self.did_it.height() - self.stop.height()) // 2)
-        self.update()
-
-    def paintEvent(self, _event) -> None:  # noqa: N802
-        p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        p.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
-        info = self.info
-        acc = accent()
-        sk = skin()
-        # The first row: "Guiding you", the step chip, the light.
-        cy = 16 + 12
-        f = font(16, 800)
-        p.setFont(f)
-        p.setPen(sk.text)
-        w = QFontMetricsF(f).horizontalAdvance("Guiding you")
-        p.drawText(QRectF(20, cy - 12, w + 4, 24), Qt.AlignmentFlag.AlignVCenter, "Guiding you")
-        n, total = int(info.get("n") or 0), int(info.get("total") or 0)
-        chip_text = f"{n} of {total}" if total >= n > 0 else (f"Step {n}" if n else "")
-        if chip_text:
-            cf = font(12, 800)
-            cw = QFontMetricsF(cf).horizontalAdvance(chip_text)
-            chip = QRectF(20 + w + 10, cy - 12, cw + 22, 24)
-            p.fillPath(_pill(chip), _rgba(acc, 0.14 if not sk.dark else 0.22))
-            p.setFont(cf)
-            p.setPen(_mix(acc, sk.text, 0.5))
-            p.drawText(chip, Qt.AlignmentFlag.AlignCenter, chip_text)
-        paint_light(p, QPointF(self.width() - 20 - 5, cy), 4.2, 0.95, acc, 13.0)
-
-        # The paper card.
-        card = QRectF(20, 16 + 24 + 16, self.width() - 40, self.card_height())
-        shape = QPainterPath()
-        shape.addRoundedRect(card, 18, 18)
-        ui_kit.soft_shadow(p, shape, dy=6, spread=12, color=sk.shadow)
-        paint_paper(p, card, 18, 36, self.devicePixelRatioF())
-        p.setPen(QPen(QColor(0, 0, 0, 20) if not sk.dark else QColor(255, 255, 255, 20), 1.0))
-        p.setBrush(Qt.BrushStyle.NoBrush)
-        p.drawRoundedRect(card.adjusted(-0.5, -0.5, 0.5, 0.5), 18.5, 18.5)
-        bf = font(12, 700)
-        p.setFont(bf)
-        p.setPen(BAND_TEXT)
-        goal = info.get("goal") or ""
-        band = QRectF(card.left() + 18, card.top(), card.width() - 36, 36)
-        p.drawText(band, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
-                   QFontMetricsF(bf).elidedText(f"You asked: {goal}" if goal else "Step by step",
-                                                Qt.TextElideMode.ElideRight, band.width()))
-        shortcut = info.get("shortcut") or ""
-        hint_w = 220 if shortcut else 0
-        x0, y = card.left() + 20, card.top() + 36 + 16
-        text_w = card.width() - 40 - (hint_w + 22 if hint_w else 0) - 36
-        for kind, label, keys in self._rows():
-            mark = QRectF(x0, y, 24, 24)
-            if kind == "done":
-                p.setPen(Qt.PenStyle.NoPen)
-                p.setBrush(INK)
-                p.drawEllipse(mark)
-                paint_icon(p, "check", QRectF(mark.center().x() - 6, mark.center().y() - 6, 12, 12), PAPER, 3.2)
-                tf, colour = font(15, 600), BAND_TEXT
-            elif kind == "now":
-                p.setPen(QPen(acc, 2.0))
-                p.setBrush(Qt.BrushStyle.NoBrush)
-                p.drawEllipse(mark.adjusted(1, 1, -1, -1))
-                p.setPen(Qt.PenStyle.NoPen)
-                p.setBrush(acc)
-                p.drawEllipse(mark.center(), 5, 5)
-                tf, colour = font(16, 800), INK
-            elif kind == "more":
-                tf, colour = font(13, 600), PAPER_MUTED
-            else:
-                p.setPen(QPen(PAPER_RING, 2.0))
-                p.setBrush(Qt.BrushStyle.NoBrush)
-                p.drawEllipse(mark.adjusted(1, 1, -1, -1))
-                tf, colour = font(15, 600), PAPER_MUTED
-            tx = x0 + 36 if kind != "more" else x0 + 36
-            if kind == "now" and keys:
-                from annotations import key_names
-                segs = [("text", "Press")]
-                for i, k in enumerate(key_names(keys)):
-                    if i:
-                        segs.append(("text", "+"))
-                    segs.append(("key", k))
-                self._paint_inline(p, segs, QPointF(tx, y + 12), tf, colour)
-            else:
-                p.setFont(tf)
-                p.setPen(colour)
-                p.drawText(QRectF(tx, y, text_w, 24), Qt.AlignmentFlag.AlignVCenter,
-                           QFontMetricsF(tf).elidedText(label, Qt.TextElideMode.ElideRight, text_w))
-            y += 24 + 12
-        if shortcut:
-            self._paint_hint(p, QRectF(card.right() - 20 - hint_w, card.top() + 36 + 16, hint_w, 92), shortcut)
-        p.end()
-
-    @staticmethod
-    def _paint_inline(p: QPainter, segs, start: QPointF, f: QFont, colour: QColor) -> None:
-        fm = QFontMetricsF(f)
-        x = start.x()
-        for kind, text in segs:
-            if kind == "key":
-                size = keycap_size(text)
-                paint_keycap(p, QRectF(x, start.y() - size.height() / 2 - 1, size.width(), size.height()), text,
-                             light=True)
-                x += size.width() + 6
-            else:
-                p.setFont(f)
-                p.setPen(colour)
-                w = fm.horizontalAdvance(text)
-                p.drawText(QRectF(x, start.y() - 12, w + 2, 24), Qt.AlignmentFlag.AlignVCenter, text)
-                x += w + 6
-
-    def _paint_hint(self, p: QPainter, rect: QRectF, shortcut: str) -> None:
-        """"Faster next time": the guide's shortcut as keycaps on a white tab."""
-        from annotations import key_names
-        p.save()
-        shape = QPainterPath()
-        shape.addRoundedRect(rect, 14, 14)
-        draw_shadow(p, shape, dy=6, blur=16, color=QColor(0, 0, 0, 15), key=("hint", rect.width(), rect.height()))
-        p.fillPath(shape.translated(0, 1), QColor("#E3DBCC"))
-        p.fillPath(shape, QColor("#FFFFFF"))
-        p.setFont(font(12, 800, 0.06))
-        p.setPen(PAPER_MUTED)
-        p.drawText(QRectF(rect.left() + 16, rect.top() + 14, rect.width() - 32, 18), Qt.AlignmentFlag.AlignVCenter,
-                   "FASTER NEXT TIME")
-        segs = []
-        for i, k in enumerate(key_names(shortcut)):
-            if i:
-                segs.append(("text", "+"))
-            segs.append(("key", k))
-        self._paint_inline(p, segs, QPointF(rect.left() + 16, rect.top() + 14 + 18 + 10 + 12), font(14, 700), INK)
-        p.restore()
-
-
 # --- The panel -------------------------------------------------------------------------------------
 
 def _key_down(vk: int) -> bool:
@@ -1596,21 +1704,21 @@ class ClixyPanel(QWidget):
         self._fade_fx.setOpacity(0.0)
         self._body.setGraphicsEffect(self._fade_fx)
         self.home = HomePage(self)
-        self.working = WorkingPage(self)
         self.settings = None
         """The Settings view (panel_settings.SettingsPage), made the first time."""
         self.view = "home"
-        self.working.hide()
 
-        self.home.stack.open_note.connect(self._open_note)
-        self.home.stack.follow_up.connect(self._follow_up)
+        self.home.live.primary.connect(self._primary)
+        self.home.live.stop.connect(self._stop)
+        self.home.live.picked.connect(self._ask)
+        self.home.call.yes.connect(self._approve)
+        self.home.call.mine.connect(lambda: self._drive(False))
+        self.home.call.switch.connect(self._switch_drive)
         self.home.do_it.clicked.connect(self._do_it_for_me)
-        self.home.all_notes.clicked.connect(lambda: self._open_folder(self.notes_folder or notes_dir()))
+        self.home.done.open_note.connect(self._open_note)
         self.home.memory.clicked.connect(lambda: self._open_folder(memory_dir()))
         self.home.settings_btn.clicked.connect(self._settings)
         self.home.ask.submitted.connect(self._ask)
-        self.working.did_it.clicked.connect(self._did_it)
-        self.working.stop.clicked.connect(self._stop)
 
         self._w, self._h = NOTCH
         self._vw = self._vh = 0.0
@@ -1619,7 +1727,7 @@ class ClixyPanel(QWidget):
         self._hidden_for_capture = False
         self._was_down = True
         self._was_esc = True
-        self._follow_note: Note | None = None
+        self._live = None                # what the live card last showed (_live_key)
         self._last_box: QRect | None = None
         self._frame = 0
         import time
@@ -1664,7 +1772,7 @@ class ClixyPanel(QWidget):
         self._place_body()
         self.show()
         self.raise_()
-        if self.view != "working":       # a guide watches the foreground window: leave it be
+        if not self._guide_info():       # a job watches the front window: leave it be (click the ask bar to type)
             self._activate()
             if focus_ask:
                 self.home.ask.edit.setFocus()
@@ -1677,7 +1785,6 @@ class ClixyPanel(QWidget):
         if self._open and not instant:
             sound("close")
         self._open = False
-        self._follow_note = None
         self._for_me = False
         self.home.ask.edit.setPlaceholderText(AskField.PLACEHOLDER)
         if self.settings is not None and self.view == "settings":
@@ -1687,7 +1794,6 @@ class ClixyPanel(QWidget):
 
     def _finish_close(self) -> None:
         self._tick.stop()
-        self.home.stack.release_model()
         self._last_box = None
         self._w, self._h = NOTCH
         self._fade = 0.0
@@ -1730,11 +1836,24 @@ class ClixyPanel(QWidget):
     # --- What it shows -----------------------------------------------------------------------------
 
     def refresh(self) -> None:
-        """Fresh notes, guide progress and greeting."""
-        self.home.set_notes(load_notes(self.notes_folder))
+        """Home afresh: the job running (or not), the line waiting, today's done jobs
+        and notes, and the jobs to offer again."""
+        import jobs
         info = self._guide_info()
-        self._set_view("working" if info else "home", info)
+        ideas = jobs.again()
+        self.home.set_state(info, jobs.queued(), self._done_items(), ideas or list(EXAMPLES), mine=bool(ideas))
+        self._live = _live_key(info)
+        self._set_view("home")
         self.home.update()
+
+    def _done_items(self) -> list[dict]:
+        """Today's finished jobs and the notes shown today, newest first."""
+        import jobs
+        today = dt.date.today()
+        items = [{"label": _sentence(j["goal"]), "note": None, "at": j["at"]} for j in jobs.done_today()]
+        items += [{"label": n.title, "note": n, "at": n.when} for n in load_notes(self.notes_folder)
+                  if n.when.date() == today]
+        return sorted(items, key=lambda i: i["at"], reverse=True)
 
     def show_settings(self, section: str = "") -> bool:
         """Turn the panel into Settings. False if they couldn't be read."""
@@ -1744,7 +1863,7 @@ class ClixyPanel(QWidget):
                 self.settings = SettingsPage(self._body)
                 self.settings.hide()
                 self.settings.saved.connect(self._settings_done)
-                self.settings.left.connect(lambda: self._set_view(self._home_view(), self._guide_info()))
+                self.settings.left.connect(lambda: self._set_view("home"))
             if section:
                 self.settings.section = section
             self.settings.load()
@@ -1757,7 +1876,7 @@ class ClixyPanel(QWidget):
         return True
 
     def _settings_done(self, restart: bool) -> None:
-        self._set_view(self._home_view(), self._guide_info())
+        self._set_view("home")
         self.settings_saved.emit(restart)
 
     def _guide_info(self) -> dict | None:
@@ -1766,24 +1885,18 @@ class ClixyPanel(QWidget):
         except Exception:
             return None
 
-    def _home_view(self) -> str:
-        return "working" if self._guide_info() else "home"
-
     def status_text(self) -> str:
         try:
             return (self.status_fn() if self.status_fn else "") or "Ready"
         except Exception:
             return "Ready"
 
-    def _set_view(self, view: str, info: dict | None = None) -> None:
-        if view == "working":
-            self.working.set_info(info or {})
+    def _set_view(self, view: str) -> None:
         if view != self.view:
             if self.view == "settings" and self.settings is not None:
                 self.settings.discard()
             self.view = view
             self.home.setVisible(view == "home")
-            self.working.setVisible(view == "working")
             if self.settings is not None:
                 self.settings.setVisible(view == "settings")
             self._fade = min(self._fade, 0.0)
@@ -1793,8 +1906,6 @@ class ClixyPanel(QWidget):
     def _target(self) -> tuple[float, float]:
         if not self._open:
             return NOTCH
-        if self.view == "working":
-            return WORK_W, float(self.working.height())
         if self.view == "settings" and self.settings is not None:
             return float(self.settings.width()), float(self.settings.height())
         return HOME
@@ -1802,7 +1913,7 @@ class ClixyPanel(QWidget):
     def _page(self) -> QWidget:
         if self.view == "settings" and self.settings is not None:
             return self.settings
-        return self.working if self.view == "working" else self.home
+        return self.home
 
     def _recolor(self) -> None:
         for button in self.findChildren(PanelButton):
@@ -1845,16 +1956,27 @@ class ClixyPanel(QWidget):
             self._watch_input()
             if self._frame % 4 == 0 and self.view == "home":
                 self.home.update(QRect(0, 0, 440, 62))    # the buddy breathes, the status light beats
-                self.home.update(QRect(0, 100, 600, 46))  # the keycaps press themselves
-                stack = self.home.stack                   # the buddy peeking over the note
-                stack.update(QRect(stack.width() - 110, 0, 110, round(NoteStack.TOP) + 20))
-            if self._frame % 15 == 0 and self.view != "settings":
-                info = self._guide_info()
-                if info:
-                    if info != self.working.info or self.view != "working":
-                        self._set_view("working", info)
-                elif self.view == "working":
-                    self._set_view("home")
+                if self.home.info:
+                    self.home.live.update()               # the step light pulses
+                else:
+                    self.home.update(QRect(0, 100, 600, 46))           # the keycaps press themselves
+                    self.home.live.update(self.home.live.buddy_box())  # the buddy bobs
+            if self._frame % 15 == 0 and self.view == "home":
+                self._follow_job()
+
+    def _follow_job(self) -> None:
+        """Keep Home on the job: a new step, who's clicking, a yes wanted, the line; and
+        when a job begins or ends, everything afresh (today's list, the ideas)."""
+        import jobs
+        info = self._guide_info()
+        key, queue = _live_key(info), jobs.queued()
+        if key == self._live and queue == self.home.queue:
+            return
+        if (key is None) != (self._live is None):
+            self.refresh()
+        else:
+            self._live = key
+            self.home.set_live(info, queue)
 
     def _place_body(self) -> None:
         cx = self.width() / 2.0
@@ -1867,8 +1989,6 @@ class ClixyPanel(QWidget):
         w, h = self._w, self._h
         k = max(0.0, min(1.0, (h - NOTCH[1]) / (HOME[1] - NOTCH[1])))
         radius = 9.0 + (34.0 - 9.0) * min(1.0, k * 2.4)
-        if self.view == "working" and self._open:
-            radius = min(radius, 32.0)
         shoulder = 7.0 + (SHOULDER - 7.0) * min(1.0, k * 3.0)
         return tab_path(w, h, shoulder, radius).translated(self.width() / 2.0 - w / 2.0, 0.0)
 
@@ -1897,11 +2017,6 @@ class ClixyPanel(QWidget):
         if event.key() == Qt.Key.Key_Escape:
             if not (self.view == "settings" and self.settings is not None and self.settings.busy):
                 self.close_panel()
-            return
-        if self.view == "home" and event.key() in (Qt.Key.Key_Left, Qt.Key.Key_Right) \
-                and not self.home.ask.edit.hasFocus():
-            step = 1 if event.key() == Qt.Key.Key_Right else -1
-            self.home.stack.show_index(self.home.stack.index + step)
             return
         super().keyPressEvent(event)
 
@@ -1943,15 +2058,23 @@ class ClixyPanel(QWidget):
     # --- Actions -----------------------------------------------------------------------------------
 
     def _ask(self, text: str) -> None:
-        note = self._follow_note
-        if note is not None:
-            text = f'{text} (about my sketch note "{note.title}")'
+        """A typed question or job (or one of the jobs offered again). While a job runs it
+        waits its turn in Up next instead (jobs.py); the app starts it when that one ends."""
+        text = " ".join((text or "").split())
+        if not text:
+            return
         if getattr(self, "_for_me", False):
             import guide
             if not guide.wants_drive(text):
                 text = f"{text.rstrip('.!? ')} for me"       # from the Do it for me tile: Clixy does it
             self._for_me = False
         self.home.ask.edit.clear()
+        if self._guide_info():
+            import jobs
+            jobs.enqueue(text)
+            sound("select")
+            self.home.set_live(self._guide_info(), jobs.queued())
+            return
         self.close_panel(instant=True)
         # Let the panel leave the screen before the question's screenshot.
         QTimer.singleShot(80, lambda: self.asked.emit(text))
@@ -1961,14 +2084,6 @@ class ClixyPanel(QWidget):
         self._for_me = True
         edit = self.home.ask.edit
         edit.setPlaceholderText("What should I do for you?")
-        self._activate()
-        edit.setFocus()
-
-    def _follow_up(self, note: Note) -> None:
-        self._follow_note = note
-        edit = self.home.ask.edit
-        edit.setPlaceholderText(QFontMetricsF(edit.font()).elidedText(
-            f"Ask about {note.title}", Qt.TextElideMode.ElideRight, edit.width() - 4))
         self._activate()
         edit.setFocus()
 
@@ -1993,12 +2108,43 @@ class ClixyPanel(QWidget):
             self.close_panel(instant=True)
             self.settings_requested.emit()     # the Settings window, as before
 
-    def _did_it(self) -> None:
+    def _primary(self) -> None:
+        """The live card's big button: Take over while Clixy clicks, I did it while you do."""
+        g = _running_guide()
+        if g is None:
+            return
+        if g.driving:
+            g.set_drive(False)
+        else:
+            g.confirm()
+        self._follow_job()
+
+    def _approve(self) -> None:
+        """Your call: yes, go on."""
         g = _running_guide()
         if g is not None:
-            g.confirm()
+            g.approve()
+        self._follow_job()
+
+    def _drive(self, on: bool) -> None:
+        """Clixy clicks (on) or you do (off); switched on, it does the step on show now."""
+        g = _running_guide()
+        if g is None:
+            return
+        g.set_drive(on)
+        if on:
+            g.do_this_one()
+        self._follow_job()
+
+    def _switch_drive(self) -> None:
+        g = _running_guide()
+        if g is not None:
+            self._drive(not g.driving)
 
     def _stop(self) -> None:
+        """Stop the job, and the ones waiting after it."""
+        import jobs
+        jobs.clear_queue()
         g = _running_guide()
         if g is not None:
             g.stop()

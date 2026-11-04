@@ -28,16 +28,26 @@ Clixy is Rayan Sameer's Windows AI buddy (PyQt6). This folder is the local dev c
   no flat grey-on-black "slop"; tactile and warm (paper cards, keycaps, glossy primary).
 - No timetable. Show only real features; leave out anything with no setting behind it.
 - 4 Nov 2026, the UI level-up ("black seems dull", "HeyClicky was very interactive"):
-  `ui_kit.py` is the look and feel. Two skins: Daylight (default, bright) and Midnight
-  (deep plum ink, never flat black), plus Match Windows (`APPEARANCE`). The buddy's colour
+  `ui_kit.py` is the look and feel. Two skins: Daylight (default, bright) and Charcoal
+  (charcoal greys with the same bright tiles, never flat black; `ui_kit.MIDNIGHT`), plus Match Windows (`APPEARANCE`). The buddy's colour
   is candy gel (`paint_gel`). Everything moves on springs (`Motion`, `Tactile`) and makes a
   little sound (`ui_kit.sound` -> `sfx.py`, original synthesised sounds; `SOUND_EFFECTS`,
   `SOUND_VOLUME`; never copy HeyClicky's sound files). The notch stays black (it is the
   notch) but has voice bars, hopping thinking dots, talking bars, a colour thread and sparks.
   Settings has nine sections with coloured tiles (General, Look, Sounds, Voice, Buddy,
-  Shortcut, Brain, Privacy, About). A 3D note shows its live model in the panel; Open note
-  brings back the real note card (not a picture). Check the look with
+  Shortcut, Brain, Privacy, About). Check the look with
   `tools\dev\ui_shots.py OUT --skin light|dark` before calling UI work done.
+- 4 Nov 2026, Home is board J, "Live now, with what's waiting" (Rayan chose it from the
+  proposal canvas, both skins): no note card on Home (drawings show on the screen when
+  asked). While a job (a guide) runs, the big card shows the job, its steps (done, now,
+  the next planned one), his screen with a ring on the next click, I did it or Take over,
+  and Stop; a sunny tile is Your call when a step needs his yes, else who's clicking (tap
+  to swap); the violet Up next lists jobs typed meanwhile (they wait their turn: `jobs.py`,
+  started by the app when a job finishes; a job stopped short clears the line); today's
+  done jobs and notes run along the bottom. When nothing runs: jobs to do again
+  (`jobs.again`), Do it for me and Done today (a note there opens its card again). Done
+  jobs are kept in ~/.clixy/jobs.jsonl only while history is on. The panel leaves the
+  keyboard alone while a job runs, till he clicks the ask bar.
 
 ## What's next
 - Done 4 Nov 2026: the black notch with a buddy-coloured light (`island.py`), the panel
@@ -75,7 +85,7 @@ Clixy is Rayan Sameer's Windows AI buddy (PyQt6). This folder is the local dev c
   controls and Clixy's own hotkey while in front; that limit is real (needs uiAccess).
 - The island (`island.py`, side "top"): a flat black tab with curved shoulders; "Hey <name>!"
   on start and once a day; Listening / Thinking with the light moving; a hint on hover;
-  click opens the panel (Home, Working while guiding, Settings). Left and right edges are
+  click opens the panel (Home, live while a job runs, and Settings). Left and right edges are
   still in Settings. `dashboard.py` is greeting, time, date and weather only.
 - Listening: faster-whisper "auto" = small.en on the GPU (0.09 s; base.en misheard "draw me"
   as "don't be"), base.en on the CPU.
