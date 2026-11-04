@@ -786,8 +786,9 @@ class Part:
         d = None
         col = base
         for s in self.shapes:
-            ds = s.fn(Q)
-            k = (self.k if s.k is None else s.k) * 0.6     # colours change a little more crisply than shapes
+            join = self.k if s.k is None else s.k
+            ds = self._dist(s, Q, join)
+            k = join * 0.6     # colours change a little more crisply than shapes
             if d is None:
                 d = ds
                 if s.color is not None:
@@ -975,9 +976,15 @@ def mesh_part(part: Part, h: float) -> Mesh | None:
         dims = tuple(int(x) for x in np.ceil((hi - lo) / h).astype(int) + 1)
     part.margin = 4 * h * 2.5 / part.scale + (part.bumps[1] if part.bumps else 0.0) / part.scale + part.shell
     try:
-        D = _field(part, lo, h, dims)
+        return _mesh_surface(part, lo, h, dims)
     finally:
         part.margin = None
+
+
+def _mesh_surface(part: Part, lo: np.ndarray, h: float, dims) -> Mesh | None:
+    """The part's surface as a mesh, with normals, colours and cut faces. ``part.margin`` is
+    set, so shapes far from the points being worked out are skipped."""
+    D = _field(part, lo, h, dims)
     verts, tri = surface_nets(D, lo, h)
     if len(tri) == 0:
         return None

@@ -534,10 +534,17 @@ class Renderer:
                 prog["u_opacity"].value = float(part.opacity)
                 prog["u_dim"].value = 1.0 if part.dim else 0.0
                 if part.opacity < 0.999:
+                    # See-through: its far side first, then its near side, so it layers like glass.
                     ctx.enable(moderngl.BLEND)
                     ctx.blend_func = moderngl.ONE, moderngl.ONE_MINUS_SRC_ALPHA
                     self._fbo.depth_mask = False
-                vao.render()
+                    ctx.enable(moderngl.CULL_FACE)
+                    for side in ("front", "back"):
+                        ctx.cull_face = side
+                        vao.render()
+                    ctx.disable(moderngl.CULL_FACE)
+                else:
+                    vao.render()
                 self._fbo.depth_mask = True
                 ctx.disable(moderngl.BLEND)
             ctx.copy_framebuffer(self._resolve, self._fbo)
@@ -692,8 +699,10 @@ class RealModel:
         except Exception:
             self.failed = True
             return
+        named = set()      # one label per name, however many parts share it
         for k, m in enumerate(self.model.meshes):
-            if m.part.label:
+            if m.part.label and m.part.label.lower() not in named:
+                named.add(m.part.label.lower())
                 lb = _Label(m.part.label, k, _ink(m.part.color))
                 if m.part.anchor is not None:      # the part says where its label points
                     spot = m.part.to_model(m.part.anchor)
@@ -701,6 +710,9 @@ class RealModel:
                     lb.fixed = True
                 self.labels.append(lb)
             for text, at, tip in m.part.marks:   # labelled spots: snapped onto the part's surface
+                if text.lower() in named:
+                    continue
+                named.add(text.lower())
                 lb = _Label(text, k, _ink(m.part.color))
                 spot = m.part.to_model(at)
                 lb.anchor = m.pos[int(np.argmin(((m.pos - spot) ** 2).sum(1)))].astype(float)
