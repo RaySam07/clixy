@@ -1000,6 +1000,19 @@ class NoteCard(QWidget):
         self._drag_from = None
         self._orbit_from = None
 
+    def wheelEvent(self, event) -> None:  # noqa: N802
+        """Scrolling over a 3D model looks closer or further."""
+        if hasattr(self._model, "wheel") and self.canvas.contains(event.position()):
+            self._model.wheel(event.angleDelta().y() / 120.0)
+            self._resting = True
+            self.update()
+
+    def mouseDoubleClickEvent(self, event) -> None:  # noqa: N802
+        """Double-click a 3D model: back to how it started."""
+        if hasattr(self._model, "reset_view") and self.canvas.contains(event.position()):
+            self._model.reset_view()
+            self.update()
+
     # --- Painting ------------------------------------------------------------------------------
     def paintEvent(self, _event) -> None:  # noqa: N802
         if not self.note:

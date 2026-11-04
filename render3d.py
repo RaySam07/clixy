@@ -611,6 +611,7 @@ class RealModel:
         self.az0 = model3d._f(view.get("turn"), 30.0, -360, 360)
         self.el = model3d._f(view.get("tilt"), 16.0, -60, 80)
         self.zoom = model3d._f(view.get("zoom"), 1.0, 0.4, 3.0)
+        self._zoom0 = self.zoom
         if spec.arrows and view.get("turn") is None:
             self.az0, self.el = self._open_view(spec.arrows, view.get("tilt") is None)
         self.ground = view.get("ground", True) is not False
@@ -715,6 +716,14 @@ class RealModel:
     def drag(self, dx: float, dy: float) -> None:
         self.drag_az -= dx * 0.45
         self.drag_el = max(-50.0, min(60.0, self.drag_el + dy * 0.35))
+
+    def wheel(self, steps: float) -> None:
+        """Scroll to look closer or further (labels stay on their parts)."""
+        self.zoom = max(self._zoom0 * 0.6, min(self._zoom0 * 2.6, self.zoom * 1.12 ** steps))
+
+    def reset_view(self) -> None:
+        self.drag_az = self.drag_el = 0.0
+        self.zoom = self._zoom0
 
     # --- Fitting the model and labels into the canvas ------------------------------------------
     def _layout(self, canvas: QRectF, dpr: float) -> None:
@@ -823,7 +832,7 @@ class RealModel:
         w, h = max(32, int(stage.width() * dpr)), max(32, int(stage.height() * dpr))
         az = self.az0 + turn + self.drag_az
         el = max(-60.0, min(80.0, self.el + self.drag_el))
-        img_key = (w, h, round(az, 2), round(el, 2), round(t, 3))
+        img_key = (w, h, round(az, 2), round(el, 2), round(t, 3), round(self.zoom, 4))
         if img_key != self._img_key:
             sx, sy = box.width() / stage.width(), box.height() / stage.height()
             frame = (sx, (box.center().x() - stage.center().x()) / (stage.width() / 2),
