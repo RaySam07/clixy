@@ -430,11 +430,9 @@ class Renderer:
 
     # --- Drawing ------------------------------------------------------------------------------
     def matrices(self, t: float) -> list[np.ndarray]:
-        out = []
-        for m, *_rest in self._items:
-            mo = m.part.motion
-            out.append(mo.matrix(t) if mo is not None else np.eye(4))
-        return out
+        """Each part's motion at time t, joints worked out together (model3d.Model.pose)."""
+        poses = self.model.pose(t)
+        return [poses.get(id(m.part), np.eye(4)) for m, *_rest in self._items]
 
     def render(self, w: int, h: int, az: float, el: float, t: float, fit, zoom: float = 1.0,
                aspect: float | None = None, stage=None) -> QImage:
@@ -699,6 +697,11 @@ class RealModel:
         except Exception:
             self.failed = True
             return
+        try:
+            from ui_kit import sound
+            sound("build")              # the model materialises
+        except Exception:
+            pass
         named = set()      # one label per name, however many parts share it
         for k, m in enumerate(self.model.meshes):
             if m.part.label and m.part.label.lower() not in named:
@@ -728,7 +731,7 @@ class RealModel:
         """A gear, a wheel, a fan: spinning about an axis through itself (a planet orbiting
         the sun is not), so a spot on it stays where it is."""
         mo = mesh.part.motion
-        if mo is None or mo.kind != "spin":
+        if mo is None or mo.kind != "spin" or mo.on:
             return False
         c = mesh.centre - mo.at
         off = float(np.linalg.norm(c - (c @ mo.axis) * mo.axis))

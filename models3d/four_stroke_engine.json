@@ -15,7 +15,17 @@
   "combustion engine",
   "how an engine works",
   "motorcycle engine",
-  "single cylinder engine"
+  "single cylinder engine",
+  "pistons",
+  "piston and crankshaft",
+  "piston and crank",
+  "crank and piston",
+  "slider crank",
+  "how a piston works",
+  "how pistons work",
+  "crankshaft",
+  "piston",
+  "piston engine cutaway"
  ],
  "view": {
   "turn": 24,
@@ -206,15 +216,13 @@
     }
    ],
    "move": {
-    "slide": [
-     0,
-     0,
-     1
-    ],
-    "amount": 0.42,
-    "speed": 0.3333,
-    "phase": 0.0
-   }
+    "ride": "connecting rod"
+   },
+   "at": [
+    0,
+    0,
+    -0.0622
+   ]
   },
   {
    "label": "connecting rod",
@@ -369,15 +377,29 @@
     }
    ],
    "move": {
-    "slide": [
-     0,
-     0,
-     1
+    "link": "crankshaft",
+    "pin": [
+     0.0,
+     0.42,
+     0.0
     ],
-    "amount": 0.42,
-    "speed": 0.3333,
-    "phase": 0.0
-   }
+    "to": [
+     0,
+     0,
+     1.3878
+    ],
+    "slide": "z"
+   },
+   "at": [
+    0.0,
+    0.42,
+    0.0
+   ],
+   "turn": [
+    16.837,
+    0,
+    0
+   ]
   },
   {
    "label": "crankshaft",

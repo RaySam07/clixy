@@ -22,6 +22,7 @@ import hashlib
 import json
 import math
 import os
+import re
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -556,12 +557,32 @@ _AXES = {"x": 0, "y": 1, "z": 2}
 
 @dataclass
 class Motion:
-    kind: str                       # spin | swing | slide | beat
+    """How a part moves. On its own: spin, swing, slide, beat. Joined to other parts, so a
+    mechanism moves as one and its joints never come apart:
+    - ``on``: any motion, carried by another part (a planet gear spinning on its carrier,
+      a moon round its planet): the other part's motion, then this one.
+    - ``follow``: fixed to another part (a crankpin, a counterweight, a flywheel).
+    - ``link``: a connecting rod. Its ``pin`` end rides on the ``target`` part (the
+      crankpin, as the crank turns); its ``to`` end slides along ``slide`` (the piston's
+      line). The rod's length stays exactly what it was, as in a real slider-crank.
+    - ``ride``: a slider driven by a link (the piston): it moves with the rod's ``to`` end.
+    Points are in model space, where the parts are drawn at rest (time 0)."""
+
+    kind: str                       # spin | swing | slide | beat | follow | link | ride
     axis: np.ndarray = field(default_factory=lambda: np.array([0, 0, 1.0]))
     at: np.ndarray = field(default_factory=lambda: np.zeros(3))
     speed: float = 30.0             # spin: degrees a second; others: cycles a second
     amount: float = 0.0             # swing: degrees; slide: distance; beat: fraction
     phase: float = 0.0              # 0..1 of a cycle
+    on: str = ""                    # carried by this part (its name, label or id)
+    target: str = ""                # follow / ride: that part; link: the part its pin rides on
+    pin: np.ndarray | None = None   # link: the end on the crank
+    to: np.ndarray | None = None    # link: the end that slides
+    slide_dir: np.ndarray | None = None  # link: the line the ``to`` end slides along
+
+    @property
+    def joined(self) -> bool:
+        return self.kind in ("follow", "link", "ride")
 
     def matrix(self, t: float) -> np.ndarray:
         """This motion at time t, as a 4x4 matrix in model space."""
@@ -592,16 +613,42 @@ def _axis_angle(axis: np.ndarray, ang: float) -> np.ndarray:
     return np.eye(3) + math.sin(ang) * K + (1 - math.cos(ang)) * (K @ K)
 
 
+def _ref(value) -> str:
+    return str(value).strip().lower()[:48] if isinstance(value, str) and value.strip() else ""
+
+
 def _motion(spec, centre: np.ndarray) -> Motion | None:
     if not isinstance(spec, dict):
         return None
-    for kind in ("spin", "swing", "slide", "beat"):
+    for kind in ("link", "ride", "follow", "spin", "swing", "slide", "beat"):
         if kind in spec:
             break
     else:
         return None
     m = Motion(kind)
     val = spec.get(kind)
+    if kind in ("follow", "ride"):
+        m.target = _ref(val if isinstance(val, str) else spec.get("on"))
+        return m if m.target else None
+    if kind == "link":
+        if isinstance(val, dict):            # {"link": {"on": "crank", "pin": .., "to": .., "slide": ..}}
+            spec = {**spec, **val}
+            val = val.get("on")
+        m.target = _ref(val if isinstance(val, str) else spec.get("on"))
+        if not m.target:
+            return None
+        if spec.get("pin") is not None:
+            m.pin = _v3(spec.get("pin"))
+        if spec.get("to") is not None:
+            m.to = _v3(spec.get("to"))
+        way = spec.get("slide")
+        if isinstance(way, str) and way.lower() in _AXES:
+            m.slide_dir = np.eye(3)[_AXES[way.lower()]]
+        elif way is not None:
+            d = _v3(way, (0, 0, 1))
+            m.slide_dir = d / np.linalg.norm(d) if np.linalg.norm(d) > 1e-9 else None
+        return m
+    m.on = _ref(spec.get("on"))
     if kind in ("spin", "swing", "slide"):
         if isinstance(val, str) and val.lower() in _AXES:
             m.axis = np.eye(3)[_AXES[val.lower()]]
@@ -1036,7 +1083,7 @@ def ambient_occlusion(meshes: list[Mesh], size: float) -> None:
     steps = np.array([0.012, 0.03, 0.055, 0.085, 0.12]) * size
     # Parts that turn or slide only shade themselves, and nothing else is shaded by them:
     # worked out at rest, their shading would be wrong as soon as they move.
-    moving = {k for k, m in enumerate(meshes) if m.part.motion is not None and m.part.motion.kind in ("spin", "slide", "swing")}
+    moving = {k for k, m in enumerate(meshes) if m.part.motion is not None and m.part.motion.kind != "beat"}
     still = set(range(len(meshes))) - moving
     for k, m in enumerate(meshes):
         occ = np.zeros(len(m.pos), F)
@@ -1088,6 +1135,62 @@ def find_library(name: str) -> dict | None:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
+
+
+def _words(text: str) -> str:
+    return " " + re.sub(r"[^a-z0-9]+", " ", str(text or "").lower()).strip() + " "
+
+
+_FILLER = {"the", "a", "an", "human", "how", "it", "works", "work", "of", "parts", "structure", "anatomy", "inside"}
+
+
+def library_match(note: dict) -> str | None:
+    """The ready-made model a note is about, from its topic or title: the model's own
+    name, or one of its aliases as whole words ("airplane flight" -> airliner). A one-word
+    name only counts when it's all the topic says ("human heart" -> heart), so "two-stroke
+    engine" is never taken for the four-stroke model's "engine"."""
+    texts = [_words(note.get("topic")), _words(note.get("title"))]
+    cores = [" " + " ".join(w for w in t.split() if w not in _FILLER) + " " for t in texts]
+    best, best_len = None, 0
+    for stem, info in library_index().items():
+        for alias in [stem.replace("_", " ")] + list(info["aliases"]):
+            a = _words(alias)
+            if len(a.strip()) < 3:
+                continue
+            single = len(a.split()) == 1
+            for text, core in zip(texts, cores):
+                hit = core == a if single else a in text
+                if hit and len(a) > best_len:      # the longest match wins
+                    best, best_len = stem, len(a)
+    return best
+
+
+def upgrade_note(note: dict) -> dict:
+    """An older 3D note (balls and tubes, boxes, or parts the AI sculpted) shown with the
+    hand-built model it's about, so a note kept from before looks as good as a new one.
+    Its title, words and follow-ups stay; labels it shared with the model are kept. A note
+    that already uses a ready-made model, or has none to match, comes back as it was."""
+    if not isinstance(note, dict) or not (note.get("view") or {}).get("3d"):
+        return note
+    items = [i for i in note.get("items") or [] if isinstance(i, dict)]
+    if any(str(i.get("type") or "").lower() == "model" for i in items):
+        return note
+    stem = library_match(note)
+    if stem is None:
+        return note
+    info = library_index().get(stem, {})
+    have = {str(i.get("label") or "").lower() for i in items} | {str(i.get("text") or "").lower() for i in items}
+    have |= {str(m.get("text") or "").lower() for i in items for m in (i.get("labels") or []) if isinstance(m, dict)}
+    shared = [lb for lb in info.get("labels", []) if lb and lb.lower() in have]
+    model: dict = {"type": "model", "name": stem}
+    if len(set(shared)) >= 3:
+        model["labels"] = sorted(set(shared), key=shared.index)
+    texts = [i for i in items if str(i.get("type") or "").lower() == "text"][:1]
+    out = {k: v for k, v in note.items() if k != "items"}
+    out["items"] = [model] + texts
+    out["view"] = {"3d": True}
+    out["upgraded"] = True
+    return out
 
 
 LEGACY_SOLIDS = ("sphere", "ellipsoid", "box3d", "box", "cylinder", "cone", "torus", "tube", "gear", "molecule",
@@ -1514,6 +1617,119 @@ class Model:
             if b is not None:
                 centre = (b[0] + b[1]) / 2
             part.motion = _motion(part._motion_spec, centre)
+        self._refs: dict[str, Part] = {}
+        for part in self.parts:                      # what a joint names: id first, then name, then label
+            for key in (_ref(part.spec.get("id")), _ref(part.name), _ref(part.label)):
+                if key and key not in self._refs:
+                    self._refs[key] = part
+        for part in self.parts:
+            mo = part.motion
+            if mo is not None and mo.kind == "link":
+                self._settle_link(part, mo)
+
+    def _settle_link(self, part: "Part", mo: Motion) -> None:
+        """Fill in what a rod's link left out: its ends (the far ends of the rod along its
+        length; the pin is the one nearer the part it rides on) and the line its far end
+        slides along (from the crank's axle through that end, square to the axle)."""
+        driver = self._refs.get(mo.target)
+        b = part.bounds()
+        if b is not None and (mo.pin is None or mo.to is None):
+            lo, hi = b
+            k = int(np.argmax(hi - lo))
+            mid = (lo + hi) / 2
+            e1, e2 = mid.copy(), mid.copy()
+            e1[k], e2[k] = lo[k], hi[k]
+            near = driver.motion.at if driver is not None and driver.motion is not None else None
+            if near is None and driver is not None and driver.bounds() is not None:
+                near = (driver.bounds()[0] + driver.bounds()[1]) / 2
+            if near is not None and np.linalg.norm(e2 - near) < np.linalg.norm(e1 - near):
+                e1, e2 = e2, e1
+            mo.pin = mo.pin if mo.pin is not None else e1
+            mo.to = mo.to if mo.to is not None else e2
+        if mo.pin is None or mo.to is None:
+            part.motion = None
+            return
+        if mo.slide_dir is None:
+            d = mo.to - mo.pin
+            dm = driver.motion if driver is not None else None
+            if dm is not None and dm.kind == "spin":
+                d = mo.to - dm.at
+                d = d - (d @ dm.axis) * dm.axis
+            n = np.linalg.norm(d)
+            mo.slide_dir = d / n if n > 1e-9 else np.array([0, 0, 1.0])
+
+    def pose(self, t: float) -> dict[int, np.ndarray]:
+        """Every part's motion at time t (id(part) -> 4x4 model-space matrix), with the
+        joined ones worked out from what they're joined to."""
+        mats: dict[int, np.ndarray] = {}
+        ends: dict[int, np.ndarray] = {}
+        busy: set[int] = set()
+
+        def get(part: "Part") -> np.ndarray:
+            k = id(part)
+            if k in mats:
+                return mats[k]
+            mo = part.motion
+            if mo is None or k in busy:              # still, or joined in a loop: it stays put
+                return np.eye(4)
+            busy.add(k)
+            other = self._refs.get(mo.target) if mo.target else None
+            if other is part:
+                other = None
+            if mo.kind == "follow":
+                m = get(other) if other is not None else np.eye(4)
+            elif mo.kind == "link":
+                m, end = self._link(mo, get(other) if other is not None else np.eye(4), other)
+                ends[k] = end
+            elif mo.kind == "ride":
+                m = np.eye(4)
+                if other is not None and other.motion is not None and other.motion.kind == "link":
+                    get(other)
+                    if id(other) in ends:
+                        m[:3, 3] = ends[id(other)] - other.motion.to
+            else:
+                m = mo.matrix(t)
+                carrier = self._refs.get(mo.on) if mo.on else None
+                if carrier is not None and carrier is not part:
+                    m = get(carrier) @ m
+            busy.discard(k)
+            mats[k] = m
+            return m
+
+        for part in self.parts:
+            get(part)
+        return mats
+
+    @staticmethod
+    def _link(mo: Motion, carried: np.ndarray, driver) -> tuple[np.ndarray, np.ndarray]:
+        """A connecting rod: its pin where the crank has carried it, its far end on its line
+        at exactly the rod's length (the root nearest where it rests), and the rod turned
+        about the crank's axle to join them."""
+        pin, to, d = mo.pin, mo.to, mo.slide_dir
+        p = (carried @ np.append(pin, 1.0))[:3]
+        length = float(np.linalg.norm(to - pin))
+        q = to - p
+        b = float(d @ q)
+        disc = b * b - (float(q @ q) - length * length)
+        root = math.sqrt(max(0.0, disc))
+        s = min((-b + root, -b - root), key=abs)
+        end = to + s * d
+        a, c = to - pin, end - p
+        n = None
+        if driver is not None and driver.motion is not None and driver.motion.kind == "spin":
+            n = carried[:3, :3] @ driver.motion.axis if driver.motion.on else driver.motion.axis
+        if n is None:
+            n = np.cross(a, c)
+            if np.linalg.norm(n) < 1e-9:
+                n = np.cross(a, d) if np.linalg.norm(np.cross(a, d)) > 1e-9 else np.array([1.0, 0, 0])
+        n = n / np.linalg.norm(n)
+        a2, c2 = a - (a @ n) * n, c - (c @ n) * n
+        ang = math.atan2(float(n @ np.cross(a2, c2)), float(a2 @ c2))
+        m = np.eye(4)
+        R = _axis_angle(n, ang)
+        m[:3, :3] = R
+        m[:3, 3] = p - R @ pin
+        return m, end
 
     # What a part shows but doesn't change about its shape or colours: choosing labels or
     # picking parts out never rebuilds a model.

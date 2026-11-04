@@ -147,6 +147,24 @@ glass, ink, coral, mint — or any `#rrggbb`.
 All take `phase` (0–1) to offset one part's cycle from another's (meshing gears turn at
 opposite speeds in the ratio of their teeth).
 
+### Joined parts (mechanisms)
+
+Parts that are joined move as one mechanism, worked out together each frame
+(`model3d.Model.pose`), so a joint never comes apart. Name the part a joint refers to by
+its `id`, `name` or `label`.
+
+| motion | what it is |
+|---|---|
+| `{"link": "crank", "pin": [x,y,z], "to": [x,y,z], "slide": "z"}` | a connecting rod: `pin` rides round on the crank, `to` slides along `slide` (the cylinder's line), the rod's length (`pin` to `to` at rest) never changes. Left out, `pin`/`to` are the rod's two ends and `slide` runs from the crank's axle through `to`. |
+| `{"ride": "rod"}` | moves with a rod's `to` end: the piston, its rings and pin |
+| `{"follow": "crank"}` | fixed to another part: a counterweight, a flywheel |
+| any motion with `"on": "carrier"` | carried by another part while it moves: a planet gear spinning on its carrier, a moon round its planet |
+
+Draw the rest pose so the joints meet: the rod from the crankpin to the wrist pin (a rod
+modelled along +z placed with part `at` = crankpin and `turn` = [asin(offset / length)°,
+0, 0]), the piston's wrist pin at the rod's `to`. `models3d/four_stroke_engine.json` is
+the worked example.
+
 ## 3D maths and forces
 
 `axes3d`, `vector3d`, `point3d`, `line3d`, `curve3d` (x, y, z of t), `surface` (z = f(x, y),
@@ -154,8 +172,8 @@ coloured by height), `field` (arrows on a grid) and `plane` become real solids t
 the note, and mix with parts (the forces on a beam). Arrows, axes and points have their
 names right at their tips. With vectors and no chosen `turn`, the view is picked so no
 arrow points at the viewer as the model rocks. Axes float: no floor under them. Only the
-older notes' `cutaway` wall and parts linked by id (`"follow": "crank"`) still go to the
-painter's 3D (`scene3d.NoteModel`).
+older notes' `cutaway` wall and old-style items linked by id at the top level
+(`"follow": "crank"` outside a part's `move`) still go to the painter's 3D (`scene3d.NoteModel`).
 
 ## What makes a model look real
 

@@ -241,3 +241,117 @@ def test_the_mesh_cache_is_kept_small_dropping_the_oldest(tmp_path, monkeypatch)
         os.utime(f, (1000 + k, 1000 + k))
     model3d.prune_cache(limit=2500)
     assert sorted(f.name for f in tmp_path.glob("*.npz")) == ["m2.npz", "m3.npz"]
+
+
+def test_an_old_note_is_shown_with_the_hand_built_model_it_is_about():
+    import model3d
+    old = {"title": "The heart: a four-chamber pump", "topic": "human heart", "view": {"3d": True},
+           "followups": ["Why are there valves?"],
+           "items": [{"type": "sphere", "at": [0, 0, 0], "r": 1, "label": "left ventricle"},
+                     {"type": "sphere", "at": [1, 0, 0], "r": 1, "label": "right ventricle"},
+                     {"type": "tube", "points": [[0, 0, 1], [0, 0, 2]], "label": "aorta"},
+                     {"type": "text", "text": "Four chambers, two pumps"}]}
+    new = model3d.upgrade_note(old)
+    model = new["items"][0]
+    assert model["type"] == "model" and model["name"] == "heart"
+    assert set(model["labels"]) == {"aorta", "right ventricle", "left ventricle"}, "the labels it shared"
+    assert new["items"][1] == {"type": "text", "text": "Four chambers, two pumps"}
+    assert new["title"] == old["title"] and new["followups"] == old["followups"]
+    assert old["items"][0]["type"] == "sphere", "the kept note itself is left alone"
+
+
+def test_only_a_real_match_upgrades():
+    import model3d
+    assert model3d.library_match({"topic": "two-stroke engine"}) != "four_stroke_engine", \
+        "a two-stroke is not the four-stroke's generic 'engine'"
+    assert model3d.library_match({"topic": "cell division"}) is None
+    assert model3d.library_match({"topic": "how a jet engine works"}) == "jet_engine"
+    flat = {"title": "Taylor series", "items": [{"type": "function", "fn": "x"}]}
+    assert model3d.upgrade_note(flat) is flat, "2D notes stay as they are"
+    modern = {"title": "Heart", "topic": "heart", "view": {"3d": True}, "items": [{"type": "model", "name": "heart"}]}
+    assert model3d.upgrade_note(modern) is modern, "already the hand-built model"
+
+
+def _slider_crank_note(**rod_move):
+    move = {"link": "crank", "pin": [0, 0, 0.35], "to": [0, 0, 1.65], "slide": "z"}
+    move.update(rod_move)
+    return {"title": "Slider crank", "view": {"3d": True}, "items": [
+        {"type": "part", "id": "crank", "label": "crankshaft", "shapes": [
+            {"shape": "cylinder", "from": [-0.3, 0, 0], "to": [0.3, 0, 0], "r": 0.1},
+            {"shape": "cylinder", "from": [-0.08, 0, 0.35], "to": [0.08, 0, 0.35], "r": 0.08}],
+         "move": {"spin": "x", "about": [0, 0, 0], "speed": 120}},
+        {"type": "part", "id": "rod", "label": "connecting rod", "at": [0, 0, 0.35], "shapes": [
+            {"shape": "cylinder", "from": [0, 0, 0], "to": [0, 0, 1.3], "r": 0.06}], "move": move},
+        {"type": "part", "id": "piston", "label": "piston", "shapes": [
+            {"shape": "cylinder", "from": [0, 0, 1.5], "to": [0, 0, 2.0], "r": 0.42}], "move": {"ride": "rod"}},
+        {"type": "part", "id": "weight", "shapes": [{"shape": "sphere", "at": [0, 0, -0.3], "r": 0.1}],
+         "move": {"follow": "crank"}}]}
+
+
+def _parts(note):
+    import model3d
+    m = model3d.Model(model3d.spec_from_note(note))
+    return m, {p.spec.get("id"): p for p in m.parts}
+
+
+def test_a_connecting_rod_never_comes_off_its_crank_or_its_piston():
+    import math
+    import numpy as np
+    m, parts = _parts(_slider_crank_note())
+    rod = parts["rod"].motion
+    assert rod.kind == "link" and parts["piston"].motion.kind == "ride"
+    r, length = 0.35, 1.3
+    for t in np.linspace(0, 3, 61):
+        pose = m.pose(float(t))
+        on_crank = (pose[id(parts["crank"])] @ np.append(rod.pin, 1))[:3]
+        big = (pose[id(parts["rod"])] @ np.append(rod.pin, 1))[:3]
+        small = (pose[id(parts["rod"])] @ np.append(rod.to, 1))[:3]
+        wrist = (pose[id(parts["piston"])] @ np.append(rod.to, 1))[:3]
+        assert np.allclose(on_crank, big, atol=1e-9), "the big end stays on the crankpin"
+        assert np.allclose(small, wrist, atol=1e-9), "the small end stays in the piston"
+        assert abs(np.linalg.norm(small - big) - length) < 1e-9, "the rod keeps its length"
+        assert abs(small[0]) < 1e-9 and abs(small[1]) < 1e-9, "the piston stays on the cylinder's line"
+        th = math.radians(120 * t)
+        assert abs(small[2] - (r * math.cos(th) + math.sqrt(length ** 2 - (r * math.sin(th)) ** 2))) < 1e-9
+        assert np.allclose(pose[id(parts["weight"])], pose[id(parts["crank"])]), "the counterweight turns with it"
+
+
+def test_a_rod_without_its_ends_finds_them_from_its_shape():
+    import numpy as np
+    m, parts = _parts(_slider_crank_note(pin=None, to=None, slide=None))
+    rod = parts["rod"].motion
+    assert rod is not None and np.allclose(rod.pin, [0, 0, 0.35], atol=0.07) and np.allclose(rod.to, [0, 0, 1.65], atol=0.07)
+    assert np.allclose(rod.slide_dir, [0, 0, 1])
+
+
+def test_a_part_can_be_carried_by_another_and_loops_are_safe():
+    import numpy as np
+    import model3d
+    note = {"title": "Carrier", "view": {"3d": True}, "items": [
+        {"type": "part", "id": "carrier", "shapes": [{"shape": "box", "at": [0, 0, 0], "size": [3, 0.3, 0.1]}],
+         "move": {"spin": "z", "about": [0, 0, 0], "speed": 90}},
+        {"type": "part", "id": "planet", "shapes": [{"shape": "sphere", "at": [1.2, 0, 0], "r": 0.3}],
+         "move": {"spin": "z", "about": [1.2, 0, 0], "speed": -200, "on": "carrier"}},
+        {"type": "part", "id": "a", "shapes": [{"shape": "sphere", "at": [0, 2, 0], "r": 0.2}], "move": {"follow": "b"}},
+        {"type": "part", "id": "b", "shapes": [{"shape": "sphere", "at": [0, 3, 0], "r": 0.2}], "move": {"follow": "a"}}]}
+    m = model3d.Model(model3d.spec_from_note(note))
+    parts = {p.spec.get("id"): p for p in m.parts}
+    pose = m.pose(1.0)                                     # the carrier has turned 90 degrees
+    centre = (pose[id(parts["planet"])] @ np.array([1.2, 0, 0, 1]))[:3]
+    assert np.allclose(centre, [0, 1.2, 0], atol=1e-9), "the planet went round with its carrier"
+    assert np.allclose(pose[id(parts["a"])], np.eye(4)) or np.allclose(pose[id(parts["b"])], np.eye(4))
+
+
+def test_the_four_stroke_engine_is_one_mechanism():
+    import numpy as np
+    import model3d
+    m = model3d.Model(model3d.spec_from_note({"view": {"3d": True},
+                                              "items": [{"type": "model", "name": "four_stroke_engine"}]}))
+    parts = {p.label: p for p in m.parts if p.label}
+    rod = parts["connecting rod"].motion
+    assert rod.kind == "link" and parts["piston"].motion.kind == "ride"
+    for t in np.linspace(0, 3, 13):
+        pose = m.pose(float(t))
+        on_crank = (pose[id(parts["crankshaft"])] @ np.append(rod.pin, 1))[:3]
+        big = (pose[id(parts["connecting rod"])] @ np.append(rod.pin, 1))[:3]
+        assert np.allclose(on_crank, big, atol=1e-9)
