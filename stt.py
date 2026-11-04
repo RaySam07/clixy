@@ -1026,6 +1026,20 @@ HOTWORDS = "Clixy, Claude, ChatGPT, GPT, Gemini, Copilot, VoiceStudio, YouTube S
 """Names Whisper would otherwise mishear ("Quick-See" for Clixy, "GPD" for GPT)."""
 
 
+GPU_EAR = "large-v3-turbo"
+"""The sharper ear on an NVIDIA GPU (a one-time 1.6 GB download, never made by itself)."""
+
+
+def _downloaded(size: str) -> bool:
+    """That Whisper model is already on this PC (no download)."""
+    try:
+        from faster_whisper.utils import download_model
+        download_model(size, local_files_only=True)
+        return True
+    except Exception:
+        return False
+
+
 def _pcm_to_float(data: bytes):
     import numpy as np
     return np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0
@@ -1114,7 +1128,9 @@ class FasterWhisperSTT(STT):
             try:
                 _add_cuda_dll_dirs()
                 import numpy as np
-                size = "small.en" if auto else self._model_size   # the GPU affords the better ear
+                # The GPU affords the better ear: large-v3-turbo when it's on this PC (it hears
+                # names and accents far better, ~0.1 s slower), else small.en.
+                size = (GPU_EAR if _downloaded(GPU_EAR) else "small.en") if auto else self._model_size
                 model = WhisperModel(size, device="cuda", compute_type="float16")
                 list(model.transcribe(np.zeros(8000, dtype=np.float32), language="en", beam_size=1)[0])
                 return model

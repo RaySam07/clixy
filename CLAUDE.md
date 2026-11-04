@@ -95,3 +95,15 @@ Clixy is Rayan Sameer's Windows AI buddy (PyQt6). This folder is the local dev c
   starts on a short first phrase (`tts.first_phrase`, answers and guide steps alike).
   Faster still: Cartesia (his key, Settings -> Voice) or Kokoro on the RTX 4060 (needs
   onnxruntime-gpu plus CUDA 13 libraries, ~1 GB; not done).
+- 4 Nov 2026, after his first real "do it for me" runs ("hesitates, talks way too much,
+  too much lag; do it as I command, just show steps; better listening; more autonomous"):
+  doing it, the guide says "on it." and then only the result (steps are shown, not told),
+  only a click, key or real mouse sweep takes over (`take_over_moves`), drive steps after
+  the first skip the thinking pass (`app._quick_ai`), a planned click on what was just
+  clicked is skipped, links open in the browser the goal names (`apps.browser_named`), and
+  a plain command is done for him (`guide.does_it`; "how do I / where's / help me" point).
+  Listening: Whisper transcribes while he talks and reuses it when the rest is quiet
+  (`stt._early_text`), with name hotwords; on the GPU it uses large-v3-turbo when it's
+  already downloaded (`stt.GPU_EAR`, never fetched by itself), else small.en. Measured on
+  his RTX 4060: turbo ~0.48 s vs small.en ~0.34 s per question, turbo hears "codecs",
+  "top 5" and "Clixy" right.

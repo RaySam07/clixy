@@ -569,6 +569,27 @@ class TestFasterWhisperSTT:
         stt, text, calls = self._talk(mocker, more)
         assert not stt.reused_early and len(calls) == 2
 
+    def test_the_gpu_uses_the_sharper_ear_when_it_is_on_this_pc(self, monkeypatch):
+        import sys
+        import types
+        import stt
+        made = []
+
+        class Model:
+            def __init__(self, size, **kw):
+                made.append((size, kw.get("device")))
+
+            def transcribe(self, *a, **k):
+                return [], None
+
+        monkeypatch.setitem(sys.modules, "faster_whisper", types.SimpleNamespace(WhisperModel=Model))
+        monkeypatch.setattr(stt, "_add_cuda_dll_dirs", lambda: None)
+        for here, want in ((True, "large-v3-turbo"), (False, "small.en")):
+            monkeypatch.setattr(stt, "_downloaded", lambda size, h=here: h)
+            made.clear()
+            stt.FasterWhisperSTT(model_size="auto", device="auto")._default_model_factory()
+            assert made == [(want, "cuda")], "never downloads 1.6 GB by itself"
+
     def test_lazy_no_faster_whisper_import_when_using_di(self):
         import sys
         sys.modules.pop("faster_whisper", None)
