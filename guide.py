@@ -129,9 +129,11 @@ _SEARCH = r"(?:search|google|look)(?: (?:up|out|for))?"
 _DO_TASK = re.compile(
     rf"^\W*{_FILLER}for me\b|"
     r"\bi (?:want|need) you to\b|"
+    r"\bask (?!me\b|you\b|yourself\b|him\b|her\b|them\b)\w[\w.-]* (?:what|when|where|who|why|how|if|whether|to|for|"
+    r"about)\b|"
     r"(?:can|could|will|would) you\b[^.?!]{0,80}\bfor me\b|"
     rf"\b(?:open(?: up)?|go (?:on ?to|onto|to|into)|launch|pull up|head to)\s+(?:\S+\s+){{0,4}}?and (?:then )?"
-    rf"(?:{_SEARCH}|type|write|play|find|book|fill|check|prepare|set ?up|create|make|organi[sz]e|start|add|"
+    rf"(?:{_SEARCH}|ask|type|write|play|find|book|fill|check|prepare|set ?up|create|make|organi[sz]e|start|add|"
     r"turn|change|clear)\b|"
     rf"\b{_SEARCH}\b.{{1,80}}\b(?:on|in|using) (?:chrome|google|youtube|edge|firefox|bing|amazon|"
     rf"the (?:web|internet|browser)|(?:this|my) browser)\b|"
@@ -213,6 +215,8 @@ reply with the single next step only:
   [CLICK:#id:label] they click that element. read the names carefully; prefer it to a box, it's exact.
   [TYPE:#id:text] they type this into that field.
   [BOX:x1,y1,x2,y2:label] what to click when it isn't listed: its box in screenshot pixels, hugging it tightly.
+  [SCROLL:down:3] clixy scrolls the page itself (up or down, how many notches); [SCROLL:#id:down:3] scrolls inside that element. use it when what's needed is below or above what's shown.
+  [WAIT:3] clixy waits that many seconds (up to 8) and looks again: a page, a download or an ai's answer still coming in.
   a label is one to three words naming the thing, never your sentence.
 - then [STEP:n/total]: this step's number and your best guess at the total.
 - then, on the first step and whenever the route changes, [PLAN:...]: the steps after this one, in order, separated by |, each the click with the exact name they'll see on screen and a few spoken words for it, like [PLAN:click "YouTube Studio": now pick youtube studio from the menu | click "Customisation": then customisation, on the left]. a press is press "win+i": words. leave out what you can't foresee.
@@ -248,7 +252,11 @@ _DONE_RE = re.compile(r"\[\s*DONE\s*\]", re.IGNORECASE)
 _FOCUS_RE = re.compile(r"\[\s*FOCUS\s*:\s*([^\]]+?)\s*\]", re.IGNORECASE)
 _FASTER_RE = re.compile(r"\[\s*FASTER\s*:\s*([^\]]+?)\s*\]", re.IGNORECASE)
 _PLAN_RE = re.compile(r"\[\s*PLAN\s*:\s*([^\]]*)\]", re.IGNORECASE)
-_CUT_OFF_RE = re.compile(r"\[\s*(?:CLICK|TYPE|STEP|DONE|FOCUS|FASTER|PLAN)\b[^\]]*$", re.IGNORECASE | re.DOTALL)
+_SCROLL_RE = re.compile(r"\[\s*SCROLL\s*:\s*(?:#?\s*(\d+)\s*:\s*)?(up|down)\s*(?::\s*(\d+))?\s*\]", re.IGNORECASE)
+_WAIT_RE = re.compile(r"\[\s*WAIT\s*:\s*(\d+(?:\.\d+)?)\s*\]", re.IGNORECASE)
+_KEYS_TAG_RE = re.compile(r"\[\s*KEYS\s*:\s*([^:\]]+?)\s*(?::([^\]]*))?\]", re.IGNORECASE)
+_MOVE_RE = re.compile(r"\[\s*(?:CLICK|TYPE|KEYS|SCROLL)\s*:[^\]]*\]", re.IGNORECASE)
+_CUT_OFF_RE = re.compile(r"\[\s*(?:CLICK|TYPE|STEP|DONE|FOCUS|FASTER|PLAN|SCROLL|WAIT)\b[^\]]*$", re.IGNORECASE | re.DOTALL)
 _PLANNED_RE = re.compile(r"^\s*(click|press)\s+[\"“']([^\"”']+)[\"”']\s*(?::\s*(.*))?$", re.IGNORECASE)
 # Anything else tag-shaped ([POINT:...], a half-written tag) is never read aloud.
 _STRAY_TAG_RE = re.compile(r"\[\s*[A-Za-z_]+\s*:[^\]]*(?:\]|$)", re.DOTALL)
@@ -258,7 +266,7 @@ _STRAY_TAG_RE = re.compile(r"\[\s*[A-Za-z_]+\s*:[^\]]*(?:\]|$)", re.DOTALL)
 class Step:
     """One step as the model gave it."""
     say: str
-    action: str = "none"        # open, focus, click, keys, type, box, or none
+    action: str = "none"        # open, focus, click, keys, type, box, scroll, wait, or none
     target: int | None = None   # element id, for click and type
     keys: str = ""
     box: Box | None = None      # screenshot px, when nothing in the list fits
@@ -270,6 +278,9 @@ class Step:
     opens: list = field(default_factory=list)   # everything to open (two go side by side)
     faster: str = ""            # the quick way for next time ("win+i"), on the last step
     plan: list | None = None    # the steps after this one (Planned), when the reply gave a [PLAN:...]
+    amount: int = 0             # scroll: notches down (+) or up (-)
+    wait_s: float = 0.0         # wait: seconds before looking again
+    then: list = field(default_factory=list)    # moves to do straight after this one (type, keys, scroll)
 
 
 @dataclass
@@ -312,11 +323,15 @@ def parse_step(reply: str) -> Step:
         step.action, step.text, step.opens = "open", opens[0], opens[:2]
     elif focus:
         step.action, step.text = "focus", focus.group(1).strip()
-    elif m := _CLICK_RE.search(text):
-        step.action, step.target, step.label = "click", int(m.group(1)), (m.group(2) or "").strip()
-    elif m := _TYPE_RE.search(text):
-        step.action, step.target, step.text = "type", int(m.group(1)), m.group(2).strip()
-    for pattern in (_CLICK_RE, _TYPE_RE, _STEP_RE, _DONE_RE, _FOCUS_RE, _FASTER_RE):
+    elif moves := [mv for mv in (_move(m.group(0)) for m in _MOVE_RE.finditer(text)) if mv is not None]:
+        # Moves in the order written: the first is this step; sure ones after it follow at once.
+        first = moves[0]
+        step.action, step.target, step.label = first.action, first.target, first.label
+        step.text, step.keys, step.amount = first.text, first.keys, first.amount
+        step.then = [mv for mv in moves[1:4] if mv.action in ("type", "keys", "scroll")]
+    elif m := _WAIT_RE.search(text):
+        step.action, step.wait_s = "wait", min(8.0, max(0.5, float(m.group(1))))
+    for pattern in (_CLICK_RE, _TYPE_RE, _STEP_RE, _DONE_RE, _FOCUS_RE, _FASTER_RE, _SCROLL_RE, _WAIT_RE):
         text = pattern.sub("", text)
     text = _CUT_OFF_RE.sub("", text)
     spoken, shapes = parse_annotations(text)
@@ -330,6 +345,22 @@ def parse_step(reply: str) -> Step:
             step.action, step.box, step.label = "box", box, box.label
     step.say = spoken
     return step
+
+
+def _move(tag: str) -> "Step | None":
+    """One move tag ([CLICK:#3:x], [TYPE:#3:text], [KEYS:enter:send], [SCROLL:down:3]) as a Step."""
+    tag = tag.strip()
+    if m := _CLICK_RE.fullmatch(tag):
+        return Step(say="", action="click", target=int(m.group(1)), label=(m.group(2) or "").strip())
+    if m := _TYPE_RE.fullmatch(tag):
+        return Step(say="", action="type", target=int(m.group(1)), text=m.group(2).strip())
+    if m := _KEYS_TAG_RE.fullmatch(tag):
+        return Step(say="", action="keys", keys=m.group(1).strip(), label=(m.group(2) or "").strip())
+    if m := _SCROLL_RE.fullmatch(tag):
+        notches = min(15, int(m.group(3) or 3))
+        return Step(say="", action="scroll", target=int(m.group(1)) if m.group(1) else None,
+                    amount=notches if m.group(2).lower() == "down" else -notches)
+    return None
 
 
 # --- The element list -------------------------------------------------------------
@@ -613,6 +644,10 @@ def step_label(step: Step, ids: dict, *, past: bool = False) -> str:
         return ("Opened " if past else "Opening ") + " and ".join(names)
     if step.action == "focus":
         return ("Brought up " if past else "Bringing up ") + step.text
+    if step.action == "scroll":
+        return ("Scrolled " if past else "Scroll ") + ("down" if step.amount > 0 else "up")
+    if step.action == "wait":
+        return "Waited for it to load" if past else "Waiting for it to load"
     return ""
 
 
@@ -842,7 +877,8 @@ class Guide:
                     self._shortcut = step.faster
                 rest = parse_step(reply[spoken_to:]).say if spoken_to else (step.say if reply else "")
                 # Doing it for them, the steps are shown, not told: only the result is spoken.
-                told = not self.driving or step.done or (not marks and step.action not in ("open", "focus"))
+                told = not self.driving or step.done or (
+                    not marks and step.action not in ("open", "focus", "scroll", "wait"))
                 if self.speak is not None and rest and not quiet and told:
                     self._speak(rest)
                 if step.say:
@@ -864,16 +900,28 @@ class Guide:
                         return last
                     capture, found = self._look(capture)
                     continue
+                if step.action in ("scroll", "wait"):     # Clixy's own, pointing or doing
+                    self._clixy_does(step, ids, capture)
+                    done.append(self._describe(step, ids))
+                    self._done_labels.append(step_label(step, ids, past=True))
+                    if step.done:
+                        finished = True
+                        return last
+                    capture, found = self._look(capture)
+                    continue
                 if not marks:   # done, or an answer with nothing to point at
                     finished = step.done
                     return last
                 before = self.foreground()
                 admin = next((w for w in wins if w.front and w.admin), None) if step.action == "box" else None
                 driven = self._drive_step(step, ids, marks, target, capture, wins) if self.driving else ""
+                chained: list = []
                 if driven == "cancel":
                     return last
                 if driven == "done":
                     outcome = "done"
+                    if step.then:          # the moves it was sure of from this screen: straight after
+                        chained = self._chain(step.then, ids, wins, capture)
                 else:
                     self.watch.drain()
                     self.show(marks, capture.monitor)
@@ -912,6 +960,9 @@ class Guide:
                 done.append(self._describe(step, ids))
                 route.append(self._move(step, ids))
                 self._done_labels.append(step_label(step, ids, past=True))
+                for move in chained:
+                    done.append(self._describe(move, ids))
+                    self._done_labels.append(step_label(move, ids, past=True))
                 last_click = (ids[step.target].name or "").strip().lower() if step.target in ids else ""
                 self.clear()
                 if step.action == "keys":
@@ -1197,7 +1248,11 @@ class Guide:
             parts.append("mode: you're doing it yourself while they watch, so be quick and quiet. before the tag "
                          "write only a few words naming the move, first person (\"opening voice cloning\"): it's "
                          "shown, not spoken. no explanations, no apologies, never describe a slip: just fix it. "
-                         "never hand it back or ask them to do a step you can do; keep going till it's done. the "
+                         "never hand it back or ask them to do a step you can do; keep going till it's done. "
+                         "moves you're sure of from this screen go in one reply, in order, up to four: a click, "
+                         "then [TYPE:#id:text], then [KEYS:enter:send], with no look between. a question for an ai "
+                         "or a search box isn't sending: type it, press enter, [WAIT:3] if its answer is still "
+                         "coming, then tell them the answer. the "
                          "only words spoken are the result when it's done (one or two natural sentences). anything "
                          "that sends, buys, pays, deletes, posts or signs out: say what it will do and ask first "
                          "(\"want me to send it?\"). never type a password or card number.")
@@ -1244,6 +1299,63 @@ class Guide:
         self.clear()
         self._log(f"GUIDE: drive: {self._describe(step, ids)} ({'ok' if ok else 'failed'})")
         return "done" if ok else "yours"
+
+    def _chain(self, moves: list, ids: dict, wins: list, capture) -> list:
+        """Moves the model was sure of from this screen (type, press, scroll), done straight
+        after the first with no look and no model call between. Stops at anything that's
+        theirs to do, or the moment they touch the mouse or keyboard. Returns those done."""
+        did: list = []
+        admin = any(w.front and w.admin for w in wins)
+        for move in moves:
+            if self._user_input():
+                break
+            name = ids[move.target].name if move.target in ids else ""
+            if theirs_to_do(move, name, admin):
+                self._log(f"GUIDE: chain stops before {self._describe(move, ids)} (theirs to do)")
+                break
+            self.sleep(0.2)
+            if move.action == "scroll":
+                ok = self._scroll(move, ids, capture)
+            else:
+                ok = self._act(move, ids[move.target].rect if move.target in ids else None)
+            self._log(f"GUIDE: drive: then {self._describe(move, ids)} ({'ok' if ok else 'failed'})")
+            if not ok:
+                break
+            did.append(move)
+        return did
+
+    def _clixy_does(self, step: Step, ids: dict, capture) -> None:
+        """Scrolling and waiting are Clixy's own: a list that needs scrolling, a page or
+        an answer still coming. Without hands it waits for them to scroll (it was said)."""
+        if step.action == "wait":
+            self._log(f"GUIDE: waiting {step.wait_s:g} s for it to load")
+            self.sleep(step.wait_s or 2.0)
+            return
+        if not self._scroll(step, ids, capture):
+            self._await_input(6.0)
+
+    def _scroll(self, step: Step, ids: dict, capture) -> bool:
+        scroll = getattr(self.hands, "scroll", None) if self.hands is not None else None
+        if scroll is None:
+            return False
+        if step.target in ids:
+            l, t, r, b = ids[step.target].rect
+            x, y = (l + r) // 2, (t + b) // 2
+        else:                       # the middle of the screen it's looking at
+            mon = capture.monitor
+            x, y = mon["left"] + mon["width"] // 2, mon["top"] + mon["height"] // 2
+        try:
+            ok = bool(scroll(x, y, step.amount))
+        except Exception:
+            ok = False
+        self.sleep(0.35)            # let the page catch up before the next look
+        return ok
+
+    def _await_input(self, limit: float) -> None:
+        end = self.clock() + limit
+        while self.clock() < end and not self._halted():
+            if self.watch.get(0.25) is not None:
+                return
 
     def _act(self, step: Step, target) -> bool:
         """Click, type or press, with the hands."""
@@ -1411,6 +1523,10 @@ class Guide:
             return f"pressed {' + '.join(key_names(step.keys)).lower()}"
         if step.action == "type":
             return f'typed "{step.text}"'
+        if step.action == "scroll":
+            return f"scrolled {'down' if step.amount > 0 else 'up'} {abs(step.amount)}"
+        if step.action == "wait":
+            return f"waited {step.wait_s:g} s for it to load"
         if step.action == "click" and step.target in ids:
             return f'clicked "{ids[step.target].name}"'
         return f"clicked {step.label or 'the marked thing'}"

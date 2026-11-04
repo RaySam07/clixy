@@ -88,6 +88,7 @@ Settings are saved (ClickyApp.apply_live_settings), never per question."""
 
 _SENTENCE_END_RE = re.compile(r"[.!?]\s")
 _CLAUSE_END_RE = re.compile(r"[,;:]\s")
+_DO_TAG_RE = re.compile(r"^\s*\[\s*DO\s*\]", re.IGNORECASE)   # the answer model: "a job for the hands"
 _STRAY_POINT_RE = re.compile(r"\[\s*POINT\b[^\]]*\]?", re.IGNORECASE)
 
 _MAX_HISTORY_EXCHANGES = 10
@@ -1364,6 +1365,7 @@ class ClickyApp(QObject):
                     _ask_kwargs.get("system_prompt", _CLICKY_SYSTEM_PROMPT) + apps.prompt_block())
 
             stage = "AI"
+            handed = False
             with self._ai.ask_stream(**_ask_kwargs) as stream:
                 first_token = True
                 first_sentence_s = None
@@ -1374,6 +1376,9 @@ class ClickyApp(QObject):
                         dbg.log("LLM: first token")
                         first_token = False
                     sentence_buffer += delta
+                    if not flushed and _DO_TAG_RE.match(sentence_buffer):
+                        handed = True          # it's a job, not a question: Clixy does it
+                        break
                     if any(mark in sentence_buffer for mark in "[{`"):
                         tag_started = True
                     if not tag_started:
@@ -1387,12 +1392,18 @@ class ClickyApp(QObject):
                                 first_sentence_s = time.monotonic() - getattr(self, "_released_at", time.monotonic())
                             flushed.append(s)
 
-                result = stream.final_result()
-                usage = stream.usage()
-                dbg.log(f"LLM: usage {usage}")
-                self.sig_island_meta.emit(
-                    _answer_meta(first_sentence_s, getattr(self._ai, "model_id", ""), usage)
-                )
+                if not handed:
+                    result = stream.final_result()
+                    usage = stream.usage()
+                    dbg.log(f"LLM: usage {usage}")
+                    self.sig_island_meta.emit(
+                        _answer_meta(first_sentence_s, getattr(self._ai, "model_id", ""), usage)
+                    )
+
+            if handed and not cancel.is_set():
+                dbg.log("LLM: [DO], so Clixy does it itself")
+                self._run_guide(transcript, cursor_capture, cancel, dbg, drive=True)
+                return
 
             if cancel.is_set():
                 return

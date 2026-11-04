@@ -610,3 +610,57 @@ def test_links_open_in_the_browser_the_goal_names():
 ])
 def test_a_command_is_done_and_a_how_to_is_shown(said, does):
     assert guide.does_it(said) is does
+
+
+# --- More moves: chains, scrolling, waiting -----------------------------------------------------
+
+def test_moves_are_read_in_the_order_written():
+    step = guide.parse_step("asking hark. [CLICK:#3:message box][TYPE:#3:what's planned today?]"
+                            "[KEYS:enter:ask][STEP:1/2]")
+    assert (step.action, step.target) == ("click", 3)
+    assert [(m.action, m.text or m.keys) for m in step.then] == [("type", "what's planned today?"), ("keys", "enter")]
+    assert step.say == "asking hark."
+    down = guide.parse_step("[SCROLL:down:4][STEP:2/3]")
+    assert (down.action, down.amount, down.target) == ("scroll", 4, None)
+    up = guide.parse_step("[SCROLL:#2:up]")
+    assert (up.action, up.amount, up.target) == ("scroll", -3, 2)
+    wait = guide.parse_step("its answer is still coming. [WAIT:3]")
+    assert (wait.action, wait.wait_s) == ("wait", 3.0)
+    assert guide.parse_step("[WAIT:60]").wait_s == 8.0, "never more than a few seconds at a time"
+
+
+def test_a_sure_chain_is_done_in_one_go():
+    acted = []
+    box = Element("field", "Message Hark", (300, 700, 900, 740))
+    g, log = _guide(["asking hark. [CLICK:#1:message box][TYPE:#1:what's planned today?][KEYS:enter:ask][STEP:1/2]",
+                     "a lecture at ten and a tutorial at twelve. [DONE]"],
+                    [], elements=[box], hands=_hands(acted))
+    g.set_drive(True)
+    g.run("ask hark what's planned today", _capture(scale=1.0))
+    assert acted == [("click", 600, 720), ("click", 600, 720), ("type", "what's planned today?"), ("press", "enter")]
+    assert len(log["prompts"]) == 2, "one model call for the three moves, one to read the answer"
+    assert "typed \"what's planned today?\"" in log["prompts"][1] and "pressed enter" in log["prompts"][1]
+
+
+def test_a_chain_stops_before_what_is_theirs_to_do():
+    acted = []
+    pw = Element("field", "Password", (300, 300, 900, 340))
+    g, log = _guide(["signing in. [CLICK:#1:password][TYPE:#1:hunter2][STEP:1/2]", "over to you. [DONE]"],
+                    [], elements=[pw], hands=_hands(acted))
+    g.set_drive(True)
+    g.run("sign me in for me", _capture(scale=1.0))
+    assert ("type", "hunter2") not in acted
+
+
+def test_clixy_scrolls_and_waits_itself():
+    acted, slept = [], []
+    hands = _hands(acted)
+    hands.scroll = lambda x, y, n: acted.append(("scroll", x, y, n)) or True
+    g, log = _guide(["scrolling to the results. [SCROLL:down:5][STEP:1/3]",
+                     "its answer is still coming. [WAIT:3][STEP:2/3]",
+                     "the cheapest is at nine forty. [DONE]"], [], hands=hands)
+    g.sleep = slept.append
+    g.run("find the cheapest flight", _capture(scale=1.0))
+    assert acted == [("scroll", 640, 400, 5)], "the middle of the screen, five notches down"
+    assert 3.0 in slept
+    assert "scrolled down 5" in log["prompts"][1] and "waited 3 s" in log["prompts"][2]

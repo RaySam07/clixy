@@ -27,6 +27,7 @@ import time
 _MOUSE, _KEYBOARD = 0, 1
 _LEFTDOWN, _LEFTUP = 0x0002, 0x0004
 _MOVE, _ABSOLUTE, _VIRTUALDESK = 0x0001, 0x8000, 0x4000
+_WHEEL, _NOTCH = 0x0800, 120
 _KEYUP, _UNICODE, _EXTENDED = 0x0002, 0x0004, 0x0001
 
 _VK = {
@@ -131,6 +132,23 @@ def click(x: int, y: int, *, glide_s: float = 0.18) -> bool:
         return False
     time.sleep(0.04)
     return _send([_mouse(_LEFTUP)])
+
+
+def scroll(x: int, y: int, notches: int) -> bool:
+    """Scroll the wheel over (x, y), physical px: ``notches`` down (positive) or up
+    (negative), a few at a time like a hand would, so pages keep up."""
+    if sys.platform != "win32" or not notches:
+        return False
+    _move_to(x, y)
+    time.sleep(0.03)
+    ok = True
+    step = -1 if notches > 0 else 1                       # the wheel turns towards you to go down
+    for _ in range(min(abs(int(notches)), 25)):
+        wheel = _INPUT(type=_MOUSE, u=_UNION(mi=_MOUSEINPUT(0, 0, ctypes.c_uint32(step * _NOTCH).value,
+                                                            _WHEEL, 0, 0)))
+        ok = _send([wheel]) and ok
+        time.sleep(0.025)
+    return ok
 
 
 def type_text(text: str, *, per_char_s: float = 0.008) -> bool:

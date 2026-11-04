@@ -117,3 +117,9 @@ Clixy is Rayan Sameer's Windows AI buddy (PyQt6). This folder is the local dev c
   already downloaded (`stt.GPU_EAR`, never fetched by itself), else small.en. Measured on
   his RTX 4060: turbo ~0.48 s vs small.en ~0.34 s per question, turbo hears "codecs",
   "top 5" and "Clixy" right.
+- 4 Nov 2026, "not fully conquered GPT computer use": the answer model hands any job the
+  phrase rules miss to Do it for me by replying [DO] (`app._DO_TAG_RE`; "go on to Hark and
+  ask what's planned" had only opened Hark). The guide has more moves: [SCROLL:down:3]
+  (`hands.scroll`), [WAIT:3] for a page or an AI's answer, and in drive mode sure moves
+  chain in one reply ([CLICK][TYPE][KEYS:enter]) with no look between (`Guide._chain`,
+  stopping at anything theirs_to_do). A question to an AI or search box isn't "sending".

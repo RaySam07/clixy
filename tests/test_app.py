@@ -464,6 +464,38 @@ class TestClickyApp:
             "Batch tts.speak() should be replaced with sentence-level streaming"
         )
 
+    def test_a_job_the_answer_model_spots_goes_to_the_hands(self, mocker):
+        """[DO] from the answer model (a job the phrase rules missed): nothing is
+        spoken, and Clixy does the job itself."""
+        import queue as _queue
+        import threading
+        from PIL import Image
+        app = self._make_app(mocker)
+        fake_cap = mocker.MagicMock()
+        fake_cap.image = Image.new("RGB", (1280, 800))
+        fake_cap.label = "screen 1 of 1"
+        fake_cap.scale_x = 1.0; fake_cap.scale_y = 1.0
+        fake_cap.monitor = {"left": 0, "top": 0, "width": 1920, "height": 1080}
+        fake_cap.target_width = 1280; fake_cap.target_height = 800
+        fake_cap.is_cursor_screen = True
+        app._press_captures = [fake_cap]
+        app._press_memory = ""
+        app._press_cursor_pos = (100, 100)
+        app._stt.stop_recording.return_value = "could you get hark to tell me today's plan"
+        fake_stream = mocker.MagicMock()
+        fake_stream.text_deltas.return_value = iter(["[D", "O]"])
+        app._ai.ask_stream.return_value.__enter__ = mocker.MagicMock(return_value=fake_stream)
+        app._ai.ask_stream.return_value.__exit__ = mocker.MagicMock(return_value=False)
+        ran = []
+        mocker.patch.object(app, "_run_guide",
+                            side_effect=lambda goal, cap, cancel, dbg, drive=False: ran.append((goal, drive)))
+        capture_queue: _queue.Queue = _queue.Queue(maxsize=1)
+        capture_queue.put(([fake_cap], "", "test: reusing press-time captures"))
+        app._pipeline_worker("TEST.EXE", "TestWindow", threading.Event(), capture_queue)
+        assert ran == [("could you get hark to tell me today's plan", True)]
+        assert not app._tts.speak_sentence.called
+        fake_stream.final_result.assert_not_called()
+
     def test_a_label_written_before_the_box_is_never_spoken(self, mocker):
         """A local model may write the label first; its '?' must not flush the
         JSON to the voice before the coordinates arrive."""
