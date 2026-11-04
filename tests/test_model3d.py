@@ -134,7 +134,7 @@ def test_a_model_note_can_choose_labels_highlight_and_cut_open():
     assert model3d.find_library("cardiac") is not None, "aliases find it too"
 
 
-def test_older_solid_notes_convert_and_maths_goes_to_the_painter():
+def test_older_solid_notes_and_maths_convert_to_parts():
     water = {"items": [{"type": "molecule", "atoms": [["O", 0, 0, 0], ["H", 0.76, 0, 0.59], ["H", -0.76, 0, 0.59]],
                         "bonds": [[0, 1], [0, 2]]}]}
     spec = model3d.spec_from_note(water)
@@ -144,8 +144,15 @@ def test_older_solid_notes_convert_and_maths_goes_to_the_painter():
     lo, hi = part.bounds()
     assert hi[0] - lo[0] > 1.9, "the axis points it along x"
     assert part.motion is not None and part.motion.kind == "spin"
-    assert model3d.needs_painter({"items": [{"type": "vector3d", "from": [0, 0, 0], "to": [1, 0, 0]}]})
-    assert not model3d.needs_painter(water)
+    vectors = {"items": [{"type": "axes3d"}, {"type": "vector3d", "from": [0, 0, 0], "to": [1, 0, 0], "label": "F"}]}
+    assert not model3d.needs_painter(vectors) and not model3d.needs_painter(water)
+    spec = model3d.spec_from_note(vectors)
+    assert len(spec.parts) == 4 and spec.view.get("ground") is False, "three axes and the vector; no floor under axes"
+    assert {"text": "F", "at": [1.0, 0.0, 0.0], "tip": True} in spec.parts[-1]["labels"]
+    assert spec.arrows and np.allclose(spec.arrows[0], [1, 0, 0])
+    linked = {"items": [{"type": "cylinder", "id": "crank"}, {"type": "cylinder", "follow": "crank"}]}
+    assert model3d.needs_painter(linked), "parts linked by id: the painter's 3D"
+    assert model3d.needs_painter({"items": [{"type": "cutaway", "r": 1}]})
 
 
 def test_meshes_are_cached(tmp_path, monkeypatch):
@@ -202,7 +209,7 @@ def test_the_gpu_draws_a_lit_model_with_its_labels_on_their_parts(qapp, tmp_path
 
 
 @needs_gpu
-def test_the_card_uses_the_gpu_model_and_falls_back_for_maths(qapp, monkeypatch, tmp_path):
+def test_the_card_uses_the_gpu_model_for_things_and_maths(qapp, monkeypatch, tmp_path):
     monkeypatch.setattr(model3d, "CACHE", tmp_path)
     monkeypatch.setattr(sketch, "save_note", lambda n, img: None)
     card = sketch.NoteCard()
@@ -212,9 +219,14 @@ def test_the_card_uses_the_gpu_model_and_falls_back_for_maths(qapp, monkeypatch,
         assert isinstance(card._model, render3d.RealModel)
         assert card.card.width() == sketch.NoteCard.W3D
         card.show_note({"title": "vectors", "view": {"3d": True},
-                        "items": [{"type": "axes3d"}, {"type": "vector3d", "from": [0, 0, 0], "to": [1, 1, 1]}]})
+                        "items": [{"type": "axes3d"}, {"type": "vector3d", "from": [0, 0, 0], "to": [1, 1, 1]},
+                                  {"type": "surface", "expr": "x*y"}]})
+        assert isinstance(card._model, render3d.RealModel), "maths is real 3D too"
+        card.show_note({"title": "engine", "view": {"3d": True},
+                        "items": [{"type": "cylinder", "id": "crank", "r": 0.3, "h": 0.2},
+                                  {"type": "cylinder", "follow": "crank", "r": 0.2, "h": 0.5}]})
         import scene3d
-        assert isinstance(card._model, scene3d.NoteModel), "maths stays with the painter's 3D"
+        assert isinstance(card._model, scene3d.NoteModel), "linked parts stay with the painter's 3D"
     finally:
         card.clear()
         card.close()

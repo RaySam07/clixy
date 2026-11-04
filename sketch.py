@@ -97,12 +97,13 @@ moving parts move: "move": {"spin": "z", "about": [x, y, z], "speed": 90} (degre
 {"type": "molecule", "atoms": [["O", 0, 0, 0], ["H", 0.76, 0, 0.59], ["H", -0.76, 0, 0.59]], "bonds": [[0, 1], [0, 2]], "label": "water"}  real geometry in ångström, element colours; [0, 1, 2] is a double bond
 a good model: 6 to 30 parts, each distinct part its own part, 5-8 labels on what the explanation talks about, real shapes, colours and materials.
 
-3d maths (vectors, axes, surfaces, curves, fields) uses these items instead, never mixed with parts:
+3d maths and forces (vectors, axes, surfaces, curves, fields) use these items; they mix with parts (the forces on a beam, the field round a magnet):
 {"type": "axes3d", "labels": ["x", "y", "z"]}   {"type": "vector3d", "from": [0, 0, 0], "to": [1, 2, 1], "label": "a"}
 {"type": "point3d", "at": [x, y, z], "label": "..."}   {"type": "line3d", "from": [x, y, z], "to": [x, y, z], "dashed": true}
-{"type": "curve3d", "x": "2*cos(t)", "y": "2*sin(t)", "z": "0", "from": 0, "to": 6.283, "travel": true}  (t is the variable; travel: a ball moves along it)
+{"type": "curve3d", "x": "2*cos(t)", "y": "2*sin(t)", "z": "0", "from": 0, "to": 6.283}  (t is the variable)
 {"type": "surface", "expr": "x^2 - y^2", "x": [-2, 2], "y": [-2, 2], "label": "saddle"}  shaded and coloured by height
 {"type": "field", "x": "-y", "y": "x", "z": "0", "range": 2}  arrows showing a field or a flow (x, y, z are the variables)
+{"type": "plane", "at": [x, y, z], "normal": [0, 0, 1], "size": [w, h]}  see-through
 in any 3d note: {"type": "text", "text": "the key insight"} is written under the model.
 
 colors: ink, blue, red, green, orange, purple, grey (3d also: teal, yellow, white, black, brown, silver, gold).

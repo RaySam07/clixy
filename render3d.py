@@ -205,18 +205,25 @@ void main() {
   float lit = 1.0;
   if (p.x > 0.0 && p.x < 1.0 && p.y > 0.0 && p.y < 1.0 && p.z < 1.0) {
     lit = 0.0;
-    for (int i = 0; i < 16; i++) lit += texture(u_shadow, vec3(p.xy + r * POISSON[i] * u_soft * 2.5, p.z - 0.002));
-    lit /= 16.0;
+    mat2 r2 = r * mat2(0.7071, -0.7071, 0.7071, 0.7071);
+    for (int i = 0; i < 16; i++) {
+      lit += texture(u_shadow, vec3(p.xy + r * POISSON[i] * u_soft * 2.5, p.z - 0.002));
+      lit += texture(u_shadow, vec3(p.xy + r2 * POISSON[i] * u_soft * 1.5, p.z - 0.002));
+    }
+    lit /= 32.0;
   }
   // Contact: how close the model comes above this spot (dark right under it).
   vec3 t = v_tp.xyz / v_tp.w * 0.5 + 0.5;
   float contact = 0.0;
+  mat2 r3 = r * mat2(0.5, -0.866, 0.866, 0.5);
   for (int i = 0; i < 16; i++) {
-    float d = texture(u_topdepth, t.xy + r * POISSON[i] * 0.022).r;
-    float height = (1.0 - d) * u_range;        // depth 1 = nothing above
-    contact += d < 0.9999 ? 1.0 - smoothstep(0.0, 0.35 * u_reach, height) : 0.0;
+    for (int j = 0; j < 2; j++) {
+      float d = texture(u_topdepth, t.xy + (j == 0 ? r : r3) * POISSON[i] * (j == 0 ? 0.022 : 0.012)).r;
+      float height = (1.0 - d) * u_range;        // depth 1 = nothing above
+      contact += d < 0.9999 ? 1.0 - smoothstep(0.0, 0.35 * u_reach, height) : 0.0;
+    }
   }
-  contact /= 16.0;
+  contact /= 32.0;
   float fade = 1.0 - smoothstep(0.55 * u_reach, 1.25 * u_reach, length(v_pos.xy - u_centre.xy));
   float a = clamp((0.30 * (1.0 - lit) + 0.42 * contact) * fade * u_strength, 0.0, 0.6);
   f_color = vec4(vec3(0.17, 0.12, 0.08) * a, a);
@@ -573,6 +580,7 @@ class _Label:
         self.color = color
         self.anchor = None          # model space, at rest
         self.fixed = False          # a spot the model names (not found by looking)
+        self.tip = False            # named right beside the spot (an arrow's tip), not on a leader line
         self.side = 1
         self.rect = QRectF()
 
@@ -603,6 +611,8 @@ class RealModel:
         self.az0 = model3d._f(view.get("turn"), 30.0, -360, 360)
         self.el = model3d._f(view.get("tilt"), 16.0, -60, 80)
         self.zoom = model3d._f(view.get("zoom"), 1.0, 0.4, 3.0)
+        if spec.arrows and view.get("turn") is None:
+            self.az0, self.el = self._open_view(spec.arrows, view.get("tilt") is None)
         self.ground = view.get("ground", True) is not False
         self.model = model3d.Model(spec)
         self.renderer: Renderer | None = None
@@ -621,6 +631,23 @@ class RealModel:
         self._img = None
         self._img_key = None
         threading.Thread(target=self._build, daemon=True, name="clixy-3d-build").start()
+
+    def _open_view(self, arrows, free_tilt: bool) -> tuple[float, float]:
+        """A view where no arrow points at the viewer (it would shrink to a dot) anywhere in
+        the slow rock, from the usual textbook side."""
+        best, best_score = (self.az0, self.el), -1.0
+        for az in range(10, 81, 5):     # the textbook octant: x towards you on the left, y on the right
+            for el in ((12.0, 20.0, 30.0) if free_tilt else (self.el,)):
+                worst = 1.0
+                for swing in (-self.TURN, 0.0, self.TURN):
+                    a, e = math.radians(az + swing), math.radians(el)
+                    look = np.array([math.cos(e) * math.cos(a), math.cos(e) * math.sin(a), math.sin(e)])
+                    worst = min(worst, min(math.sqrt(max(0.0, 1 - float(d @ look) ** 2)) for d in arrows))
+                off = abs((az - 30 + 180) % 360 - 180) / 180
+                score = worst * (1 - 0.3 * off) * (1 - 0.2 * abs(el - 16.0) / 30)
+                if score > best_score:
+                    best, best_score = (float(az), float(el)), score
+        return best
 
     @classmethod
     def from_note(cls, note: dict) -> "RealModel | None":
@@ -659,11 +686,12 @@ class RealModel:
         for k, m in enumerate(self.model.meshes):
             if m.part.label:
                 self.labels.append(_Label(m.part.label, k, _ink(m.part.color)))
-            for text, at in m.part.marks:   # labelled spots: snapped onto the part's surface
+            for text, at, tip in m.part.marks:   # labelled spots: snapped onto the part's surface
                 lb = _Label(text, k, _ink(m.part.color))
                 spot = m.part.to_model(at)
                 lb.anchor = m.pos[int(np.argmin(((m.pos - spot) ** 2).sum(1)))].astype(float)
                 lb.fixed = True
+                lb.tip = tip
                 self.labels.append(lb)
 
     def label_count(self) -> int:
@@ -696,12 +724,14 @@ class RealModel:
         bottom = canvas.bottom() - row * len(self.captions) - (6 if self.captions else 0)
         area = QRectF(canvas.left(), canvas.top(), canvas.width(), bottom - canvas.top())
         widths = {id(lb): fm.horizontalAdvance(lb.text) + 4 for lb in self.labels}
+        tips = max([widths[id(lb)] for lb in self.labels if lb.tip], default=0)
         r = self.renderer
         # First guess: the model in the middle, labels on the side their part is on.
         for _round in range(2):
-            lw = max([widths[id(lb)] for lb in self.labels if lb.side < 0], default=0)
-            rw = max([widths[id(lb)] for lb in self.labels if lb.side > 0], default=0)
+            lw = max([widths[id(lb)] for lb in self.labels if lb.side < 0 and not lb.tip], default=0)
+            rw = max([widths[id(lb)] for lb in self.labels if lb.side > 0 and not lb.tip], default=0)
             gap = 22
+            lw, rw = lw or min(tips, 60) * 0.6, rw or min(tips, 60) * 0.6    # room for names at the tips
             left = area.left() + (lw + gap if lw else 6)
             right = area.right() - (rw + gap if rw else 6)
             box = QRectF(left, area.top() + 4, max(60.0, right - left), area.height() - 8)
@@ -717,6 +747,8 @@ class RealModel:
                 if lb.fixed:
                     ndc = vp @ np.append(lb.anchor, 1.0)
                     lb.side = -1 if ndc[0] / ndc[3] < 0.0 else 1
+                    continue
+                if lb.tip:
                     continue
                 mask = ids == lb.k
                 if mask.sum() < 3:          # hidden from this side: its middle
@@ -735,18 +767,22 @@ class RealModel:
                     lb.anchor = p[:3] / p[3]
                 lb.side = -1 if sx < 0.0 else 1
             # Keep the two sides roughly even.
-            for _ in range(len(self.labels)):
-                left_n = sum(1 for lb in self.labels if lb.side < 0)
-                right_n = len(self.labels) - left_n
+            side_labels = [lb for lb in self.labels if not lb.tip]
+            for _ in range(len(side_labels)):
+                left_n = sum(1 for lb in side_labels if lb.side < 0)
+                right_n = len(side_labels) - left_n
                 if abs(left_n - right_n) <= 1:
                     break
                 move_from = -1 if left_n > right_n else 1
-                cands = [lb for lb in self.labels if lb.side == move_from]
+                cands = [lb for lb in side_labels if lb.side == move_from]
                 proj = [(abs(self._project_rest(lb.anchor)[0] - box.center().x()), lb) for lb in cands]
                 proj.sort(key=lambda x: x[0])
                 proj[0][1].side = -move_from
         self._stage = QRectF(canvas.left() - 8, canvas.top() - 6, canvas.width() + 16, area.height() + 10)
         self._fit_for = (canvas.x(), canvas.y(), canvas.width(), canvas.height(), dpr)
+
+    def model_centre(self, mats) -> np.ndarray:
+        return (self.renderer.lo + self.renderer.hi) / 2
 
     def _project_rest(self, p) -> tuple[float, float]:
         box = self._area
@@ -837,8 +873,19 @@ class RealModel:
             anchors[id(lb)] = screen(m[:3, :3] @ lb.anchor + m[:3, 3])
         bottom = canvas.bottom() - row * len(self.captions) - (6 if self.captions else 0)
         from scene3d import _spread
+        middle = screen(self.model_centre(mats))
+        for lb in self.labels:
+            if not lb.tip:
+                continue
+            a = anchors[id(lb)]
+            dx, dy = a.x() - middle.x(), a.y() - middle.y()
+            n = math.hypot(dx, dy) or 1.0
+            dx, dy = dx / n, dy / n
+            wd = fm.horizontalAdvance(lb.text) + 4
+            cx, cy = a.x() + dx * (wd / 2 + 10), a.y() + dy * (row / 2 + 6)
+            lb.rect = QRectF(cx - wd / 2, cy - row / 2, wd, row)
         for side in (-1, 1):
-            col = [lb for lb in self.labels if lb.side == side]
+            col = [lb for lb in self.labels if lb.side == side and not lb.tip]
             if not col:
                 continue
             rest = {id(lb): self._project_rest(lb.anchor)[1] for lb in col}
@@ -855,6 +902,18 @@ class RealModel:
             if u <= 0:
                 continue
             a = anchors[id(lb)]
+            if lb.tip:      # beside its spot, on a paper-coloured halo so it reads over the model
+                text_u = max(0.0, min(1.0, u / 0.3))
+                p.save()
+                p.setClipRect(QRectF(lb.rect.left() - 3, lb.rect.top() - 6, (lb.rect.width() + 6) * text_u, row + 12))
+                at = QPointF(lb.rect.left() + 2, lb.rect.bottom() - 5)
+                p.setPen(QColor(251, 248, 242, 230))
+                for ox, oy in ((-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (1, 1)):
+                    p.drawText(at + QPointF(ox, oy), lb.text)
+                p.setPen(lb.color)
+                p.drawText(at, lb.text)
+                p.restore()
+                continue
             grow = min(1.0, u / 0.25)
             y = lb.rect.center().y()
             edge = QPointF(lb.rect.right() + 3, y) if lb.side < 0 else QPointF(lb.rect.left() - 3, y)

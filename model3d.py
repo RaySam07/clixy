@@ -609,10 +609,11 @@ class Part:
         self.k = _f(spec.get("blend"), 0.0, 0.0, 10.0)
         self.anchor = _v3(spec.get("anchor")) if spec.get("anchor") is not None else None
         # More labels on the same part, each pointing at a spot (in the part's frame).
-        self.marks: list[tuple[str, np.ndarray]] = []
+        # ("tip": the name sits right beside the spot, like an arrow's or an axis's name.)
+        self.marks: list[tuple[str, np.ndarray, bool]] = []
         for m in spec.get("labels") or [] if isinstance(spec.get("labels"), list) else []:
             if isinstance(m, dict) and str(m.get("text") or "").strip() and m.get("at") is not None:
-                self.marks.append((str(m["text"])[:48], _v3(m.get("at"))))
+                self.marks.append((str(m["text"])[:48], _v3(m.get("at")), bool(m.get("tip"))))
         self.at = _v3(spec.get("at"))
         self.R = _rot(spec.get("turn"))
         self.scale = _f(spec.get("scale"), 1.0, 1e-3, 1e3)
@@ -653,6 +654,9 @@ class Part:
                 self.shapes.append(shape)
         if self.shapes and self.shapes[0].op != "add":
             self.shapes = []
+        self.sheet = _sheet(spec["_sheet"]) if isinstance(spec.get("_sheet"), dict) else None
+        if self.sheet is not None and not spec.get("_sheet", {}).get("ramp"):
+            self.sheet = (self.sheet[0], self.sheet[1], np.tile(self.color.astype(F), (len(self.sheet[0]), 1)))
         self.motion = None
         self._motion_spec = spec.get("move")
         self.world_cuts: list[tuple[np.ndarray, np.ndarray]] = []
@@ -776,6 +780,8 @@ class Part:
         return self.at + self.scale * (self.R @ np.asarray(p, float))
 
     def bounds(self) -> tuple[np.ndarray, np.ndarray] | None:
+        if self.sheet is not None:
+            return self.sheet[0].min(0).astype(float), self.sheet[0].max(0).astype(float)
         adds = [s for s in self.shapes if s.op == "add"]
         if not adds:
             return None
@@ -907,14 +913,28 @@ def surface_nets(D: np.ndarray, lo: np.ndarray, h: float) -> tuple[np.ndarray, n
     return verts, tri.astype(np.uint32)
 
 
+def _sheet_mesh(part: Part) -> Mesh:
+    verts, tri, col = part.sheet
+    v0, v1, v2 = verts[tri[:, 0]], verts[tri[:, 1]], verts[tri[:, 2]]
+    fn = np.cross(v1 - v0, v2 - v0)
+    nrm = np.zeros_like(verts)
+    for k in range(3):
+        np.add.at(nrm, tri[:, k], fn)
+    nrm /= np.maximum(_len(nrm), 1e-12)[:, None]
+    return Mesh(part, verts, nrm.astype(F), col, np.ones(len(verts), F), np.zeros(len(verts), F), tri,
+                centre=verts.mean(0).astype(np.float64))
+
+
 def mesh_part(part: Part, h: float) -> Mesh | None:
+    if part.sheet is not None:
+        return _sheet_mesh(part)
     b = part.bounds()
     if b is None:
         return None
     lo, hi = b
     lo, hi = lo - 2.5 * h, hi + 2.5 * h
     dims = tuple(int(x) for x in np.ceil((hi - lo) / h).astype(int) + 1)
-    while np.prod(dims, dtype=np.int64) > 24_000_000:   # never a runaway grid
+    while np.prod(dims, dtype=np.int64) > 14_000_000:   # never a runaway grid (memory, time)
         h *= 1.25
         dims = tuple(int(x) for x in np.ceil((hi - lo) / h).astype(int) + 1)
     part.margin = 4 * h * 2.5 / part.scale + (part.bumps[1] if part.bumps else 0.0) / part.scale + part.shell
@@ -1128,20 +1148,182 @@ def _legacy_part(item: dict) -> list[dict]:
     return [{**base, "shapes": [shape]}]
 
 
-# Older 3D items that are maths, not things: the painter's 3D (scene3d) draws those, with its axes.
-MATHS_ITEMS = ("axes3d", "vector3d", "arrow3d", "point3d", "line3d", "curve3d", "surface", "field", "plane", "cutaway")
+# 3D maths: vectors, axes, points, lines, curves, surfaces, fields, planes, as real solids.
+MATHS_ITEMS = ("axes3d", "vector3d", "arrow3d", "point3d", "line3d", "curve3d", "surface", "field", "plane")
 
 
 def needs_painter(note: dict) -> bool:
-    """A note whose 3D is maths (axes, vectors, surfaces) or older linked parts."""
+    """A note only the painter's 3D (scene3d) can draw: its old "cutaway" wall, or parts
+    linked to each other by id (a piston following its crank)."""
     for item in note.get("items") or []:
         if not isinstance(item, dict):
             continue
-        if str(item.get("type") or "").lower() in MATHS_ITEMS:
+        if str(item.get("type") or "").lower() == "cutaway":
             return True
-        if isinstance(item.get("follow"), str) or isinstance(item.get("from"), str):
+        if isinstance(item.get("follow"), str) or isinstance(item.get("from"), str) or isinstance(item.get("to"), str):
             return True
     return False
+
+
+def _coords(item: dict) -> list:
+    out = []
+    for k in ("at", "from", "to"):
+        v = _v3(item.get(k), (math.nan, 0, 0))
+        if np.all(np.isfinite(v)):
+            out.append(v)
+    pts = _pts(item.get("points"), 3)
+    if pts is not None:
+        out.extend(pts)
+    if item.get("type") in ("surface", "field"):
+        span = _f(item.get("range"), 2.0, 1e-3, 1e4)
+        xr = item.get("x") if isinstance(item.get("x"), list) and len(item["x"]) == 2 else [-span, span]
+        yr = item.get("y") if isinstance(item.get("y"), list) and len(item["y"]) == 2 else [-span, span]
+        out += [np.array([_f(xr[0], -span, -1e4, 1e4), _f(yr[0], -span, -1e4, 1e4), 0.0]),
+                np.array([_f(xr[1], span, -1e4, 1e4), _f(yr[1], span, -1e4, 1e4), 0.0])]
+    return out
+
+
+def _arrow(a, b, r: float, head: float) -> list[dict]:
+    a, b = np.asarray(a, float), np.asarray(b, float)
+    d = b - a
+    n = float(np.linalg.norm(d))
+    if n < 1e-9:
+        return [{"shape": "sphere", "at": list(a), "r": r * 2}]
+    u = d / n
+    hl = min(head * 2.6, n * 0.45)
+    neck = b - u * hl
+    return [{"shape": "rod", "from": list(a), "to": list(neck), "r": r},
+            {"shape": "cone", "from": list(neck), "to": list(b), "r": head, "r2": 0.0, "round": head * 0.08}]
+
+
+def _maths_parts(items: list[dict]) -> list[dict]:
+    """Vectors, axes, points, lines, curves, surfaces, fields and planes, sized to the note."""
+    pts = [c for i in items for c in _coords(i)]
+    if pts:
+        allp = np.array(pts)
+        size = float(np.max(allp.max(0) - allp.min(0)))
+        reach = float(np.max(np.abs(allp)))
+    else:
+        size = reach = 2.0
+    size = max(size, 1e-3)
+    reach = max(reach, size * 0.5)
+    rod, head = 0.018 * size, 0.05 * size
+    out = []
+    try:
+        from sketch import compile_expr
+    except ImportError:          # model3d on its own (tests): formulas need sketch's evaluator
+        compile_expr = None
+    for item in items:
+        t = str(item.get("type") or "").lower()
+        label = str(item.get("label") or "")
+        if t == "axes3d":
+            names = item.get("labels") if isinstance(item.get("labels"), list) else ["x", "y", "z"]
+            low = -reach * 0.3 if any((p < -1e-9).any() for p in pts) else 0.0
+            for k in range(3):
+                a, b = np.zeros(3), np.zeros(3)
+                a[k], b[k] = low, reach * 1.15
+                text = str(names[k]) if k < len(names) else "xyz"[k]
+                out.append({"color": "charcoal", "material": "matte", "shapes": _arrow(a, b, rod * 0.55, head * 0.7),
+                            "labels": [{"text": text, "at": list(b), "tip": True}] if text else []})
+        elif t in ("vector3d", "arrow3d"):
+            a, b = _v3(item.get("from")), _v3(item.get("to"), (1, 0, 0))
+            out.append({"color": item.get("color", "blue"), "material": "glossy", "shapes": _arrow(a, b, rod, head),
+                        "labels": [{"text": label, "at": list(b), "tip": True}] if label else []})
+        elif t == "point3d":
+            at = list(_v3(item.get("at")))
+            out.append({"color": item.get("color", "red"), "material": "glossy",
+                        "shapes": [{"shape": "sphere", "at": at, "r": 0.035 * size}],
+                        "labels": [{"text": label, "at": at, "tip": True}] if label else []})
+        elif t == "line3d":
+            out.append({"label": label, "color": item.get("color", "grey"), "material": "matte",
+                        "shapes": [{"shape": "rod", "from": list(_v3(item.get("from"))),
+                                    "to": list(_v3(item.get("to"), (1, 0, 0))), "r": rod * 0.6}]})
+        elif t == "curve3d" and compile_expr is not None:
+            fx, fy, fz = (compile_expr(item.get(k, "0"), ("t",)) for k in ("x", "y", "z"))
+            if None in (fx, fy, fz):
+                continue
+            t0, t1 = _f(item.get("from"), 0.0, -1e4, 1e4), _f(item.get("to"), 2 * math.pi, -1e4, 1e4)
+            ts = np.linspace(t0, t1, 90)
+            path = np.array([[fx(v), fy(v), fz(v)] for v in ts])
+            path = path[np.all(np.isfinite(path), axis=1)]
+            if len(path) < 2:
+                continue
+            closed = np.linalg.norm(path[0] - path[-1]) < size * 1e-3
+            out.append({"label": label, "color": item.get("color", "teal"), "material": "glossy",
+                        "shapes": [{"shape": "tube", "points": path[::2].tolist(), "r": rod * 1.2, "loop": bool(closed)}]})
+        elif t == "surface" and compile_expr is not None:
+            fn = compile_expr(item.get("expr", ""), ("x", "y"))
+            if fn is None:
+                continue
+            out.append({"label": label, "color": item.get("color"), "material": item.get("material", "glossy"),
+                        "_sheet": {"x": item.get("x"), "y": item.get("y"), "range": item.get("range"),
+                                   "expr": item.get("expr", ""), "ramp": not item.get("color")}})
+        elif t == "field" and compile_expr is not None:
+            fx, fy, fz = (compile_expr(item.get(k, "0"), ("x", "y", "z")) for k in ("x", "y", "z"))
+            if None in (fx, fy, fz):
+                continue
+            span = _f(item.get("range"), 2.0, 1e-3, 1e4)
+            flat = str(item.get("z", "0")).strip() in ("0", "0.0")
+            grid = np.linspace(-span, span, 4)
+            zs = [0.0] if flat else np.linspace(-span, span, 3)
+            shapes = []
+            for x in grid:
+                for y in grid:
+                    for z in zs:
+                        v = np.array([fx(x, y, z), fy(x, y, z), fz(x, y, z)])
+                        n = float(np.linalg.norm(v))
+                        if not np.isfinite(n) or n < 1e-9:
+                            continue
+                        a = np.array([x, y, z])
+                        shapes += _arrow(a, a + v / n * span * 0.42, rod * 0.9, head * 0.75)
+            if shapes:
+                out.append({"label": label, "color": item.get("color", "teal"), "material": "glossy", "shapes": shapes[:120]})
+        elif t == "plane":
+            normal = _v3(item.get("normal"), (0, 0, 1))
+            wh = item.get("size") if isinstance(item.get("size"), list) and len(item["size"]) == 2 else [size, size]
+            out.append({"label": label, "color": item.get("color", "sky"), "material": "glass",
+                        "shapes": [{"shape": "box", "at": list(_v3(item.get("at"))), "axis": list(normal),
+                                    "size": [_f(wh[0], size, 1e-3, 1e4), _f(wh[1], size, 1e-3, 1e4), rod]}]})
+    return out
+
+
+_RAMP = np.array([[0.24, 0.38, 0.86], [0.18, 0.66, 0.74], [0.55, 0.80, 0.45], [0.98, 0.80, 0.30]])
+
+
+def _sheet(spec: dict):
+    """A surface z = f(x, y), sampled: (vertices, triangles, colours) or None."""
+    try:
+        from sketch import compile_expr
+    except ImportError:
+        return None
+    fn = compile_expr(spec.get("expr", ""), ("x", "y"))
+    if fn is None:
+        return None
+    span = _f(spec.get("range"), 2.0, 1e-3, 1e4)
+    xr = spec.get("x") if isinstance(spec.get("x"), list) and len(spec["x"]) == 2 else [-span, span]
+    yr = spec.get("y") if isinstance(spec.get("y"), list) and len(spec["y"]) == 2 else [-span, span]
+    x0, x1 = _f(xr[0], -span, -1e4, 1e4), _f(xr[1], span, -1e4, 1e4)
+    y0, y1 = _f(yr[0], -span, -1e4, 1e4), _f(yr[1], span, -1e4, 1e4)
+    if x1 <= x0 or y1 <= y0:
+        return None
+    n = 72
+    xs, ys = np.linspace(x0, x1, n), np.linspace(y0, y1, n)
+    z = np.array([[fn(x, y) for x in xs] for y in ys], dtype=float)
+    if not np.isfinite(z).any():
+        return None
+    cap = 2.5 * max(x1 - x0, y1 - y0)
+    z = np.clip(np.nan_to_num(z, nan=float(np.nanmean(z))), -cap, cap)
+    gx, gy = np.meshgrid(xs, ys)
+    verts = np.column_stack([gx.ravel(), gy.ravel(), z.ravel()]).astype(F)
+    i, j = np.meshgrid(np.arange(n - 1), np.arange(n - 1))
+    a = (j * n + i).ravel()
+    tri = np.vstack([np.column_stack([a, a + 1, a + n + 1]), np.column_stack([a, a + n + 1, a + n])]).astype(np.uint32)
+    lo, hi = float(z.min()), float(z.max())
+    u = np.clip((verts[:, 2] - lo) / (hi - lo), 0, 1) if hi > lo else np.full(len(verts), 0.5)
+    pos = u * (len(_RAMP) - 1)
+    k = np.minimum(pos.astype(int), len(_RAMP) - 2)
+    ramp = (_RAMP[k] + (_RAMP[k + 1] - _RAMP[k]) * (pos - k)[:, None]).astype(F)
+    return verts, tri, ramp
 
 
 @dataclass
@@ -1151,6 +1333,7 @@ class Spec:
     view: dict
     cut: list[dict]
     resolution: int = 190     # grid steps across the model's longest side
+    arrows: list = field(default_factory=list)   # vector directions, so the view never looks down one
 
 
 def spec_from_note(note: dict) -> Spec | None:
@@ -1202,10 +1385,21 @@ def spec_from_note(note: dict) -> Spec | None:
                 captions.append(text[:90])
         elif t in LEGACY_SOLIDS:
             parts.extend(_legacy_part(item))
+    maths = [i for i in items if str(i.get("type") or "").lower() in MATHS_ITEMS]
+    if maths:
+        parts.extend(_maths_parts(maths))
+        if any(str(i.get("type")).lower() == "axes3d" for i in maths):
+            view.setdefault("ground", False)      # axes float in space; a floor under them only confuses
     parts = [p for p in parts if isinstance(p, dict)][:MAX_PARTS]
     if not parts:
         return None
-    return Spec(parts, captions[:3], view, cut, detail)
+    arrows = []
+    for i in maths:
+        if str(i.get("type")).lower() in ("vector3d", "arrow3d"):
+            d = _v3(i.get("to"), (1, 0, 0)) - _v3(i.get("from"))
+            if np.linalg.norm(d) > 1e-9:
+                arrows.append(d / np.linalg.norm(d))
+    return Spec(parts, captions[:3], view, cut, detail, arrows)
 
 
 def _unwrap(p: dict) -> dict:
@@ -1236,7 +1430,7 @@ class Model:
                 part.at = at + s * (R @ part.at)
                 part.R = R @ part.R
                 part.scale *= s
-            if not part.shapes or shapes + len(part.shapes) > MAX_SHAPES:
+            if (not part.shapes and part.sheet is None) or shapes + len(part.shapes) > MAX_SHAPES:
                 continue
             shapes += len(part.shapes)
             part.dim = bool(p.get("dim"))

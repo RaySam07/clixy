@@ -313,6 +313,9 @@ def test_a_model_that_fails_to_draw_falls_back_to_the_wireframe(qapp, monkeypatc
             raise RuntimeError("no")
         monkeypatch.setattr(card._model, "paint", broken)
         card.grab()
+        if isinstance(card._model, scene3d.NoteModel):   # the GPU model failed: the painter's 3D next
+            monkeypatch.setattr(card._model, "paint", broken)
+            card.grab()
         assert card._model is None and card._strokes, "the sketched wireframe instead"
     finally:
         card.close()

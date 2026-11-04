@@ -142,6 +142,16 @@ glass, ink, coral, mint — or any `#rrggbb`.
 All take `phase` (0–1) to offset one part's cycle from another's (meshing gears turn at
 opposite speeds in the ratio of their teeth).
 
+## 3D maths and forces
+
+`axes3d`, `vector3d`, `point3d`, `line3d`, `curve3d` (x, y, z of t), `surface` (z = f(x, y),
+coloured by height), `field` (arrows on a grid) and `plane` become real solids too, sized to
+the note, and mix with parts (the forces on a beam). Arrows, axes and points have their
+names right at their tips. With vectors and no chosen `turn`, the view is picked so no
+arrow points at the viewer as the model rocks. Axes float: no floor under them. Only the
+older notes' `cutaway` wall and parts linked by id (`"follow": "crank"`) still go to the
+painter's 3D (`scene3d.NoteModel`).
+
 ## What makes a model look real
 
 - Build forms the way a sculptor would: big masses first (ellipsoids blended with `blend`

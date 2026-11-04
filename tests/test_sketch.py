@@ -184,6 +184,8 @@ def _card(qapp, monkeypatch, note):
 def test_the_card_draws_every_kind_of_note_start_to_finish(qapp, monkeypatch, note):
     card, clock, saved = _card(qapp, monkeypatch, {**note, "followups": ["why?", "show more"]})
     try:
+        if hasattr(card._model, "wait"):      # a real 3D model is shaped on a thread first
+            card._model.wait(60)
         for t in (0.1, 0.6, 2.0, 5.0, 30.0):
             clock[0] = card._t0 + t
             card._tick()
