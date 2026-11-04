@@ -4,9 +4,11 @@ Ask "what's going on here?" over a Fourier video, or "why does a wave wrap
 into a flower?", and while the voice explains, a note card slides in and
 Clixy sketches it stroke by stroke in handwriting: a title, a graph with its
 axes and labels, the point that matters circled. When depth helps (an engine,
-a molecule, an orbit, vectors, a surface) the note holds a real 3D model
-instead (scene3d.NoteModel): solid, lit, slowly turning, its moving parts
-moving, every part labelled. Two or three follow-up questions sit underneath
+a cell, an orbit, a molecule) the note holds a real 3D model instead
+(render3d.RealModel, a ready-made one from models3d/ or one Sonnet sculpts
+from parts): rendered on the GPU like a studio photo, slowly rocking, its
+moving parts moving, every part labelled, turnable by dragging. 3D maths
+(vectors, surfaces) is drawn by scene3d.NoteModel. Two or three follow-up questions sit underneath
 as buttons; Clear puts it all away. Every note is kept in ~/.clixy/notes.
 
 The model writes the note as JSON (``PROMPT`` below): what to draw in the
@@ -32,6 +34,8 @@ from PyQt6.QtGui import (QColor, QFont, QFontMetricsF, QGuiApplication, QPainter
                          QPolygonF)
 from PyQt6.QtWidgets import QWidget
 
+import model3d
+import render3d
 import scene3d
 import theme
 from config import APP_HOME
@@ -68,29 +72,56 @@ for ideas that aren't graphs, use one of these layouts instead (no view needed; 
 {"type": "points", "points": ["a key fact", "another"]}                 3-5 short key points
 pick the clearest form: a graph for quantities and functions, steps for processes, cycle for loops, compare for differences, timeline for history, mindmap for a topic's parts, points when it's a few key facts.
 
-3d: when depth genuinely helps (a machine or engine, a molecule, an orbit or the solar system, vectors, a field, a 3d surface, solids and geometry, anatomy, a building), make a real 3d model instead: solid, lit parts that turn slowly on the card, moving parts that really move, each part named on a label beside it. clixy draws this 3d itself, so never say it can't and never point to another app. use "view": {"3d": true} (it is fitted to the card; optional "turn" and "tilt" in degrees choose the viewing angle) and these items, in x, y, z with z up, in the thing's real proportions:
-{"type": "box3d", "at": [x, y, z], "size": [w, d, h], "label": "crankcase"}
-{"type": "cylinder", "at": [x, y, z], "r": 0.5, "h": 2, "axis": [0, 0, 1], "label": "piston"}  ("cone" takes the same; "hollow": true makes a pipe wall)
-{"type": "cutaway", "at": [x, y, z], "r": 0.6, "h": 2, "label": "cylinder"}  a wall cut open toward the viewer, so the parts inside show
-{"type": "sphere", "at": [x, y, z], "r": 1, "label": "..."}
-{"type": "torus", "at": [x, y, z], "r": 1, "tube": 0.2, "axis": [0, 0, 1]}   {"type": "gear", "at": [x, y, z], "r": 0.6, "teeth": 14, "axis": [0, 1, 0]}
-{"type": "tube", "points": [[x, y, z], ...], "r": 0.1, "label": "..."}  a pipe, wire, duct or vessel along a path
-{"type": "plane", "at": [x, y, z], "normal": [0, 0, 1], "size": [w, h]}  see-through
-{"type": "molecule", "atoms": [["O", 0, 0, 0], ["H", 0.76, 0, 0.59], ["H", -0.76, 0, 0.59]], "bonds": [[0, 1], [0, 2]], "label": "water"}  real geometry in ångström, drawn in element colours; [0, 1, 2] is a double bond
+3d: when depth genuinely helps (anatomy, a machine or engine, a cell, a molecule, the solar system, a building, a plant, vectors, a 3d surface), make a real 3d model instead. clixy renders it like a studio photo (real materials, soft shadows), it rocks slowly and the user can turn it, and each part is named on a label beside it. clixy draws this 3d itself, so never say it can't and never point to another app. use "view": {"3d": true}, optional "turn" (degrees round) and "tilt" (degrees down).
+
+ready-made models, hand-built and the best clixy can show. whenever the subject matches one, use it, and choose its labels to fit what the voice explains:
+{"type": "model", "name": "heart", "labels": ["aorta", "left ventricle"], "cutaway": true, "highlight": ["left ventricle"]}
+labels: from its list (5-8 read best; leave out to show all). cutaway: opens it up (only models marked "cutaway"). highlight: picks parts out, the rest go pale.
+{LIBRARY}
+
+anything else physical: sculpt it from parts like a 3d artist would, in real proportions, x y z with z up, the whole thing a few units across:
+{"type": "part", "label": "piston", "color": "steel", "material": "metal", "shapes": [...], "blend": 0.1, "move": {...}}
+shapes (each also takes "color", "subtract": true to carve it out of the shapes before it, "blend" for its own join):
+{"shape": "sphere", "at": [x, y, z], "r": 1}   {"shape": "ellipsoid", "at": [x, y, z], "size": [rx, ry, rz], "turn": [x°, y°, z°]}
+{"shape": "box", "at": [x, y, z], "size": [w, d, h], "round": 0.03}   {"shape": "rod", "from": [x, y, z], "to": [x, y, z], "r": 0.2, "r2": 0.1}  (rounded ends: limbs, horns, roots)
+{"shape": "cylinder", "from": [x, y, z], "to": [x, y, z], "r": 0.5, "round": 0.02}   "cone": the same, "r2" is the top radius   {"shape": "torus", "at": [x, y, z], "r": 1, "tube": 0.2, "turn": [x°, y°, z°]}
+{"shape": "tube", "points": [[x, y, z], ...], "r": [0.2, 0.15, 0.1]}  a smooth vessel, stem, cable or tail through the points, tapering
+{"shape": "helix", "at": [x, y, z], "r": 0.5, "pitch": 0.3, "turns": 4, "tube": 0.05}   {"shape": "gear", "at": [x, y, z], "r": 0.6, "teeth": 18, "thickness": 0.2, "axis": [0, 1, 0]}
+{"shape": "lathe", "at": [x, y, z], "profile": [[radius, z], ...]}  spun round z: vases, flasks, bells, bulbs, lenses, a volcano
+{"shape": "extrude", "outline": [[x, y], ...], "height": 0.1, "round": 0.02, "smooth": true, "at": [x, y, z], "turn": [x°, y°, z°]}  leaves, petals, wings, blades, plates
+part options: "blend" 0.1-0.4 melts its shapes into one smooth form (living things are never one sphere: blend several ellipsoids); "bumps": {"size": 0.3, "depth": 0.02} for a lumpy surface ("style": "ridged" for folds like a brain); "shell": 0.05 makes it hollow; "mirror": "x" makes it symmetric (model one side); "repeat": {"count": 12, "axis": "z"} copies it round an axis (petals, spikes, teeth, blades); "at", "turn", "scale" move the whole part; "labels": [{"text": "apex", "at": [x, y, z]}] names spots on it; "opacity".
+materials: flesh, muscle, skin, bone, tooth, leaf, plastic, glossy, matte, rubber, ceramic, metal, steel, chrome, gold, copper, brass, glass, water, jelly, wood, rock, soil, glow (the sun, flames, leds), lava.
+colors: any #rrggbb, or red, crimson, muscle, artery, flesh, pink, blue, vein, navy, sky, cyan, teal, green, leaf, lime, yellow, gold, orange, fat, brown, tan, wood, sand, skin, purple, violet, white, ivory, bone, grey, silver, steel, black, copper, brass, rock, lava, ice, water.
+moving parts move: "move": {"spin": "z", "about": [x, y, z], "speed": 90} (degrees a second; orbits too), {"slide": [0, 0, 1], "amount": 0.3, "speed": 1} (a piston), {"swing": "x", "amount": 20, "speed": 0.5} (a pendulum, a valve), {"beat": 0.05, "speed": 1.2} (a heartbeat, breathing); "phase": 0-1 offsets one cycle from another.
+{"type": "cut", "normal": [x, y, z], "at": [x, y, z]} cuts it open: everything on the normal's side goes, so the insides show (hollow parts: "shell", or carve with "subtract").
+{"type": "molecule", "atoms": [["O", 0, 0, 0], ["H", 0.76, 0, 0.59], ["H", -0.76, 0, 0.59]], "bonds": [[0, 1], [0, 2]], "label": "water"}  real geometry in ångström, element colours; [0, 1, 2] is a double bond
+a good model: 6 to 30 parts, each distinct part its own part, 5-8 labels on what the explanation talks about, real shapes, colours and materials.
+
+3d maths (vectors, axes, surfaces, curves, fields) uses these items instead, never mixed with parts:
 {"type": "axes3d", "labels": ["x", "y", "z"]}   {"type": "vector3d", "from": [0, 0, 0], "to": [1, 2, 1], "label": "a"}
 {"type": "point3d", "at": [x, y, z], "label": "..."}   {"type": "line3d", "from": [x, y, z], "to": [x, y, z], "dashed": true}
-{"type": "curve3d", "x": "2*cos(t)", "y": "2*sin(t)", "z": "0", "from": 0, "to": 6.283, "travel": true}  (t is the variable; travel: a ball moves along it, like a planet on its orbit)
+{"type": "curve3d", "x": "2*cos(t)", "y": "2*sin(t)", "z": "0", "from": 0, "to": 6.283, "travel": true}  (t is the variable; travel: a ball moves along it)
 {"type": "surface", "expr": "x^2 - y^2", "x": [-2, 2], "y": [-2, 2], "label": "saddle"}  shaded and coloured by height
 {"type": "field", "x": "-y", "y": "x", "z": "0", "range": 2}  arrows showing a field or a flow (x, y, z are the variables)
-{"type": "text", "text": "the key insight"}  written under the model; with "at": [x, y, z] it names that spot instead
-any solid also takes "color", "material" ("metal", "matte", "glass" to see inside it, "glow" for a flame, a spark or a star) and an "id" when another part refers to it.
-moving parts move: "spin": turns per second about the part's own axis, or about "pivot": [x, y, z] (a crank pin, a moon); "slide": [dx, dy, dz] moves it back and forth that far, "rate" times a second; "follow": "id" slides it in step with that part (a piston following its crank pin). a cylinder with "from": "id", "to": "id" instead of "at" joins two parts (a connecting rod).
-build the real thing: its key parts (4 to 14 for a machine) in the right places, the inside shown with a cutaway or glass, and a label on each part the explanation talks about.
+in any 3d note: {"type": "text", "text": "the key insight"} is written under the model.
 
 colors: ink, blue, red, green, orange, purple, grey (3d also: teal, yellow, white, black, brown, silver, gold).
-keep it clean and true: 3 to 10 items (a 3d model up to 16), labels of 1-4 words, exact maths (use "function" for real curves), nothing cluttered. text items are the key insight in a few words, like "peak = frequency present". draw what the idea really looks like: if it is wrapped, rotated or polar, draw it that way with "parametric", not a plain wave beside it. geometry stays round: circles and wound curves are drawn with equal x and y scales. leave room: no two labels in the same spot, and put text items in empty space, away from curves. followups are 2 or 3 natural next questions, under 6 words each.
+keep it clean and true: 3 to 10 items (a 3d model of parts up to 30), labels of 1-4 words, exact maths (use "function" for real curves), nothing cluttered. text items are the key insight in a few words, like "peak = frequency present". draw what the idea really looks like: if it is wrapped, rotated or polar, draw it that way with "parametric", not a plain wave beside it. geometry stays round: circles and wound curves are drawn with equal x and y scales. leave room: no two labels in the same spot, and put text items in empty space, away from curves. followups are 2 or 3 natural next questions, under 6 words each.
 make a note for anything someone is trying to learn or understand. only for small talk, a yes or no, or "where do i click", reply {"skip": true}.\
 """
+
+
+
+def _library_lines() -> str:
+    """The ready-made 3D models, one a line, for the prompt."""
+    lines = []
+    for name, info in sorted(model3d.library_index().items()):
+        cut = " (cutaway)" if info["cutaway"] else ""
+        lines.append(f"{name}: {str(info['title']).lower()}{cut}. labels: {', '.join(info['labels'][:14])}")
+    return "\n".join(lines) if lines else "(none)"
+
+
+PROMPT = PROMPT.replace("{LIBRARY}", _library_lines())
 
 _SKETCH_WORDS = re.compile(
     r"\b(explain|explaining|why|how (?:does|do|is|are|can|did|was|were|would|many|much)|what(?:'s| is| are| was| were"
@@ -783,7 +814,7 @@ class NoteCard(QWidget):
     cleared = pyqtSignal()
 
     W, H = 470.0, 352.0
-    H3D = 430.0  # a 3D model gets a taller card
+    W3D, H3D = 560.0, 500.0  # a 3D model gets a bigger card
     _M = 18.0   # room for the shadow
     TURN_RATE = 0.5     # a 3D model rocks slowly to and fro (radians of swing per second)...
     TURN_FOR_S = 45.0   # ...then comes to rest; resting the mouse on the card sets it turning again
@@ -794,8 +825,8 @@ class NoteCard(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
         self.setWindowTitle("Clixy note")
-        self._h = self.H
-        self.resize(int(self.W + 2 * self._M), int(self._h + 2 * self._M))
+        self._w, self._h = self.W, self.H
+        self.resize(int(self._w + 2 * self._M), int(self._h + 2 * self._M))
         self.note: dict | None = None
         self._t0 = time.monotonic()
         self._strokes: list[Stroke] = []
@@ -804,7 +835,8 @@ class NoteCard(QWidget):
         self._drag_from = None
         self._saved = False
         self._backdrop = None         # the card itself (paper, grid, topic, Clear), drawn once
-        self._model: scene3d.NoteModel | None = None   # the 3D model, when the note has one
+        self._model = None            # the 3D model, when the note has one (render3d.RealModel or scene3d.NoteModel)
+        self._orbit_from = None       # dragging the model round
         self._clock = 0.0             # the model's own time: it turns and its parts move while this runs
         self._last = time.monotonic()
         self._turn_until = 0.0
@@ -818,13 +850,13 @@ class NoteCard(QWidget):
         self.note = note
         self._t0 = time.monotonic()
         self._saved = False
-        height = self.H3D if self._three_d() else self.H
-        if height != self._h:   # keep the card's bottom edge where it was
-            bottom = self.geometry().bottom()
-            self._h = height
-            self.resize(int(self.W + 2 * self._M), int(height + 2 * self._M))
+        width, height = (self.W3D, self.H3D) if self._three_d() else (self.W, self.H)
+        if (width, height) != (self._w, self._h):   # keep the card's bottom right corner where it was
+            corner = self.geometry().bottomRight()
+            self._w, self._h = width, height
+            self.resize(int(width + 2 * self._M), int(height + 2 * self._M))
             if self.isVisible():
-                self.move(self.x(), bottom - self.height() + 1)
+                self.move(corner.x() - self.width() + 1, corner.y() - self.height() + 1)
         self._layout()
         if not self.isVisible():
             screen = screen or QGuiApplication.screenAt(self.cursor().pos()) or QGuiApplication.primaryScreen()
@@ -840,12 +872,14 @@ class NoteCard(QWidget):
         self._timer.stop()
         self.hide()
         self.note = None
+        if self._model is not None and hasattr(self._model, "release"):
+            self._model.release()
         self._model = None
         self.cleared.emit()
 
     @property
     def card(self) -> QRectF:
-        return QRectF(self._M, self._M, self.W, self._h)
+        return QRectF(self._M, self._M, self._w, self._h)
 
     @property
     def canvas(self) -> QRectF:
@@ -859,12 +893,16 @@ class NoteCard(QWidget):
         return 18 * math.sin((time.monotonic() - self._t0) * 0.45) if self._three_d() else 0.0
 
     def _layout(self) -> None:
+        if self._model is not None and hasattr(self._model, "release"):
+            self._model.release()
         self._model = None
         if self._three_d():
-            try:
-                self._model = scene3d.NoteModel.from_note(self.note, compile_expr)
-            except Exception:   # a model that can't be built: the sketched wireframe below instead
+            try:   # real 3D on the GPU; the painter's 3D on a PC without OpenGL 3.3
+                self._model = render3d.RealModel.from_note(self.note)
+            except Exception:
                 self._model = None
+            if self._model is None:
+                self._model = self._painted_model()
         self._strokes = build(self.note, self.canvas, self._angle()) if self.note and self._model is None else []
         self._chips = []
         x = self.card.left() + 22
@@ -876,6 +914,12 @@ class NoteCard(QWidget):
             self._chips.append((QRectF(x, y, w, 30), text))
             x += w + 10
         self._clear_rect = QRectF(self.card.right() - 78, self.card.top() + 4, 70, 20)
+
+    def _painted_model(self):
+        try:
+            return scene3d.NoteModel.from_note(self.note, compile_expr)
+        except Exception:   # a model that can't be built: the sketched wireframe instead
+            return None
 
     def _drawn_for(self) -> float:
         return time.monotonic() - self._t0 - 0.5   # the title writes first
@@ -932,13 +976,23 @@ class NoteCard(QWidget):
                 return
         if p.y() < self.card.top() + 30:
             self._drag_from = event.globalPosition().toPoint() - self.pos()
+        elif hasattr(self._model, "drag") and self.canvas.contains(p):
+            self._orbit_from = p              # turn the model by hand; it stops rocking
+            self._resting = True
+            self._timer.start(16)
 
     def mouseMoveEvent(self, event) -> None:  # noqa: N802
         if self._drag_from is not None:
             self.move(event.globalPosition().toPoint() - self._drag_from)
+        elif self._orbit_from is not None and self._model is not None:
+            p = event.position()
+            self._model.drag(p.x() - self._orbit_from.x(), p.y() - self._orbit_from.y())
+            self._orbit_from = p
+            self.update()
 
     def mouseReleaseEvent(self, _event) -> None:  # noqa: N802
         self._drag_from = None
+        self._orbit_from = None
 
     # --- Painting ------------------------------------------------------------------------------
     def paintEvent(self, _event) -> None:  # noqa: N802
@@ -965,9 +1019,11 @@ class NoteCard(QWidget):
             started = time.perf_counter()
             try:
                 self._model.paint(p, self.canvas, turn=self._turn(), t=self._clock, reveal=drawn)
-            except Exception:   # never a broken card: the sketched wireframe instead
-                self._model = None
-                self._strokes = build(self.note, self.canvas, self._angle())
+            except Exception:   # never a broken card: the painter's 3D, or the sketched wireframe
+                fallback = self._painted_model() if not isinstance(self._model, scene3d.NoteModel) else None
+                self._model = fallback
+                if fallback is None:
+                    self._strokes = build(self.note, self.canvas, self._angle())
             self._paint_ms = 0.8 * self._paint_ms + 0.2 * (time.perf_counter() - started) * 1000
         for s in self._strokes:
             u = 1.0 if self._three_d() and self._saved else (drawn - s.start) / s.duration if s.duration else 1.0

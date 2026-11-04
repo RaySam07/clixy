@@ -33,6 +33,7 @@ from PyQt6.QtWidgets import QApplication
 import apps
 import guide
 import kb
+import model3d
 import sketch
 import sysinfo
 from ai import (
@@ -1596,7 +1597,7 @@ class ClickyApp(QObject):
         try:
             with self._smart_ai.ask_stream(images=[(capture.image, capture.label)], transcript=question,
                                            history=[], system_prompt=sketch.PROMPT,
-                                           max_tokens=4000) as stream:   # room for a 3D model's parts
+                                           max_tokens=9000) as stream:   # room for a sculpted 3D model's parts
                 reply = "".join(stream.text_deltas())
         except Exception as exc:
             dbg.log(f"SKETCH: failed: {type(exc).__name__}: {exc}")
@@ -2291,6 +2292,11 @@ if __name__ == "__main__":
         clicky.stop()
         sys.exit(1)
     clicky.sig_notify.connect(tray.notify)
+
+    # The ready-made 3D models are built once, quietly in the background, so they show at once.
+    _prewarm = threading.Timer(25.0, model3d.prewarm)
+    _prewarm.daemon = True
+    _prewarm.start()
 
     # Click the notch: the Clixy panel (panel.py) for typed questions and Settings.
     _island = getattr(clicky._overlay, "island", None)

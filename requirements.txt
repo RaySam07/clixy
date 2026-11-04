@@ -11,6 +11,7 @@ numpy>=1.26.0              # Audio buffer manipulation
 assemblyai>=0.59,<1.0     # Streaming STT. Below 1.0: 1.x drops slow handshakes after 1 s and retries, which fails from Asia.
 cartesia>=4.2,<5            # Voice (Sonic-3, streamed over HTTP) and default listening (ink-2)
 elevenlabs>=2.0            # Optional voice: ElevenLabs Flash v2.5
+moderngl>=5.10           # Real 3D notes: an offscreen OpenGL 3.3 context draws the models (render3d.py)
 Pillow>=10.4.0             # Image resize with LANCZOS, base64 encoding
 icalendar>=6.0             # The notch dashboard: reads your school timetable (.ics)
 recurring-ical-events>=3.0 # ...including classes that repeat every week

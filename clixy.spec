@@ -62,6 +62,8 @@ for _pkg in (
     "jsonschema", "jsonschema_specifications", "referencing",
     # The notch dashboard's timetable reader, and the time-zone data it needs.
     "icalendar", "recurring_ical_events", "x_wr_timezone", "tzdata",
+    # Real 3D on the note card: an offscreen OpenGL context (render3d.py).
+    "moderngl", "glcontext",
 ):
     try:
         _d, _b, _h = collect_all(_pkg)
@@ -106,6 +108,8 @@ a = Analysis(
         ("assets/fonts", "assets/fonts"),
         # Guide mode's know-how packs (kb.knowhow reads them next to kb.py).
         ("knowhow", "knowhow"),
+        # The ready-made 3D models (model3d.LIBRARY, next to model3d.py).
+        ("models3d", "models3d"),
     ],
     hiddenimports=[
         # Look and feel: imported lazily by overlay.py / app.py.
@@ -118,6 +122,8 @@ a = Analysis(
         "snap",
         "mic",
         "version",
+        "model3d",
+        "render3d",
         # Qt 6 sub-modules: PyInstaller's hook misses some by default.
         "PyQt6.QtCore",
         "PyQt6.QtGui",

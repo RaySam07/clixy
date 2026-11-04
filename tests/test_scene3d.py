@@ -322,7 +322,7 @@ def test_3d_questions_get_a_note_and_the_prompts_offer_3d():
     import ai
     assert sketch.wants_sketch("show me a two stroke engine in 3d")
     assert sketch.wants_sketch("can you make a 3D model of a water molecule")
-    for word in ('"cutaway"', '"molecule"', '"spin"', '"follow"', "never point to another app"):
+    for word in ('"cutaway"', '"molecule"', '"spin"', '"model"', '"part"', '"blend"', "never point to another app"):
         assert word in sketch.PROMPT
     for prompt in (ai._CLICKY_SYSTEM_PROMPT, ai._CLICKY_ANNOTATION_SYSTEM_PROMPT):
         assert "3d" in prompt and "another app or ai" in prompt
