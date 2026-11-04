@@ -230,3 +230,14 @@ def test_the_card_uses_the_gpu_model_for_things_and_maths(qapp, monkeypatch, tmp
     finally:
         card.clear()
         card.close()
+
+
+def test_the_mesh_cache_is_kept_small_dropping_the_oldest(tmp_path, monkeypatch):
+    import os
+    monkeypatch.setattr(model3d, "CACHE", tmp_path)
+    for k in range(4):
+        f = tmp_path / f"m{k}.npz"
+        f.write_bytes(b"x" * 1000)
+        os.utime(f, (1000 + k, 1000 + k))
+    model3d.prune_cache(limit=2500)
+    assert sorted(f.name for f in tmp_path.glob("*.npz")) == ["m2.npz", "m3.npz"]

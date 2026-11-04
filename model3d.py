@@ -1581,11 +1581,16 @@ class Model:
             tmp.replace(self._path())
         except OSError:
             pass
+        prune_cache()
 
     def _load(self) -> bool:
         path = self._path()
         if not path.exists():
             return False
+        try:
+            os.utime(path)          # recently used: kept when the cache is trimmed
+        except OSError:
+            pass
         try:
             with np.load(path) as z:
                 meshes = []
@@ -1600,6 +1605,26 @@ class Model:
             return False
         self.meshes = meshes
         return bool(meshes)
+
+
+CACHE_LIMIT = 300 * 1024 * 1024
+
+
+def prune_cache(limit: int = CACHE_LIMIT) -> None:
+    """Keeps the mesh cache under ``limit`` bytes, dropping the models used longest ago."""
+    try:
+        files = [(f.stat().st_mtime, f.stat().st_size, f) for f in CACHE.glob("*.npz")]
+    except OSError:
+        return
+    total = sum(size for _t, size, _f in files)
+    for _t, size, f in sorted(files):
+        if total <= limit:
+            break
+        try:
+            f.unlink()
+            total -= size
+        except OSError:
+            pass
 
 
 def _lower_thread_priority() -> None:
