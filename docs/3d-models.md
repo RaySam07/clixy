@@ -83,11 +83,14 @@ middle (turn 30 means the camera sits 30° round from +x towards +y). Units are 
 | `uncut` | true: the model's cutaway leaves this part whole |
 | `opacity` | 0.05–1; glass and water are see-through by themselves |
 | `anchor` | `[x, y, z]`: where its label points (default: the middle of what's visible) |
+| `labels` | `[{"text": "apex", "at": [x, y, z]}, ...]`: more labels on the same part, each pointing at a spot (snapped onto its surface). `"tip": true` writes the name right beside the spot instead of on a leader line (arrows, planets). One smooth part with several named spots beats seams between parts. |
 | `move` | a motion (below) |
 
 ### Shapes
 
-Every shape takes `color` (overrides the part's colour near it, blended with `blend`),
+Every shape takes `color`: the colour of the surface wherever that shape makes it (followed
+through the joins, so a shape added later and blended paints its own region; a coloured
+`subtract` shape colours the cavity it carves),
 `subtract: true` (carve it out of what came before), `intersect: true` (keep only the
 overlap), and `blend` (its own smoothness for this join).
 

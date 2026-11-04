@@ -1379,6 +1379,7 @@ def spec_from_note(note: dict) -> Spec | None:
     cut: list[dict] = []
     view = dict(note.get("view") or {})
     detail = int(_f(view.get("detail"), 190, 120, 260))
+    lib_detail = []
     for item in items:
         t = str(item.get("type") or "").lower()
         if t == "model":
@@ -1404,7 +1405,7 @@ def spec_from_note(note: dict) -> Spec | None:
                 if any(v is not None for v in place.values()):
                     p = {"shapes": [], "_wrap": p, **{k: v for k, v in place.items() if v is not None}}
                 parts.append(p)
-            detail = max(detail, int(_f(lib.get("resolution"), 190, 120, 320)))
+            lib_detail.append(int(_f(lib.get("resolution"), 190, 120, 320)))
             if item.get("cutaway") and isinstance(lib.get("cutaway"), dict):
                 cut.append(lib["cutaway"])
             for k in ("turn", "tilt", "zoom", "ground"):
@@ -1422,6 +1423,8 @@ def spec_from_note(note: dict) -> Spec | None:
                 captions.append(text[:90])
         elif t in LEGACY_SOLIDS:
             parts.extend(_legacy_part(item))
+    if lib_detail and view.get("detail") is None:   # a ready-made model's own resolution, up or down
+        detail = max(lib_detail)
     maths = [i for i in items if str(i.get("type") or "").lower() in MATHS_ITEMS]
     if maths:
         parts.extend(_maths_parts(maths))
