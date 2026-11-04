@@ -1088,18 +1088,20 @@ class FasterWhisperSTT(STT):
         question instead of about 0.9 s on the CPU. "auto" falls back to the
         CPU when CUDA's libraries are missing; a short warm-up run proves it."""
         from faster_whisper import WhisperModel  # lazy import
+        auto = self._model_size in ("", "auto")
         if self._device in ("auto", "cuda"):
             try:
                 _add_cuda_dll_dirs()
                 import numpy as np
-                model = WhisperModel(self._model_size, device="cuda", compute_type="float16")
+                size = "small.en" if auto else self._model_size   # the GPU affords the better ear
+                model = WhisperModel(size, device="cuda", compute_type="float16")
                 list(model.transcribe(np.zeros(8000, dtype=np.float32), language="en", beam_size=1)[0])
                 return model
             except Exception:
                 if self._device == "cuda":
                     raise
         return WhisperModel(
-            self._model_size, device="cpu", compute_type=self._compute_type
+            "base.en" if auto else self._model_size, device="cpu", compute_type=self._compute_type
         )
 
     def _default_audio_stream_factory(self, callback):

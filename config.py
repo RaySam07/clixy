@@ -395,11 +395,12 @@ vision pass (see app.py)."""
 # -- Local STT (faster-whisper, opt-in offline, no API key) ------------------
 
 FASTER_WHISPER_MODEL: str = os.getenv(
-    "FASTER_WHISPER_MODEL", resolve_setting("FASTER_WHISPER_MODEL", "base.en")
+    "FASTER_WHISPER_MODEL", resolve_setting("FASTER_WHISPER_MODEL", "auto")
 )
-"""faster-whisper model size. 'base.en' is the low-latency English default
-(~150MB, downloads to the HF cache on first use). 'small.en' is more accurate
-but slower. Local offline STT needs no API key."""
+"""faster-whisper model size. 'auto' (default): 'small.en' on an NVIDIA GPU (about
+0.1 s a question, and it hears far better: "draw me" no longer becomes "don't be"),
+'base.en' on the CPU (~150MB, low latency there). Weights download to the HF cache
+on first use. Local offline STT needs no API key."""
 
 FASTER_WHISPER_DEVICE: str = os.getenv(
     "FASTER_WHISPER_DEVICE", resolve_setting("FASTER_WHISPER_DEVICE", "auto")
