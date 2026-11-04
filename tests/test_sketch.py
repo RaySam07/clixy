@@ -276,3 +276,35 @@ def test_a_follow_up_button_asks_without_listening(mocker):
     app._pipeline_worker("TEST.EXE", "Win", threading.Event(), q, question="Show two frequencies")
     app._stt.stop_recording.assert_not_called()
     assert seen == ["Show two frequencies"]
+
+
+# --- A hand-built model, at once --------------------------------------------------------------
+
+@pytest.mark.parametrize("q, name, cut", [
+    ("Can you show me in 3D how a piston works?", "four_stroke_engine", False),
+    ("Can you explain to me how an aircraft, the Air India aircraft, works in 3D?", "airliner", False),
+    ("can you dissect a heart and show me what exactly is the aorta", "heart", True),
+    ("how does a jet engine work", "jet_engine", False),
+    ("show me how a two stroke engine works in 3d", "two_stroke_engine", False),
+])
+def test_a_question_about_a_hand_built_model_shows_it_at_once(q, name, cut):
+    import sketch
+    note = sketch.library_note(q)
+    assert note is not None and note["items"][0]["name"] == name
+    assert bool(note["items"][0].get("cutaway")) == cut
+    assert note["view"] == {"3d": True} and note["title"]
+
+
+@pytest.mark.parametrize("q", ["why does the polynomial drift away", "how does an inclined plane work",
+                               "show me a 3d model of a cell membrane", "open my downloads", ""])
+def test_no_hand_built_model_no_instant_note(q):
+    import sketch
+    assert sketch.library_note(q) is None
+
+
+def test_the_voice_is_told_a_card_is_coming_and_never_to_narrate_the_screen():
+    import ai
+    import sketch
+    assert "don't mention the screen" in sketch.VOICE_HINT
+    for prompt in (ai._CLICKY_SYSTEM_PROMPT, ai._CLICKY_ANNOTATION_SYSTEM_PROMPT):
+        assert "never mention the screen" in prompt and "i can't dissect it" in prompt

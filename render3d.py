@@ -674,7 +674,9 @@ class RealModel:
 
     def _build(self) -> None:
         try:
-            self.model.build()
+            # Below the voice: on a PC that speaks with its own CPU (Kokoro), a model shaping
+            # at full priority made the speech stutter as the card came in.
+            self.model.build(low_priority=True)
         except Exception as exc:     # shown as the fallback by the card
             self._error = exc
         self._built.set()

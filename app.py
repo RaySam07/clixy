@@ -563,6 +563,8 @@ class ClickyApp(QObject):
 
         self._history: list[dict] = []
         self._cancel_event = threading.Event()
+        self._guide_cancel: threading.Event | None = None
+        """The running guide's own stop: a press doesn't end a guide, only a new question does."""
         self._worker_thread: threading.Thread | None = None
         self._holding = False  # the shortcut is held down right now
         self._current_app: str = "unknown"
@@ -836,7 +838,8 @@ class ClickyApp(QObject):
         # cancelled at release, leaving a window during the new press-hold where
         # it could emit sig_show_annotations again.) Mirrors _handle_release's
         # cancel; the new worker gets a fresh cancel_event at release.
-        if self._worker_thread and self._worker_thread.is_alive():
+        guiding = self._guiding()
+        if self._worker_thread and self._worker_thread.is_alive() and not guiding:
             self._cancel_event.set()
         # Clear any stale spinner from a prior interaction (defensive: if the
         # previous pipeline errored before hide_spinner fired, we don't want
@@ -845,8 +848,10 @@ class ClickyApp(QObject):
         # Same for stale teaching annotations: clearing on every press means
         # old shapes never survive a no-speech / cancelled / errored prior turn
         # (they'd otherwise linger until the 30s auto-clear timer). Cheap no-op
-        # when there were no annotations.
-        self.sig_clear_annotations.emit()
+        # when there were no annotations. A running guide keeps its step's mark up:
+        # what you say may be "next" or "I can't find it".
+        if not guiding:
+            self.sig_clear_annotations.emit()
         self._tts.stop()
         # Prevent TTS speaker decay from leaking into this PTT's transcript
         # (acoustic feedback loop). 200ms window tuned to real laptop-mic decay.
@@ -1061,8 +1066,11 @@ class ClickyApp(QObject):
             release_cursor = self._press_cursor_pos or (0, 0)
 
         if self._worker_thread and self._worker_thread.is_alive():
-            _log("  cancelling previous worker + stopping TTS")
-            self._cancel_event.set()
+            if self._guiding():
+                _log("  a guide is running: it carries on unless this is a new question")
+            else:
+                _log("  cancelling previous worker + stopping TTS")
+                self._cancel_event.set()
             self._tts.stop()
             # Same 200ms grace as press: keeps the aborted TTS tail from
             # contaminating the new PTT's transcript.
@@ -1139,6 +1147,26 @@ class ClickyApp(QObject):
                 dbg.log(f"STT: latest partial: {self._stt._latest_partial!r}")
             dbg.log(f"STT: final transcript ({len(transcript)} chars): {transcript!r}")
             _log(f"Transcript: {transcript!r}")
+            running = guide.current() if self._guiding() else None
+            if running is not None:
+                what = guide.during_guide(transcript)
+                if what == "keep":
+                    dbg.log("GUIDE: keys held with nothing said: still guiding")
+                    progress = running.progress()      # the notch shows this step again
+                    self.sig_guide_step.emit(progress["now"], progress["n"], progress["total"], None)
+                    return
+                if what == "next":
+                    dbg.log(f"GUIDE: {transcript!r}: on to the next step")
+                    running.confirm()
+                    return
+                if what == "remark":
+                    dbg.log(f"GUIDE: heard {transcript!r} about this step")
+                    running.hear(transcript)
+                    return
+                dbg.log(f"GUIDE: a new question ends the guide: {transcript!r}")
+                running.stop()
+                if self._guide_cancel is not None:
+                    self._guide_cancel.set()
             if not transcript.strip():
                 dbg.log("NO SPEECH DETECTED, skipping interaction")
                 _log("No speech detected, skipping.")
@@ -1205,7 +1233,7 @@ class ClickyApp(QObject):
                 user_text = (
                     f"[context from past sessions — use silently, don't summarize or reference it:]\n"
                     f"{memory_context}\n\n"
-                    f"{transcript}"
+                    f"{user_text}"
                 )
 
             # Curated KB recall (user-uploaded per-app docs). Empty tuple
@@ -1247,10 +1275,19 @@ class ClickyApp(QObject):
                 self._run_guide(transcript, cursor_capture, cancel, dbg)
                 return
 
-            # Learning something: a sketch note draws itself while the voice explains.
+            # Learning something: a sketch note draws itself while the voice explains. A
+            # hand-built 3D model that fits shows at once; anything else is sketched by the
+            # thinking model. Either way the voice knows the card is coming, so it teaches
+            # the thing instead of talking about the screen or what it can't show.
             if sketch.wants_sketch(transcript):
-                threading.Thread(target=self._make_sketch, args=(transcript, cursor_capture, cancel, dbg),
-                                 daemon=True, name="clixy-sketch").start()
+                instant = sketch.library_note(transcript)
+                if instant is not None:
+                    dbg.log(f"SKETCH: at once, the hand-built {instant['items'][0]['name']!r}")
+                    self.sig_show_sketch.emit(instant)
+                else:
+                    threading.Thread(target=self._make_sketch, args=(transcript, cursor_capture, cancel, dbg),
+                                     daemon=True, name="clixy-sketch").start()
+                user_text = f"{user_text}\n\n{sketch.VOICE_HINT}"
 
             dbg.log("LLM: streaming started...")
             _log("Asking the model...")
@@ -1640,11 +1677,17 @@ class ClickyApp(QObject):
             kwargs={"question": question}, daemon=True, name="clixy-pipeline")
         self._worker_thread.start()
 
+    def _guiding(self) -> bool:
+        """A guide is running and hasn't been told to stop."""
+        stop = self._guide_cancel
+        return stop is not None and not stop.is_set() and guide.current() is not None
+
     def _run_guide(self, goal: str, capture, cancel: threading.Event, dbg) -> None:
         """Guide toward ``goal`` one step at a time (guide.py), on this worker thread."""
         import snap
 
         dbg.log(f"GUIDE: {goal!r}")
+        self._guide_cancel = cancel
 
         def ask(cap, text: str):
             # Streams: the guide speaks each sentence the moment it's in, before the tags arrive.
@@ -1687,7 +1730,11 @@ class ClickyApp(QObject):
             routes=RouteBook() if keep else None,   # history off in Settings: no routes kept
             dbg=dbg,
         )
-        last = session.run(goal, capture)
+        try:
+            last = session.run(goal, capture)
+        finally:
+            if self._guide_cancel is cancel:
+                self._guide_cancel = None
         if not cancel.is_set():
             self.sig_clear_annotations.emit()
             self._history.append({"role": "user", "content": [{"type": "text", "text": goal}]})

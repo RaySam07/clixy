@@ -56,6 +56,18 @@ Clixy is Rayan Sameer's Windows AI buddy (PyQt6). This folder is the local dev c
   premium 3D-app quality, never toy shapes.
 - Next: "Do it for me" (Clixy acting in apps; see the end of `docs/plans/guide-mode.md`),
   the task-doing brain (ask Rayan which connectors first), a VoiceStudio voice option.
+- 4 Nov 2026, "clixy must do a complete answer, from step 1 to whatever, carefully,
+  intelligently, quick": any do-something request ("I want to access my YouTube Studio",
+  "help me add a panel", "where's the export button") goes to guide mode, not only
+  "how do I"; the guide stays till done (an empty press or "next" carries on, "I can't
+  find it" makes it look again, only a new question ends it: `guide.during_guide`,
+  `Guide.hear`, `app._guiding`); it plans the route ([PLAN:...]) and shows a planned click
+  at once when that button is on screen (no model call), and checks each step worked.
+- 4 Nov 2026, "a smooth humane interaction": a learning question that names a hand-built
+  model shows it at once (`sketch.library_note`, no sketch call; cut open for "dissect" or
+  "inside"); the voice is told a card is coming (`sketch.VOICE_HINT`) and never narrates
+  the screen or says it can't show something; the live card's model builds below the
+  voice's priority (Kokoro runs on the CPU).
 - Guide mode (`guide.py`, `docs/plans/guide-mode.md`): speaks each step as soon as its
   sentence is in, waits for windows to settle, sees open windows (`snap.windows`, FOCUS,
   side by side), uses know-how packs (`knowhow/*.md`, extended by the KB folder) and

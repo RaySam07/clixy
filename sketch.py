@@ -156,6 +156,50 @@ def wants_sketch(question: str) -> bool:
     return len(q.split()) >= 3 and not _NOT_LEARNING.search(q) and bool(_SKETCH_WORDS.search(q))
 
 
+VOICE_HINT = ("(a note card is showing this to them right now, in 3d when it helps, while you talk. teach the "
+              "thing itself in a few natural spoken sentences, as if pointing at it together. don't mention the "
+              "screen, the card, or anything you can't do.)")
+"""Added to a learning question for the voice, so it never says "i can't show you that in 3d"."""
+
+_SHOW_CUES = re.compile(r"\b(?:3-?d|three[- ]d\w*|model|show me|draw|sketch|visuali[sz]e|dissect|inside|cut (?:it )?open|"
+                        r"cross[- ]section|how (?:does|do|is|are) (?:a|an|the)?\s*\w+ work)", re.IGNORECASE)
+_INSIDE = re.compile(r"\b(?:inside|dissect\w*|cut (?:it |them )?open|cross[- ]section|interior|open (?:it|them) up)\b",
+                     re.IGNORECASE)
+# One word that names a hand-built model on its own, even inside a longer question.
+_NAMES = ("heart", "brain", "eyeball", "lungs", "lung", "kidney", "tooth", "molar", "neuron", "dna", "atom", "virus",
+          "coronavirus", "volcano", "flower", "airplane", "aeroplane", "aircraft", "airliner", "piston", "turbofan",
+          "windmill")
+
+
+def library_note(question: str) -> dict | None:
+    """A note with the hand-built 3D model the question is about, ready at once (no model
+    call): a learning question that names one ("how does a four-stroke engine work", "show
+    me the heart in 3d"). Cut open when it asks for the inside. None when none fits."""
+    q = question or ""
+    if not wants_sketch(q):
+        return None
+    stem = model3d.library_match({"topic": q})     # names it outright ("a four-stroke engine")
+    if stem is None and _SHOW_CUES.search(q):       # one word ("the heart") only when it asks to be shown
+        words = set(re.findall(r"[a-z]+", q.lower()))
+        for name in _NAMES:
+            if name in words:
+                found = model3d.find_library(name)
+                if found is not None:
+                    stem = next((k for k, v in model3d.library_index().items()
+                                 if v["title"] == found.get("title")), None)
+                    break
+    if stem is None:
+        return None
+    info = model3d.library_index().get(stem) or {}
+    data = model3d.find_library(stem) or {}
+    item: dict = {"type": "model", "name": stem}
+    if info.get("cutaway") and _INSIDE.search(q):
+        item["cutaway"] = True
+    return {"title": data.get("title") or stem.replace("_", " "), "subtitle": data.get("subtitle", ""),
+            "topic": stem.replace("_", " "), "view": {"3d": True}, "items": [item],
+            "followups": list(data.get("followups") or [])[:3], "instant": True}
+
+
 # --- Reading the model's note -------------------------------------------------------------
 
 def parse_note(text: str) -> dict | None:
