@@ -620,12 +620,34 @@ _SECRET = re.compile(r"pass(?:word|code|phrase)?|\bpin\b|\bcvv\b|\bcvc\b|card nu
                      r"\botp\b|\b2fa\b|verification code|secret|api key|token", re.IGNORECASE)
 
 
-def theirs_to_do(step: "Step", name: str, admin_in_front: bool) -> str:
+_TO_PEOPLE_EXES = {"whatsapp.exe", "whatsapp.root.exe", "outlook.exe", "olk.exe", "ms-teams.exe", "teams.exe",
+                   "slack.exe", "discord.exe", "telegram.exe", "signal.exe", "messenger.exe"}
+_TO_PEOPLE = re.compile(r"\b(?:whatsapp|gmail|outlook|inbox|mail|teams|slack|discord|messenger|telegram|signal|"
+                        r"instagram|linkedin|messages)\b", re.IGNORECASE)
+
+
+def talks_to_people(wins: list) -> bool:
+    """The window in front is where messages go to people (WhatsApp, email, Teams...), so
+    Enter there sends. An AI chat (Hark, ChatGPT) or a search box isn't."""
+    front = next((w for w in wins if getattr(w, "front", False)), None)
+    if front is None:
+        return False
+    return (getattr(front, "exe", "") or "").lower() in _TO_PEOPLE_EXES or bool(
+        _TO_PEOPLE.search(getattr(front, "title", "") or ""))
+
+
+def theirs_to_do(step: "Step", name: str, admin_in_front: bool, to_people: bool = False) -> str:
     """Why a step is the user's to do even in drive mode: "risky" (it sends, buys, pays,
     deletes, posts, signs out...), "secret" (typing into a password or card field),
-    "admin" (Windows won't let an ordinary app click into an admin window), or ""."""
+    "admin" (Windows won't let an ordinary app click into an admin window), or "".
+    ``to_people``: a messaging app is in front, where Enter in a message sends it."""
     if step.action in ("click", "box", "type") and admin_in_front:
         return "admin"
+    if to_people and step.action == "keys" and "enter" in combo_tokens(step.keys) and not re.search(
+            r"search|find", name or "", re.IGNORECASE):
+        return "risky"   # Enter in a chat or an email sends it to a person
+    if to_people and step.action == "type" and "\n" in (step.text or ""):
+        return "risky"   # a new line typed there is Enter too
     if step.action in ("click", "box") and _RISKY.search(f"{name} {step.label}"):
         return "risky"
     if step.action == "keys" and combo_tokens(step.keys) in _RISKY_KEYS:
@@ -741,6 +763,7 @@ class Guide:
     _showing: str = field(default="", init=False, repr=False)      # the step on show: "" (Clixy may do it) or why not
     _know_cache: dict = field(default_factory=dict, init=False, repr=False)
     _browser: str = field(default="", init=False, repr=False)      # the browser the goal names ("chrome")
+    _last_field: str = field(default="", init=False, repr=False)   # the field Clixy last typed into (Enter goes there)
     _upcoming: list = field(default_factory=list, init=False, repr=False)  # the plan's words, still to come
     _view: object = field(default=None, init=False, repr=False)    # (screen image, target box in its pixels)
     _started: float = field(default=0.0, init=False, repr=False)   # wall time the guide began
@@ -833,6 +856,7 @@ class Guide:
         hint = self._route_hint(goal)
         import apps
         self._browser = apps.browser_named(goal)
+        self._last_field = ""
         self.watch.start()
         plan: list[Planned] = []     # the steps the model foresaw, still to come
         last_click = ""              # the element the last step clicked: a planned repeat of it is skipped
@@ -1305,7 +1329,8 @@ class Guide:
                          "moves you're sure of from this screen go in one reply, in order, up to four: a click, "
                          "then [TYPE:#id:text], then [KEYS:enter:send], with no look between. a question for an ai "
                          "or a search box isn't sending: type it, press enter, [WAIT:3] if its answer is still "
-                         "coming, then tell them the answer. the "
+                         "coming, then tell them the answer. a message or email to a person is: type it, then "
+                         "ask \"want me to send it?\" before enter. the "
                          "only words spoken are the result when it's done (one or two natural sentences). anything "
                          "that sends, buys, pays, deletes, posts or signs out: say what it will do and ask first "
                          "(\"want me to send it?\"). never type a password or card number.")
@@ -1332,15 +1357,18 @@ class Guide:
             self.set_drive(False)
             self._aside("okay, it's all yours. i'll point the way.")
             return "yours"
-        name = ids[step.target].name if step.target in ids else ""
-        why = theirs_to_do(step, name, any(w.front and w.admin for w in wins))
+        name = ids[step.target].name if step.target in ids else (self._last_field if step.action == "keys" else "")
+        why = theirs_to_do(step, name, any(w.front and w.admin for w in wins), talks_to_people(wins))
         if step.action not in ("click", "box", "type", "keys") or (step.action != "keys" and target is None):
             why = why or "nothing to do"
         if why:
             self._log(f"GUIDE: drive: theirs to do ({why})")
             if why == "risky":
                 self._asking = True
-                self._aside("that one's your call. say yes and i'll do it, or click it yourself.")
+                if step.action in ("keys", "type"):
+                    self._aside("want me to send it? say yes, or press enter yourself.")
+                else:
+                    self._aside("that one's your call. say yes and i'll do it, or click it yourself.")
             elif why == "secret":
                 self._aside("type that one yourself, i never type passwords or card numbers.")
             elif why == "admin":
@@ -1350,6 +1378,8 @@ class Guide:
         self.sleep(self.drive_pause_s)
         ok = self._act(step, target)
         self.clear()
+        if ok and step.action == "type":
+            self._last_field = name
         self._log(f"GUIDE: drive: {self._describe(step, ids)} ({'ok' if ok else 'failed'})")
         return "done" if ok else "yours"
 
@@ -1384,11 +1414,12 @@ class Guide:
         theirs to do, or the moment they touch the mouse or keyboard. Returns those done."""
         did: list = []
         admin = any(w.front and w.admin for w in wins)
+        people = talks_to_people(wins)
         for move in moves:
             if self._user_input():
                 break
-            name = ids[move.target].name if move.target in ids else ""
-            if theirs_to_do(move, name, admin):
+            name = ids[move.target].name if move.target in ids else (self._last_field if move.action == "keys" else "")
+            if theirs_to_do(move, name, admin, people):
                 self._log(f"GUIDE: chain stops before {self._describe(move, ids)} (theirs to do)")
                 break
             self.sleep(0.2)
@@ -1399,6 +1430,8 @@ class Guide:
             self._log(f"GUIDE: drive: then {self._describe(move, ids)} ({'ok' if ok else 'failed'})")
             if not ok:
                 break
+            if move.action == "type":
+                self._last_field = name
             did.append(move)
         return did
 

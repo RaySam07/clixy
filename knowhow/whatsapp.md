@@ -4,7 +4,7 @@ apps: whatsapp.exe, whatsapp.root.exe
 names: whatsapp
 words: whatsapp, chat, chats, message, group, status, linked devices, qr code, video call, archive, mute, disappearing messages, wallpaper, starred, block, contact
 ---
-- whatsapp web is [OPEN:https://web.whatsapp.com] (in a browser tab); the desktop app comes from the microsoft store. clixy never sends a message for them: they type and send.
+- whatsapp web is [OPEN:https://web.whatsapp.com] (in a browser tab); the desktop app comes from the microsoft store. doing it for them, clixy finds the chat and types the message, then asks "want me to send it?" before enter (enter sends).
 - link this computer: on the phone, whatsapp > settings (iphone) or ⋮ (android) > linked devices > link a device, then scan the qr code on screen.
 
 ## around the app

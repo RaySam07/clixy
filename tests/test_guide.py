@@ -775,3 +775,56 @@ def test_the_guide_knows_his_laptop():
                     "sites he uses, most first: WhatsApp, Hark (chrome app window)")
     g.run("go to whatsapp", _capture(scale=1.0))
     assert "his laptop, learned from using it with him: he browses in chrome" in log["prompts"][0]
+
+
+# --- Messages to people: typed for you, sent only on your yes ------------------------------------
+
+def _front(title, exe="chrome.exe"):
+    from snap import Window
+    return [Window(hwnd=7, title=title, exe=exe, app=exe.removesuffix(".exe"), front=True)]
+
+
+def test_a_whatsapp_message_is_typed_but_only_sent_on_your_yes():
+    acted = []
+    box = Element("field", "Type a message", (400, 700, 1200, 740))
+    g, log = _guide(["writing to wasif. [CLICK:#1:message box][TYPE:#1:what's the plan for today?][KEYS:enter:send]"
+                     "[STEP:2/3]", "want me to send it? [KEYS:enter:send][STEP:3/3][DONE]"],
+                    [], elements=[box], hands=_hands(acted))
+    g.windows = lambda: _front("(95) WhatsApp - Google Chrome")
+    g.set_drive(True)
+    g.run("message wasif what's the plan for today", _capture(scale=1.0))
+    assert acted == [("click", 800, 720), ("click", 800, 720), ("type", "what's the plan for today?")]
+    assert ("press", "enter") not in acted, "never sent without a yes"
+
+
+def test_enter_in_the_whatsapp_search_box_or_an_ai_chat_goes_through():
+    acted = []
+    search = Element("field", "Search or start a new chat", (40, 150, 400, 190))
+    g, _ = _guide(["finding wasif. [CLICK:#1:search][TYPE:#1:Wasif][KEYS:enter:open][STEP:1/2]", "there. [DONE]"],
+                  [], elements=[search], hands=_hands(acted))
+    g.windows = lambda: _front("(95) WhatsApp - Google Chrome")
+    g.set_drive(True)
+    g.run("open wasif's chat", _capture(scale=1.0))
+    assert ("press", "enter") in acted
+
+    asked = []
+    box = Element("field", "Message Hark", (300, 700, 900, 740))
+    g2, _ = _guide(["asking hark. [CLICK:#1:box][TYPE:#1:what's planned today?][KEYS:enter:ask][STEP:1/2]",
+                    "a lecture at ten. [DONE]"], [], elements=[box], hands=_hands(asked))
+    g2.windows = lambda: _front("Hark - Chat · Hark")
+    g2.set_drive(True)
+    g2.run("ask hark what's planned today", _capture(scale=1.0))
+    assert ("press", "enter") in asked, "a question to an AI isn't a message to a person"
+
+
+@pytest.mark.parametrize("title, exe, people", [
+    ("(95) WhatsApp - Google Chrome", "chrome.exe", True),
+    ("Mail - Rayan Salahuddin - Outlook - Google Chrome", "chrome.exe", True),
+    ("Inbox (3) - rayan@gmail.com - Gmail - Google Chrome", "chrome.exe", True),
+    ("Chat | Microsoft Teams", "ms-teams.exe", True),
+    ("Hark - Chat · Hark", "chrome.exe", False),
+    ("ChatGPT - Google Chrome", "chrome.exe", False),
+    ("Search / X - Google Chrome", "chrome.exe", False),
+])
+def test_which_windows_send_to_people(title, exe, people):
+    assert guide.talks_to_people(_front(title, exe)) is people

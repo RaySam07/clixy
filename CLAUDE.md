@@ -145,3 +145,7 @@ Clixy is Rayan Sameer's Windows AI buddy (PyQt6). This folder is the local dev c
   (laptop.json) only while history is on. Guide steps get it as "his laptop" (with: switch
   to an open tab, ctrl+shift+a, rather than opening again), answers get it with sysinfo,
   and links open in the browser it says he lives in. Tests keep it in tmp (conftest).
+- 4 Nov 2026: in a window where messages go to people (`guide.talks_to_people`: WhatsApp,
+  Outlook/Gmail/mail, Teams, Slack, Discord, Telegram...), Enter (or a typed new line) is
+  "risky": doing it for him, Clixy types the message and asks "want me to send it?". Enter
+  in a field named search/find there, or in an AI chat (Hark, ChatGPT), still goes through.
