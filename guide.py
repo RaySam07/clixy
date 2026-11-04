@@ -17,6 +17,15 @@ nothing, or "next" / "done", keeps it going; "I can't find it", "nothing
 happened" make it look again with what you said (``during_guide``); only a
 new question ends it.
 
+"Do it for me" (drive mode, ``Guide.set_drive``): Clixy does the steps
+itself with hands.py, gliding to the exact control Windows reports and
+clicking, typing or pressing the keys, while you watch. It never does what's
+yours to decide: anything that sends, buys, pays, deletes, posts or signs
+out waits for your "yes" (or your own click); it never types into a
+password field; and in an admin window Windows won't let it click, so it
+points instead. Touch the mouse or keyboard and it hands back ("you've got
+it"); Esc stops the guide.
+
 It thinks ahead: the first reply plans the whole route ([PLAN:...], the
 next clicks by the names you'll see), each later look checks the last step
 worked, and when the next planned button is already on screen it is shown
@@ -85,7 +94,7 @@ def wants_guide(question: str) -> bool:
         return True
     if _LEARNING.search(q):
         return False
-    return bool(_DEMANDS.search(q))
+    return bool(_DEMANDS.search(q)) or (wants_drive(q) and len(q.split()) >= 3)
 
 
 _CARRY_ON = re.compile(r"^\W*(?:next|next step|done|i did it|did it|i've done it|ok(?:ay)?|got it|yes|yep|yeah|"
@@ -99,14 +108,33 @@ _REMARK = re.compile(r"\b(?:can'?t find|cannot find|can not find|couldn'?t find|
                      re.IGNORECASE)
 
 
+_DRIVE = re.compile(r"\b(?:do (?:it|that|this|them|everything|the rest|all of it) (?:for me|yourself)|you do it|"
+                    r"(?:can|could|will|would) you (?:please )?(?:do|handle|sort out) (?:it|that|this)|take over|"
+                    r"take the wheel|click (?:it|them) for me|do it$)|\bfor me\W*$", re.IGNORECASE)
+_HANDS_OFF = re.compile(r"^\W*(?:let me(?: do it)?|i'?ll do it|i will do it|i'?ve got it|i got it|my turn|"
+                        r"stop clicking|hands off|stop driving|i'?ll take it from here)\b", re.IGNORECASE)
+
+
+def wants_drive(text: str) -> bool:
+    """Asked to do it, not just show it: "turn on dark mode for me", "can you do that"."""
+    t = " ".join((text or "").split())
+    return bool(_DRIVE.search(t)) and not _HANDS_OFF.match(t)
+
+
 def during_guide(text: str) -> str:
     """What something said while a guide runs means: "keep" (nothing said, the
     keys were held by accident), "next" (carry on: look again now), "remark"
     (about this step: "I can't find it", "nothing happened"; look again with
-    that in mind), or "new" (a different question: the guide ends)."""
+    that in mind), "drive" ("do it for me": Clixy does the steps), "hands off"
+    ("let me do it": back to pointing), or "new" (a different question: the
+    guide ends)."""
     t = " ".join((text or "").split())
     if not t:
         return "keep"
+    if _HANDS_OFF.match(t):
+        return "hands off"
+    if wants_drive(t) and not _GUIDE_WORDS.search(t) and not _LEARNING.search(t) and len(t.split()) <= 8:
+        return "drive"
     if _CARRY_ON.match(t):
         return "next"
     if _REMARK.search(t) and not wants_guide(t):
@@ -387,6 +415,13 @@ class InputWatch:
         self._held: set[str] = set()
         self._win_alone = False
         self._listeners: list = []
+        self._moves = False
+        self._last_move: tuple[int, int] | None = None
+
+    def watch_moves(self, on: bool) -> None:
+        """Report your mouse moving too ("move", x, y), for drive mode's take-over."""
+        self._moves = on
+        self._last_move = None
 
     def start(self) -> None:
         try:
@@ -394,11 +429,23 @@ class InputWatch:
         except Exception:
             return  # no input watch: steps still advance when the window changes
 
-        def on_click(x, y, _button, pressed):
-            if pressed:
+        def on_click(x, y, _button, pressed, injected=False):
+            if pressed and not injected:          # Clixy's own clicks (drive mode) are injected
                 self._events.put(("click", int(x), int(y)))
 
-        def on_press(key):
+        def on_move(x, y, injected=False):
+            if not self._moves or injected:
+                return
+            last = self._last_move
+            if last is None:
+                self._last_move = (int(x), int(y))
+            elif abs(x - last[0]) + abs(y - last[1]) > 40:   # a real move, not a nudge
+                self._last_move = (int(x), int(y))
+                self._events.put(("move", int(x), int(y)))
+
+        def on_press(key, injected=False):
+            if injected:
+                return
             name = _key_name(key)
             if name is None:
                 return
@@ -409,7 +456,9 @@ class InputWatch:
             self._win_alone = False
             self._events.put(("combo", frozenset(self._held | {name})))
 
-        def on_release(key):
+        def on_release(key, injected=False):
+            if injected:
+                return
             name = _key_name(key)
             self._held.discard(name)
             if name == "win" and self._win_alone:
@@ -417,7 +466,7 @@ class InputWatch:
                 self._events.put(("combo", frozenset({"win"})))  # the Windows key on its own opens Start
 
         try:
-            self._listeners = [mouse.Listener(on_click=on_click),
+            self._listeners = [mouse.Listener(on_click=on_click, on_move=on_move),
                                keyboard.Listener(on_press=on_press, on_release=on_release)]
             for listener in self._listeners:
                 listener.daemon = True
@@ -442,6 +491,33 @@ class InputWatch:
             except Exception:
                 pass
         self._listeners = []
+
+
+# --- What Clixy's hands never do on their own ------------------------------------------
+
+_RISKY = re.compile(r"\b(?:send|submit|post|publish|tweet|reply all|buy|pay|purchase|order|place order|checkout|"
+                    r"check out|subscribe|delete|remove|erase|discard|trash|uninstall|format|reset|sign out|"
+                    r"log out|logout|unsubscribe|transfer|confirm|accept|agree|approve|merge|deploy|book)\b",
+                    re.IGNORECASE)
+_RISKY_KEYS = {frozenset({"delete"}), frozenset({"shift", "delete"}), frozenset({"alt", "f4"}),
+               frozenset({"ctrl", "enter"}), frozenset({"ctrl", "w"}), frozenset({"ctrl", "shift", "w"})}
+_SECRET = re.compile(r"pass(?:word|code|phrase)?|\bpin\b|\bcvv\b|\bcvc\b|card number|security code|one[- ]time|"
+                     r"\botp\b|\b2fa\b|verification code|secret|api key|token", re.IGNORECASE)
+
+
+def theirs_to_do(step: "Step", name: str, admin_in_front: bool) -> str:
+    """Why a step is the user's to do even in drive mode: "risky" (it sends, buys, pays,
+    deletes, posts, signs out...), "secret" (typing into a password or card field),
+    "admin" (Windows won't let an ordinary app click into an admin window), or ""."""
+    if step.action in ("click", "box", "type") and admin_in_front:
+        return "admin"
+    if step.action in ("click", "box") and _RISKY.search(f"{name} {step.label}"):
+        return "risky"
+    if step.action == "keys" and combo_tokens(step.keys) in _RISKY_KEYS:
+        return "risky"
+    if step.action == "type" and (_SECRET.search(f"{name} {step.label}") or _SECRET.search(step.text or "")):
+        return "secret"
+    return ""
 
 
 # --- The guide ------------------------------------------------------------------------
@@ -513,6 +589,8 @@ class Guide:
     arrange: object = None           # snap.side_by_side, for two OPENs
     knowhow: object = None           # kb.knowhow
     routes: object = None            # memory.RouteBook
+    hands: object = None             # hands.py: click, type_text, press (drive mode)
+    drive_pause_s: float = 0.35      # drive mode: the mark shows this long before the click
     dbg: object = None
     clock: object = time.monotonic
     sleep: object = time.sleep
@@ -536,6 +614,10 @@ class Guide:
     _shortcut: str = field(default="", init=False, repr=False)   # the quick way next time ("win+i")
     _heard: list = field(default_factory=list, init=False, repr=False)      # what you said about this step
     _heard_event: threading.Event = field(default_factory=threading.Event, init=False, repr=False)
+    _drive: threading.Event = field(default_factory=threading.Event, init=False, repr=False)
+    _approved: threading.Event = field(default_factory=threading.Event, init=False, repr=False)
+    _asking: bool = field(default=False, init=False, repr=False)   # a risky step waits for your yes
+    _showing: str = field(default="", init=False, repr=False)      # the step on show: "" (Clixy may do it) or why not
     _know_cache: dict = field(default_factory=dict, init=False, repr=False)
 
     # --- For the panel (any thread) -------------------------------------------------
@@ -554,6 +636,36 @@ class Guide:
     def stop(self) -> None:
         """Stop guiding (the panel's Stop)."""
         self._stopped.set()
+
+    def set_drive(self, on: bool) -> None:
+        """Do the steps yourself (True) or point the way (False). Any thread."""
+        if on:
+            self._drive.set()
+        else:
+            self._drive.clear()
+        watch_moves = getattr(self.watch, "watch_moves", None)
+        if callable(watch_moves):
+            watch_moves(on)          # in drive mode, your moving the mouse means "I'll take it"
+
+    @property
+    def driving(self) -> bool:
+        return self._drive.is_set() and self.hands is not None
+
+    @property
+    def awaiting_yes(self) -> bool:
+        """A risky step is waiting for your go-ahead."""
+        return self._asking
+
+    def do_this_one(self) -> None:
+        """"Do it for me" said while a step is on show: Clixy does that step now, unless it's
+        one that's always theirs (it sends, buys, deletes, a password...). Any thread."""
+        if self.hands is not None and not self._showing:
+            self.approve()
+
+    def approve(self) -> None:
+        """"Yes, go ahead": Clixy does the step it was waiting on. Any thread."""
+        self._approved.set()
+        self._confirmed.set()
 
     def hear(self, text: str) -> None:
         """Something you said about this step ("I can't find it"): it looks again
@@ -654,12 +766,28 @@ class Guide:
                 if not marks:   # done, or an answer with nothing to point at
                     finished = step.done
                     return last
-                self.watch.drain()
-                self.show(marks, capture.monitor)
                 before = self.foreground()
                 admin = next((w for w in wins if w.front and w.admin), None) if step.action == "box" else None
-                outcome = self._wait(step, target, limit=self.linger_s if step.done else None,
-                                     unseen=admin.app if admin is not None else "")
+                driven = self._drive_step(step, ids, marks, target, capture, wins) if self.driving else ""
+                if driven == "cancel":
+                    return last
+                if driven == "done":
+                    outcome = "done"
+                else:
+                    self.watch.drain()
+                    self.show(marks, capture.monitor)
+                    self._approved.clear()
+                    name = ids[step.target].name if step.target in ids else ""
+                    self._showing = theirs_to_do(step, name, any(w.front and w.admin for w in wins)) or (
+                        "" if step.action == "keys" or target is not None else "nothing to do")
+                    outcome = self._wait(step, target, limit=self.linger_s if step.done and not self._asking else None,
+                                         unseen=admin.app if admin is not None else "")
+                    if outcome == "done" and self._approved.is_set() and self.hands is not None:
+                        self._approved.clear()      # "yes, go ahead": Clixy does the step it asked about
+                        self.clear()
+                        ok = self._act(step, target)
+                        self._log(f"GUIDE: drive: did it on your yes ({'ok' if ok else 'failed'})")
+                    self._asking = False
                 self._log(f"GUIDE: step {n} {outcome}")
                 if outcome == "heard":   # you said something about this step: look again with it in mind
                     said = "; ".join(self._heard)
@@ -960,6 +1088,11 @@ class Guide:
         parts.append("done so far: " + ("; ".join(f"{i}. {d}" for i, d in enumerate(done, 1)) if done else "nothing yet"))
         if hint:
             parts.append(hint)
+        if self.driving:
+            parts.append("mode: you're doing it for them while they watch. one step at a time as usual, but say "
+                         "each in a few words as you do it, first person (\"opening your profile menu\"). anything "
+                         "that sends, buys, pays, deletes, posts or signs out: say what it will do and ask first "
+                         "(\"want me to send it?\"). never type a password or card number.")
         if plan:
             parts.append("your plan for the rest (check the screen still fits it): " + " | ".join(str(p) for p in plan))
         if know:
@@ -972,6 +1105,70 @@ class Guide:
             parts.append(fix)
         parts.append("what's the single next step?")
         return "\n\n".join(parts)
+
+    def _drive_step(self, step: Step, ids: dict, marks: list, target, capture, wins: list) -> str:
+        """Do this step for them. "done"; "cancel" (Esc); or "yours" when it's theirs to
+        do (theirs_to_do) or they've taken over by touching the mouse or keyboard."""
+        took = self._user_input()
+        if took == "esc":
+            return "cancel"
+        if took:
+            self.set_drive(False)
+            self._aside("okay, it's all yours. i'll point the way.")
+            return "yours"
+        name = ids[step.target].name if step.target in ids else ""
+        why = theirs_to_do(step, name, any(w.front and w.admin for w in wins))
+        if step.action not in ("click", "box", "type", "keys") or (step.action != "keys" and target is None):
+            why = why or "nothing to do"
+        if why:
+            self._log(f"GUIDE: drive: theirs to do ({why})")
+            if why == "risky":
+                self._asking = True
+                self._aside("that one's your call. say yes and i'll do it, or click it yourself.")
+            elif why == "secret":
+                self._aside("type that one yourself, i never type passwords or card numbers.")
+            elif why == "admin":
+                self._aside("windows won't let me click in that window, so tap it yourself.")
+            return "yours"
+        self.show(marks, capture.monitor)      # where it's about to click, for a moment
+        self.sleep(self.drive_pause_s)
+        ok = self._act(step, target)
+        self.clear()
+        self._log(f"GUIDE: drive: {self._describe(step, ids)} ({'ok' if ok else 'failed'})")
+        return "done" if ok else "yours"
+
+    def _act(self, step: Step, target) -> bool:
+        """Click, type or press, with the hands."""
+        try:
+            if step.action == "keys":
+                return bool(self.hands.press(step.keys))
+            if target is None:
+                return False
+            x, y = (target[0] + target[2]) // 2, (target[1] + target[3]) // 2
+            if not self.hands.click(x, y):
+                return False
+            if step.action == "type":
+                self.sleep(0.15)
+                return bool(self.hands.type_text(step.text))
+            return True
+        except Exception:
+            return False
+
+    def _user_input(self) -> str:
+        """Your own input since the last look: "esc", "input" (a click, a key, a mouse
+        move: you're taking over), or "". Clixy's own input never counts (it's injected)."""
+        seen = ""
+        while (event := self.watch.get(0)) is not None:
+            if event[0] == "combo" and event[1] == frozenset({"esc"}):
+                return "esc"
+            seen = "input"
+        return seen
+
+    def _aside(self, sentence: str) -> None:
+        """A short spoken aside (handing over, asking first): heard, never shown."""
+        self._log(f"GUIDE: aside {sentence!r}")
+        if self.speak is not None:
+            self._speak(sentence)
 
     @staticmethod
     def _from_plan(plan: list, ids: dict) -> "Step | None":

@@ -716,9 +716,11 @@ class SettingsPage(Motion, QWidget):
         self.discard()
         self.dlg = SettingsDialog()
         fx = _sfx()
+        from config import resolve_setting
         self._own = {"APPEARANCE": ui_kit.appearance(),
                      "SOUND_EFFECTS": "on" if (fx.enabled() if fx else True) else "off",
-                     "SOUND_VOLUME": str(round(100 * (fx.volume() if fx else 0.7)))}
+                     "SOUND_VOLUME": str(round(100 * (fx.volume() if fx else 0.7))),
+                     "DO_IT_FOR_ME": "off" if resolve_setting("DO_IT_FOR_ME", "on").lower() == "off" else "on"}
         for page in self.pages.values():
             page.hide()
             page.deleteLater()
@@ -801,7 +803,9 @@ class SettingsPage(Motion, QWidget):
         fx = _sfx()
         now = {"APPEARANCE": ui_kit.appearance(),
                "SOUND_EFFECTS": "on" if (fx.enabled() if fx else True) else "off",
-               "SOUND_VOLUME": str(round(100 * (fx.volume() if fx else 0.7)))}
+               "SOUND_VOLUME": str(round(100 * (fx.volume() if fx else 0.7))),
+               "DO_IT_FOR_ME": "on" if getattr(self, "_drive_switch", None) is None
+               or self._drive_switch.isChecked() else "off"}
         for name, value in now.items():
             if value != self._own.get(name):
                 try:
@@ -915,6 +919,9 @@ class SettingsPage(Motion, QWidget):
         mics.currentIndexChanged.connect(dlg._mic_box.setCurrentIndex)
         self._level = LevelBars()
         self._mic_row = group.add(Row("Microphone", dlg._mic_row.sub.text(), self._level, mics, gap=12))
+        self._drive_switch = Switch(self._own.get("DO_IT_FOR_ME", "on") == "on")
+        group.add(Row("Do it for me", "Say “for me” and Clixy clicks and types the steps itself. It always asks "
+                      "before anything that sends, buys or deletes, and never types passwords", self._drive_switch))
         v.addWidget(group)
         v.addStretch(1)
         return page

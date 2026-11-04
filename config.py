@@ -285,6 +285,10 @@ HOTKEY: str = resolve_setting("HOTKEY", default="ctrl+win")
 records it by having you press it; takes effect on the next start."""
 
 EDGE_GLOW: bool = resolve_setting("EDGE_GLOW", default="on").lower() == "on"
+
+DO_IT_FOR_ME: bool = resolve_setting("DO_IT_FOR_ME", default="on").lower() == "on"
+"""Clixy may click, type and press keys for you when you ask it to ("do it for me");
+it still asks first before anything that sends, buys or deletes. Off: it only points."""
 """Light the screen edges in the buddy's colors while you talk."""
 
 SOUND_EFFECTS: bool = resolve_setting("SOUND_EFFECTS", default="on").lower() == "on"

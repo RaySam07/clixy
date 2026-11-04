@@ -397,3 +397,116 @@ def test_i_cant_find_it_looks_again_with_what_you_said():
     g.run("help me open my settings", _capture(scale=1.0))
     assert 'the user said: "I can\'t find it"' in log["prompts"][1]
     assert [s[1] for s in log["said"]][:2] == [1, 1], "still step one"
+
+
+# --- Do it for me (drive mode) ------------------------------------------------------------------
+
+def _hands(log):
+    return SimpleNamespace(
+        click=lambda x, y: log.append(("click", x, y)) or True,
+        press=lambda keys: log.append(("press", keys)) or True,
+        type_text=lambda text: log.append(("type", text)) or True,
+    )
+
+
+def test_asked_to_do_it_clixy_does_each_step_itself():
+    acted = []
+    profile = Element("button", "Account", (1200, 80, 1240, 120))
+    search = Element("field", "Search", (400, 20, 800, 50))
+    g, log = _guide(
+        ["opening your profile menu. [CLICK:#1:profile][STEP:1/3]",
+         "searching for it. [TYPE:#2:youtube studio][STEP:2/3]",
+         "and pressing enter. [KEYS:enter:search][STEP:3/3]",
+         "you're in. [DONE]"],
+        [], elements=[profile, search], hands=_hands(acted),
+    )
+    g.set_drive(True)
+    g.run("open my youtube studio for me", _capture(scale=1.0))
+    assert acted == [("click", 1220, 100), ("click", 600, 35), ("type", "youtube studio"), ("press", "enter")]
+    assert "mode: you're doing it for them" in log["prompts"][0]
+    assert log["shown"][0] == [Box(1200, 80, 1240, 120)], "it shows where it's about to click first"
+
+
+def test_a_risky_click_waits_for_your_yes():
+    acted = []
+    send = Element("button", "Send", (900, 600, 980, 640))
+
+    class Watch(FakeWatch):
+        def get(self, timeout):
+            if g.awaiting_yes and not acted:
+                g.approve()                     # you said "yes"
+            return super().get(timeout)
+
+    g, log = _guide(["want me to send it? [CLICK:#1:send][STEP:2/2][DONE]"], [], elements=[send], hands=_hands(acted))
+    g.watch = Watch([])
+    g.set_drive(True)
+    g.run("send this email for me", _capture(scale=1.0))
+    assert acted == [("click", 940, 620)], "only after your yes"
+
+
+def test_a_risky_click_you_make_yourself_is_never_clicked_again():
+    acted = []
+    delete = Element("button", "Delete", (900, 600, 980, 640))
+    g, log = _guide(["want me to delete it? [CLICK:#1:delete][STEP:1/1][DONE]"], [("click", 940, 620)],
+                    elements=[delete], hands=_hands(acted))
+    g.set_drive(True)
+    g.run("delete this file for me", _capture(scale=1.0))
+    assert acted == []
+
+
+def test_it_never_types_a_password():
+    acted = []
+    field_ = Element("field", "Password", (400, 300, 800, 340))
+    g, log = _guide(["typing it in. [TYPE:#1:hunter2][STEP:1/1][DONE]"], [("combo", frozenset({"enter"}))],
+                    elements=[field_], hands=_hands(acted))
+    g.set_drive(True)
+    g.run("log me in for me", _capture(scale=1.0))
+    assert acted == []
+
+
+def test_touching_the_mouse_hands_it_back_and_esc_stops_it():
+    acted = []
+    a = Element("button", "Settings", (10, 10, 60, 40))
+    g, log = _guide(["opening settings. [CLICK:#1:settings][STEP:1/2]"], [("move", 500, 500), ("click", 30, 20)],
+                    elements=[a], hands=_hands(acted))
+    g.set_drive(True)
+    g.max_steps = 1
+    g.run("open settings for me", _capture(scale=1.0))
+    assert acted == [] and not g.driving, "your move means you're taking over: it points instead"
+
+    g2, log2 = _guide(["opening settings. [CLICK:#1:settings][STEP:1/2]", "never asked. [DONE]"],
+                      [("combo", frozenset({"esc"}))], elements=[a], hands=_hands(acted))
+    g2.set_drive(True)
+    g2.run("open settings for me", _capture(scale=1.0))
+    assert acted == [] and len(log2["prompts"]) == 1, "Esc stops it there"
+
+
+def test_do_it_for_me_said_mid_guide_does_the_step_on_show():
+    acted = []
+    a = Element("button", "Settings", (10, 10, 60, 40))
+
+    class Watch(FakeWatch):
+        def get(self, timeout):
+            if not self.asked:
+                self.asked = True
+                g.set_drive(True)
+                g.do_this_one()
+                return None
+            return super().get(timeout)
+
+    g, log = _guide(["click settings. [CLICK:#1:settings][STEP:1/1][DONE]"], [], elements=[a], hands=_hands(acted))
+    g.watch = Watch([])
+    g.watch.asked = False
+    g.run("help me open settings", _capture(scale=1.0))
+    assert acted == [("click", 35, 25)]
+
+
+@pytest.mark.parametrize("label, keys, text, admin, why", [
+    ("Send", "", "", False, "risky"), ("Place order", "", "", False, "risky"), ("Sign out", "", "", False, "risky"),
+    ("Save", "", "", False, ""), ("Studio", "", "", True, "admin"), ("", "alt+f4", "", False, "risky"),
+    ("", "win+i", "", False, ""), ("Card number", "", "4242", False, "secret"),
+])
+def test_what_is_always_theirs_to_do(label, keys, text, admin, why):
+    action = "keys" if keys else ("type" if text else "click")
+    step = guide.Step(say="", action=action, keys=keys, text=text, label=label)
+    assert guide.theirs_to_do(step, label, admin) == why

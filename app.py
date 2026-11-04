@@ -1156,8 +1156,19 @@ class ClickyApp(QObject):
                     self.sig_guide_step.emit(progress["now"], progress["n"], progress["total"], None)
                     return
                 if what == "next":
-                    dbg.log(f"GUIDE: {transcript!r}: on to the next step")
-                    running.confirm()
+                    if running.awaiting_yes:
+                        dbg.log(f"GUIDE: {transcript!r}: go ahead with the step it asked about")
+                        running.approve()
+                    else:
+                        dbg.log(f"GUIDE: {transcript!r}: on to the next step")
+                        running.confirm()
+                    return
+                if what in ("drive", "hands off"):
+                    on = what == "drive" and self._may_drive()
+                    dbg.log(f"GUIDE: {transcript!r}: {'doing the steps' if on else 'pointing the way'}")
+                    running.set_drive(on)
+                    if on:
+                        running.do_this_one()     # the step on show, unless it's one that's always theirs
                     return
                 if what == "remark":
                     dbg.log(f"GUIDE: heard {transcript!r} about this step")
@@ -1272,7 +1283,7 @@ class ClickyApp(QObject):
             # exactly, the next one as soon as this one is done.
             if guide.wants_guide(transcript):
                 stage = "AI"
-                self._run_guide(transcript, cursor_capture, cancel, dbg)
+                self._run_guide(transcript, cursor_capture, cancel, dbg, drive=guide.wants_drive(transcript))
                 return
 
             # Learning something: a sketch note draws itself while the voice explains. A
@@ -1682,8 +1693,15 @@ class ClickyApp(QObject):
         stop = self._guide_cancel
         return stop is not None and not stop.is_set() and guide.current() is not None
 
-    def _run_guide(self, goal: str, capture, cancel: threading.Event, dbg) -> None:
-        """Guide toward ``goal`` one step at a time (guide.py), on this worker thread."""
+    @staticmethod
+    def _may_drive() -> bool:
+        """"Do it for me" is allowed (Settings > General)."""
+        return resolve_setting("DO_IT_FOR_ME", default="on").lower() == "on"
+
+    def _run_guide(self, goal: str, capture, cancel: threading.Event, dbg, drive: bool = False) -> None:
+        """Guide toward ``goal`` one step at a time (guide.py), on this worker thread.
+        ``drive``: asked to do it ("... for me"), so Clixy does the steps itself."""
+        import hands
         import snap
 
         dbg.log(f"GUIDE: {goal!r}")
@@ -1728,8 +1746,12 @@ class ClickyApp(QObject):
             arrange=snap.side_by_side,
             knowhow=kb.knowhow,
             routes=RouteBook() if keep else None,   # history off in Settings: no routes kept
+            hands=hands if self._may_drive() else None,
             dbg=dbg,
         )
+        if drive and self._may_drive():
+            dbg.log("GUIDE: doing it for them")
+            session.set_drive(True)
         try:
             last = session.run(goal, capture)
         finally:
