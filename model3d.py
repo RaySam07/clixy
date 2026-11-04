@@ -31,7 +31,7 @@ from scipy import ndimage
 
 LIBRARY = Path(__file__).with_name("models3d")
 CACHE = Path.home() / ".clixy" / "cache" / "3d"
-CACHE_VERSION = 3
+CACHE_VERSION = 4
 MAX_PARTS = 60
 MAX_SHAPES = 240          # all parts together
 F = np.float32
@@ -256,6 +256,32 @@ def sd_polygon(px, py, vx, vy):
     return s * np.sqrt(d)
 
 
+def polygon_table(vx, vy, cells: int = 448):
+    """The distance to a 2D outline, worked out once on a fine table and then looked up
+    (bilinear): a lathe's profile or a gear's outline costs the same however many points
+    it has. Beyond the table, the distance to its edge is added (never too small)."""
+    lo = np.array([vx.min(), vy.min()], dtype=np.float64)
+    hi = np.array([vx.max(), vy.max()], dtype=np.float64)
+    span = float(np.max(hi - lo)) or 1.0
+    lo, hi = lo - 0.3 * span, hi + 0.3 * span
+    n = np.maximum(16, np.ceil((hi - lo) / ((hi - lo).max() / cells))).astype(int)
+    xs, ys = np.linspace(lo[0], hi[0], n[0]), np.linspace(lo[1], hi[1], n[1])
+    gx, gy = np.meshgrid(xs, ys, indexing="ij")
+    table = sd_polygon(gx.ravel().astype(F), gy.ravel().astype(F), vx, vy).reshape(n[0], n[1]).astype(F)
+    step = ((hi - lo) / (n - 1)).astype(F)
+    lo32, hi32 = lo.astype(F), hi.astype(F)
+
+    def fn(px, py):
+        cx, cy = np.clip(px, lo32[0], hi32[0]), np.clip(py, lo32[1], hi32[1])
+        u, v = (cx - lo32[0]) / step[0], (cy - lo32[1]) / step[1]
+        i, j = np.minimum(u.astype(np.int64), n[0] - 2), np.minimum(v.astype(np.int64), n[1] - 2)
+        fu, fv = u - i, v - j
+        d = ((table[i, j] * (1 - fu) + table[i + 1, j] * fu) * (1 - fv)
+             + (table[i, j + 1] * (1 - fu) + table[i + 1, j + 1] * fu) * fv)
+        return d + np.sqrt((px - cx) ** 2 + (py - cy) ** 2)
+    return fn
+
+
 def catmull_rom(pts: np.ndarray, per: int = 8, closed: bool = False) -> np.ndarray:
     """A smooth curve through the points."""
     if len(pts) < 3:
@@ -468,12 +494,12 @@ def make_shape(spec: dict, scale_hint: float = 1.0) -> Shape | None:
         curve = catmull_rom(prof, 10) if spec.get("smooth", True) else prof
         curve[:, 0] = np.maximum(curve[:, 0], 0.0)
         poly = np.vstack([[0.0, curve[0, 1]], curve, [0.0, curve[-1, 1]]])
-        vx, vy = poly[:, 0].astype(F), poly[:, 1].astype(F)
+        profile = polygon_table(poly[:, 0].astype(F), poly[:, 1].astype(F))
 
-        def fn(P, vx=vx, vy=vy):
+        def fn(P, profile=profile):
             L = loc(P)
             rho = np.sqrt(L[:, 0] ** 2 + L[:, 1] ** 2)
-            return sd_polygon(rho, L[:, 2], vx, vy)
+            return profile(rho, L[:, 2])
         e = float(curve[:, 0].max())
         lo, hi = _box_bounds(np.array([-e, -e, curve[:, 1].min()]), np.array([e, e, curve[:, 1].max()]), at, R)
         shape = Shape(kind, fn, lo, hi)
@@ -495,11 +521,11 @@ def make_shape(spec: dict, scale_hint: float = 1.0) -> Shape | None:
             rr = _f(spec.get("round"), 0.0, 0.0, big)
             hole = 0.0
         rr = min(rr, height * 0.45)
-        vx, vy = outline[:, 0].astype(F), outline[:, 1].astype(F)
+        flat = polygon_table(outline[:, 0].astype(F), outline[:, 1].astype(F))
 
-        def fn(P, vx=vx, vy=vy, height=height, rr=rr, hole=hole):
+        def fn(P, flat=flat, height=height, rr=rr, hole=hole):
             L = loc(P)
-            d2 = sd_polygon(L[:, 0], L[:, 1], vx, vy) + rr
+            d2 = flat(L[:, 0], L[:, 1]) + rr
             if hole > 0:
                 d2 = np.maximum(d2, hole + rr - np.sqrt(L[:, 0] ** 2 + L[:, 1] ** 2))
             wz = np.abs(L[:, 2]) - (height / 2 - rr)
@@ -928,6 +954,8 @@ def _sheet_mesh(part: Part) -> Mesh:
 def mesh_part(part: Part, h: float) -> Mesh | None:
     if part.sheet is not None:
         return _sheet_mesh(part)
+    if 0 < part.shell < 2.5 * h:    # a very thin wall (glass, a vessel) gets a finer grid, or it breaks into steps
+        h = max(part.shell / 2.5, h * 0.72)
     b = part.bounds()
     if b is None:
         return None

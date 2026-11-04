@@ -759,7 +759,16 @@ class RealModel:
                 else:
                     from scipy import ndimage
                     inner = ndimage.distance_transform_edt(mask)
-                    yy, xx = np.unravel_index(int(np.argmax(inner)), inner.shape)
+                    if self.model.meshes[lb.k].part.opacity < 0.999:
+                        # See-through: point at its rim (its middle shows what's inside), on the
+                        # side its label is likely to go.
+                        rim = (inner > 0) & (inner <= max(2.0, 0.25 * inner.max()))
+                        ys_, xs_ = np.nonzero(rim)
+                        mid = xs_.mean()
+                        pick = int(np.argmin(xs_)) if mid < pw / 2 else int(np.argmax(xs_))
+                        yy, xx = int(ys_[pick]), int(xs_[pick])
+                    else:
+                        yy, xx = np.unravel_index(int(np.argmax(inner)), inner.shape)
                     sx = (xx + 0.5) / pw * 2 - 1
                     sy = 1 - (yy + 0.5) / ph * 2
                     dz = float(z[yy, xx]) * 2 - 1

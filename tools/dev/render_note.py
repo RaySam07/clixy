@@ -54,8 +54,9 @@ def main() -> int:
     import model3d
     import render3d
     import sketch
-    if a.fresh:
-        model3d.CACHE = Path(os.environ.get("TEMP", ".")) / "clixy-3d-fresh"
+    if a.fresh:   # a new, empty cache each time: really rebuilt
+        import tempfile
+        model3d.CACHE = Path(tempfile.mkdtemp(prefix="clixy3d-"))
     note = load(Path(a.note), a.cut)
     card = sketch.NoteCard()
     started = time.perf_counter()
