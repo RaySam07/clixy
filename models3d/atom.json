@@ -1,0 +1,409 @@
+{
+ "title": "A carbon atom",
+ "subtitle": "6 protons and 6 neutrons in the nucleus; 6 electrons in shells of 2 and 4",
+ "aliases": [
+  "atom",
+  "carbon atom",
+  "bohr model",
+  "atomic structure",
+  "structure of an atom",
+  "atom model",
+  "protons neutrons electrons",
+  "electron shells",
+  "atomic model",
+  "bohr atom"
+ ],
+ "view": {
+  "turn": 30.0,
+  "tilt": 18.0,
+  "ground": false
+ },
+ "resolution": 280,
+ "parts": [
+  {
+   "label": "proton (+)",
+   "color": "#d23b31",
+   "material": "glossy",
+   "blend": 0.025,
+   "shapes": [
+    {
+     "shape": "sphere",
+     "at": [
+      0.049,
+      -0.0815,
+      -0.362
+     ],
+     "r": 0.205
+    },
+    {
+     "shape": "sphere",
+     "at": [
+      -0.0119,
+      -0.3624,
+      -0.0931
+     ],
+     "r": 0.205
+    },
+    {
+     "shape": "sphere",
+     "at": [
+      0.1449,
+      -0.2411,
+      0.247
+     ],
+     "r": 0.205
+    },
+    {
+     "shape": "sphere",
+     "at": [
+      -0.3255,
+      0.1597,
+      0.0931
+     ],
+     "r": 0.205
+    },
+    {
+     "shape": "sphere",
+     "at": [
+      0.2433,
+      0.2133,
+      -0.1882
+     ],
+     "r": 0.205
+    },
+    {
+     "shape": "sphere",
+     "at": [
+      -0.049,
+      0.0815,
+      0.362
+     ],
+     "r": 0.205
+    }
+   ]
+  },
+  {
+   "label": "neutron",
+   "color": "#a3a8ae",
+   "material": "glossy",
+   "blend": 0.025,
+   "shapes": [
+    {
+     "shape": "sphere",
+     "at": [
+      -0.3026,
+      -0.1147,
+      -0.1882
+     ],
+     "r": 0.205
+    },
+    {
+     "shape": "sphere",
+     "at": [
+      -0.1449,
+      0.2411,
+      -0.247
+     ],
+     "r": 0.205
+    },
+    {
+     "shape": "sphere",
+     "at": [
+      0.3255,
+      -0.1597,
+      -0.0931
+     ],
+     "r": 0.205
+    },
+    {
+     "shape": "sphere",
+     "at": [
+      -0.2433,
+      -0.2133,
+      0.1882
+     ],
+     "r": 0.205
+    },
+    {
+     "shape": "sphere",
+     "at": [
+      0.0119,
+      0.3624,
+      0.0931
+     ],
+     "r": 0.205
+    },
+    {
+     "shape": "sphere",
+     "at": [
+      0.3026,
+      0.1147,
+      0.1882
+     ],
+     "r": 0.205
+    },
+    {
+     "shape": "sphere",
+     "at": [
+      0,
+      0,
+      0
+     ],
+     "r": 0.2995
+    }
+   ]
+  },
+  {
+   "label": "inner shell (2)",
+   "color": "#86bde8",
+   "material": "glass",
+   "opacity": 0.55,
+   "blend": 0.0,
+   "shapes": [
+    {
+     "shape": "torus",
+     "at": [
+      0,
+      0,
+      0
+     ],
+     "r": 1.2,
+     "tube": 0.024,
+     "turn": [
+      0.9998,
+      -1.7322,
+      0.0
+     ]
+    }
+   ]
+  },
+  {
+   "label": "",
+   "color": "#2f8cff",
+   "material": "glow",
+   "blend": 0.0,
+   "shapes": [
+    {
+     "shape": "sphere",
+     "at": [
+      1.1269,
+      0.4104,
+      0.0412
+     ],
+     "r": 0.125
+    }
+   ],
+   "move": {
+    "spin": [
+     -0.0302,
+     -0.0174,
+     0.9994
+    ],
+    "about": [
+     0,
+     0,
+     0
+    ],
+    "speed": 64.0
+   }
+  },
+  {
+   "label": "",
+   "color": "#2f8cff",
+   "material": "glow",
+   "blend": 0.0,
+   "shapes": [
+    {
+     "shape": "sphere",
+     "at": [
+      -1.1269,
+      -0.4104,
+      -0.0412
+     ],
+     "r": 0.125
+    }
+   ],
+   "move": {
+    "spin": [
+     -0.0302,
+     -0.0174,
+     0.9994
+    ],
+    "about": [
+     0,
+     0,
+     0
+    ],
+    "speed": 64.0
+   }
+  },
+  {
+   "label": "outer shell (4)",
+   "color": "#86bde8",
+   "material": "glass",
+   "opacity": 0.55,
+   "blend": 0.0,
+   "shapes": [
+    {
+     "shape": "torus",
+     "at": [
+      0,
+      0,
+      0
+     ],
+     "r": 2.05,
+     "tube": 0.024,
+     "turn": [
+      36.7336,
+      48.6238,
+      0.0
+     ]
+    }
+   ]
+  },
+  {
+   "label": "electron (-)",
+   "color": "#2f8cff",
+   "material": "glow",
+   "blend": 0.0,
+   "shapes": [
+    {
+     "shape": "sphere",
+     "at": [
+      1.4743,
+      1.4228,
+      -0.0673
+     ],
+     "r": 0.125
+    }
+   ],
+   "move": {
+    "spin": [
+     0.6014,
+     -0.5981,
+     0.5297
+    ],
+    "about": [
+     0,
+     0,
+     0
+    ],
+    "speed": 40.0
+   }
+  },
+  {
+   "label": "",
+   "color": "#2f8cff",
+   "material": "glow",
+   "blend": 0.0,
+   "shapes": [
+    {
+     "shape": "sphere",
+     "at": [
+      -1.4743,
+      -1.4228,
+      0.0673
+     ],
+     "r": 0.125
+    }
+   ],
+   "move": {
+    "spin": [
+     0.6014,
+     -0.5981,
+     0.5297
+    ],
+    "about": [
+     0,
+     0,
+     0
+    ],
+    "speed": 40.0
+   }
+  },
+  {
+   "label": "",
+   "color": "#86bde8",
+   "material": "glass",
+   "opacity": 0.55,
+   "blend": 0.0,
+   "shapes": [
+    {
+     "shape": "torus",
+     "at": [
+      0,
+      0,
+      0
+     ],
+     "r": 2.05,
+     "tube": 0.024,
+     "turn": [
+      -55.0704,
+      -22.3013,
+      0.0
+     ]
+    }
+   ]
+  },
+  {
+   "label": "",
+   "color": "#2f8cff",
+   "material": "glow",
+   "blend": 0.0,
+   "shapes": [
+    {
+     "shape": "sphere",
+     "at": [
+      -0.7306,
+      0.8992,
+      -1.6912
+     ],
+     "r": 0.125
+    }
+   ],
+   "move": {
+    "spin": [
+     -0.2173,
+     0.8199,
+     0.5297
+    ],
+    "about": [
+     0,
+     0,
+     0
+    ],
+    "speed": 40.0
+   }
+  },
+  {
+   "label": "",
+   "color": "#2f8cff",
+   "material": "glow",
+   "blend": 0.0,
+   "shapes": [
+    {
+     "shape": "sphere",
+     "at": [
+      0.7306,
+      -0.8992,
+      1.6912
+     ],
+     "r": 0.125
+    }
+   ],
+   "move": {
+    "spin": [
+     -0.2173,
+     0.8199,
+     0.5297
+    ],
+    "about": [
+     0,
+     0,
+     0
+    ],
+    "speed": 40.0
+   }
+  }
+ ]
+}

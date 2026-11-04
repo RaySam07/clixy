@@ -54,6 +54,8 @@ def main() -> int:
     ap.add_argument("--only", default="")
     a = ap.parse_args()
     app = QApplication.instance() or QApplication(sys.argv)
+    import theme
+    theme.load_fonts()
     import model3d
     import sketch
     sketch.save_note = lambda n, img: None

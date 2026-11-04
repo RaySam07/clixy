@@ -1397,7 +1397,9 @@ def spec_from_note(note: dict) -> Spec | None:
                     p["label"] = ""
                 if show is not None and isinstance(p.get("labels"), list):
                     p["labels"] = [m for m in p["labels"] if isinstance(m, dict) and str(m.get("text", "")).lower() in show]
-                if highlight and str(p.get("label", "")).lower() not in highlight:
+                names = {str(p.get("label", "")).lower()}
+                names |= {str(m.get("text", "")).lower() for m in p.get("labels") or [] if isinstance(m, dict)}
+                if highlight and not (names & highlight):
                     p["dim"] = True
                 if any(v is not None for v in place.values()):
                     p = {"shapes": [], "_wrap": p, **{k: v for k, v in place.items() if v is not None}}
@@ -1405,7 +1407,7 @@ def spec_from_note(note: dict) -> Spec | None:
             detail = max(detail, int(_f(lib.get("resolution"), 190, 120, 320)))
             if item.get("cutaway") and isinstance(lib.get("cutaway"), dict):
                 cut.append(lib["cutaway"])
-            for k in ("turn", "tilt", "zoom"):
+            for k in ("turn", "tilt", "zoom", "ground"):
                 if k in (lib.get("view") or {}) and k not in view:
                     view[k] = lib["view"][k]
             for c in lib.get("captions", []) if item.get("captions") else []:
@@ -1446,6 +1448,9 @@ def _unwrap(p: dict) -> dict:
     # Place it: the wrapper's frame applies after the part's own.
     out["_place"] = (_v3(p.get("at")), _rot(p.get("turn")), _f(p.get("scale"), 1.0, 1e-3, 1e3))
     return out
+
+
+_FAILED = object()      # a part whose meshing failed (not one that is simply empty)
 
 
 class Model:
@@ -1526,7 +1531,7 @@ class Model:
             try:
                 return mesh_part(part, h)
             except (ValueError, FloatingPointError, MemoryError, IndexError):
-                return None
+                return _FAILED
         # Parts are built side by side (numpy lets go of the GIL for the heavy sums).
         workers = workers or max(1, min(6, (os.cpu_count() or 2) - 1))
         if workers == 1:
@@ -1534,12 +1539,13 @@ class Model:
         else:
             with ThreadPoolExecutor(max_workers=workers) as pool:
                 built = list(pool.map(one, self.parts))
-        meshes = [m for m in built if m is not None]
+        failed = any(m is _FAILED for m in built)
+        meshes = [m for m in built if m is not None and m is not _FAILED]
         ambient_occlusion(meshes, self.size)
         for m in meshes:
             m.grid = None
         self.meshes = meshes
-        if cache and meshes:
+        if cache and meshes and not failed:      # a part that failed (memory) is tried again next time
             self._save()
         return meshes
 

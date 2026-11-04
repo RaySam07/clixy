@@ -691,7 +691,12 @@ class RealModel:
             return
         for k, m in enumerate(self.model.meshes):
             if m.part.label:
-                self.labels.append(_Label(m.part.label, k, _ink(m.part.color)))
+                lb = _Label(m.part.label, k, _ink(m.part.color))
+                if m.part.anchor is not None:      # the part says where its label points
+                    spot = m.part.to_model(m.part.anchor)
+                    lb.anchor = m.pos[int(np.argmin(((m.pos - spot) ** 2).sum(1)))].astype(float)
+                    lb.fixed = True
+                self.labels.append(lb)
             for text, at, tip in m.part.marks:   # labelled spots: snapped onto the part's surface
                 lb = _Label(text, k, _ink(m.part.color))
                 spot = m.part.to_model(at)
@@ -756,6 +761,7 @@ class RealModel:
                 break
             ids, z, vp = r.pick(max(48, w // 3), max(48, h // 3), self.az0, self.el, self._fit, self.zoom)
             inv = np.linalg.inv(vp)
+            rest = [np.linalg.inv(m) for m in r.matrices(0.0)]   # what was seen (at t=0), back where the part rests
             ph, pw = ids.shape
             for lb in self.labels:
                 if lb.fixed:
@@ -787,7 +793,7 @@ class RealModel:
                     sy = 1 - (yy + 0.5) / ph * 2
                     dz = float(z[yy, xx]) * 2 - 1
                     p = inv @ np.array([sx, sy, dz, 1.0])
-                    lb.anchor = p[:3] / p[3]
+                    lb.anchor = (rest[lb.k] @ np.append(p[:3] / p[3], 1.0))[:3]
                 lb.side = -1 if sx < 0.0 else 1
             # Keep the two sides roughly even.
             side_labels = [lb for lb in self.labels if not lb.tip]

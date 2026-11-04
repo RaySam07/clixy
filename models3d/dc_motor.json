@@ -1,0 +1,1078 @@
+{
+ "title": "The DC motor",
+ "subtitle": "Magnets push on the current in the coil; the commutator keeps it turning",
+ "aliases": [
+  "dc motor",
+  "electric motor",
+  "motor",
+  "direct current motor",
+  "brushed motor",
+  "permanent magnet motor",
+  "how a motor works",
+  "motor effect",
+  "commutator",
+  "armature"
+ ],
+ "view": {
+  "turn": 26,
+  "tilt": 16
+ },
+ "resolution": 250,
+ "parts": [
+  {
+   "label": "steel case",
+   "color": "#c4c8cd",
+   "material": "steel",
+   "blend": 0.0,
+   "inside": "#a7acb1",
+   "cut": {
+    "normal": [
+     1,
+     0,
+     0
+    ],
+    "at": [
+     0,
+     0,
+     0
+    ]
+   },
+   "shapes": [
+    {
+     "shape": "cylinder",
+     "from": [
+      0,
+      0,
+      -1.0
+     ],
+     "to": [
+      0,
+      0,
+      1.08
+     ],
+     "r": 1.0,
+     "round": 0.05
+    },
+    {
+     "shape": "cylinder",
+     "from": [
+      0,
+      0,
+      -1.1
+     ],
+     "to": [
+      0,
+      0,
+      1.0
+     ],
+     "r": 0.93,
+     "subtract": true,
+     "blend": 0.02
+    },
+    {
+     "shape": "cylinder",
+     "from": [
+      0,
+      0,
+      1.06
+     ],
+     "to": [
+      0,
+      0,
+      1.2
+     ],
+     "r": 0.27,
+     "round": 0.04,
+     "blend": 0.05
+    },
+    {
+     "shape": "cylinder",
+     "from": [
+      0,
+      0,
+      0.78
+     ],
+     "to": [
+      0,
+      0,
+      1.38
+     ],
+     "r": 0.115,
+     "subtract": true
+    },
+    {
+     "shape": "torus",
+     "at": [
+      0,
+      0,
+      -0.9
+     ],
+     "r": 1.0,
+     "tube": 0.02,
+     "blend": 0.02
+    },
+    {
+     "shape": "cylinder",
+     "from": [
+      -0.5,
+      0.32,
+      0.88
+     ],
+     "to": [
+      -0.5,
+      0.32,
+      1.28
+     ],
+     "r": 0.07,
+     "subtract": true
+    },
+    {
+     "shape": "cylinder",
+     "from": [
+      -0.5,
+      -0.32,
+      0.88
+     ],
+     "to": [
+      -0.5,
+      -0.32,
+      1.28
+     ],
+     "r": 0.07,
+     "subtract": true
+    }
+   ]
+  },
+  {
+   "label": "magnet (N)",
+   "color": "#c8372d",
+   "material": "plastic",
+   "blend": 0.0,
+   "cut": {
+    "normal": [
+     1,
+     0,
+     0
+    ],
+    "at": [
+     0,
+     0,
+     0
+    ]
+   },
+   "shapes": [
+    {
+     "shape": "cylinder",
+     "from": [
+      0,
+      0,
+      -0.78
+     ],
+     "to": [
+      0,
+      0,
+      0.78
+     ],
+     "r": 0.93,
+     "round": 0.02
+    },
+    {
+     "shape": "cylinder",
+     "from": [
+      0,
+      0,
+      -0.88
+     ],
+     "to": [
+      0,
+      0,
+      0.88
+     ],
+     "r": 0.73,
+     "subtract": true,
+     "blend": 0.02
+    },
+    {
+     "shape": "box",
+     "at": [
+      0,
+      -0.75,
+      0
+     ],
+     "size": [
+      2.2,
+      0.74,
+      1.76
+     ],
+     "intersect": true,
+     "blend": 0.03
+    }
+   ]
+  },
+  {
+   "label": "magnet (S)",
+   "color": "#2f5fb3",
+   "material": "plastic",
+   "blend": 0.0,
+   "cut": {
+    "normal": [
+     1,
+     0,
+     0
+    ],
+    "at": [
+     0,
+     0,
+     0
+    ]
+   },
+   "shapes": [
+    {
+     "shape": "cylinder",
+     "from": [
+      0,
+      0,
+      -0.78
+     ],
+     "to": [
+      0,
+      0,
+      0.78
+     ],
+     "r": 0.93,
+     "round": 0.02
+    },
+    {
+     "shape": "cylinder",
+     "from": [
+      0,
+      0,
+      -0.88
+     ],
+     "to": [
+      0,
+      0,
+      0.88
+     ],
+     "r": 0.73,
+     "subtract": true,
+     "blend": 0.02
+    },
+    {
+     "shape": "box",
+     "at": [
+      0,
+      0.75,
+      0
+     ],
+     "size": [
+      2.2,
+      0.74,
+      1.76
+     ],
+     "intersect": true,
+     "blend": 0.03
+    }
+   ]
+  },
+  {
+   "label": "",
+   "color": "#ebe5d6",
+   "material": "plastic",
+   "blend": 0.0,
+   "inside": "#d6cdb8",
+   "cut": {
+    "normal": [
+     1,
+     0,
+     0
+    ],
+    "at": [
+     0,
+     0,
+     0
+    ]
+   },
+   "shapes": [
+    {
+     "shape": "cylinder",
+     "from": [
+      0,
+      0,
+      -1.52
+     ],
+     "to": [
+      0,
+      0,
+      -1.0
+     ],
+     "r": 1.0,
+     "round": 0.06
+    },
+    {
+     "shape": "cylinder",
+     "from": [
+      0,
+      0,
+      -1.02
+     ],
+     "to": [
+      0,
+      0,
+      -0.92
+     ],
+     "r": 0.925,
+     "round": 0.01
+    },
+    {
+     "shape": "cylinder",
+     "from": [
+      0,
+      0,
+      -1.38
+     ],
+     "to": [
+      0,
+      0,
+      -0.8
+     ],
+     "r": 0.86,
+     "subtract": true,
+     "blend": 0.03
+    },
+    {
+     "shape": "cylinder",
+     "from": [
+      0,
+      0,
+      -1.46
+     ],
+     "to": [
+      0,
+      0,
+      -1.26
+     ],
+     "r": 0.25,
+     "round": 0.03,
+     "blend": 0.06
+    },
+    {
+     "shape": "cylinder",
+     "from": [
+      0,
+      0,
+      -1.46
+     ],
+     "to": [
+      0,
+      0,
+      -0.8
+     ],
+     "r": 0.115,
+     "subtract": true
+    }
+   ]
+  },
+  {
+   "color": "bronze",
+   "material": "brass",
+   "blend": 0.0,
+   "cut": {
+    "normal": [
+     1,
+     0,
+     0
+    ],
+    "at": [
+     0,
+     0,
+     0
+    ]
+   },
+   "shapes": [
+    {
+     "shape": "cylinder",
+     "from": [
+      0,
+      0,
+      1.03
+     ],
+     "to": [
+      0,
+      0,
+      1.22
+     ],
+     "r": 0.16,
+     "round": 0.02
+    },
+    {
+     "shape": "cylinder",
+     "from": [
+      0,
+      0,
+      -1.44
+     ],
+     "to": [
+      0,
+      0,
+      -1.24
+     ],
+     "r": 0.16,
+     "round": 0.02
+    },
+    {
+     "shape": "cylinder",
+     "from": [
+      0,
+      0,
+      -3
+     ],
+     "to": [
+      0,
+      0,
+      3
+     ],
+     "r": 0.103,
+     "subtract": true
+    }
+   ]
+  },
+  {
+   "label": "",
+   "color": "#9aa0a7",
+   "material": "brushed",
+   "blend": 0.0,
+   "repeat": {
+    "count": 3,
+    "axis": "z"
+   },
+   "shapes": [
+    {
+     "shape": "cylinder",
+     "from": [
+      0,
+      0,
+      -0.46
+     ],
+     "to": [
+      0,
+      0,
+      0.46
+     ],
+     "r": 0.24,
+     "round": 0.02
+    },
+    {
+     "shape": "box",
+     "at": [
+      0.38,
+      0,
+      0
+     ],
+     "size": [
+      0.36,
+      0.19,
+      0.92
+     ],
+     "round": 0.02,
+     "blend": 0.03
+    },
+    {
+     "shape": "extrude",
+     "outline": [
+      [
+       0.4927,
+       -0.4758
+      ],
+      [
+       0.5664,
+       -0.3852
+      ],
+      [
+       0.6236,
+       -0.2835
+      ],
+      [
+       0.6627,
+       -0.1734
+      ],
+      [
+       0.6825,
+       -0.0584
+      ],
+      [
+       0.6825,
+       0.0584
+      ],
+      [
+       0.6627,
+       0.1734
+      ],
+      [
+       0.6236,
+       0.2835
+      ],
+      [
+       0.5664,
+       0.3852
+      ],
+      [
+       0.4927,
+       0.4758
+      ],
+      [
+       0.4028,
+       0.389
+      ],
+      [
+       0.463,
+       0.3149
+      ],
+      [
+       0.5098,
+       0.2317
+      ],
+      [
+       0.5418,
+       0.1418
+      ],
+      [
+       0.558,
+       0.0477
+      ],
+      [
+       0.558,
+       -0.0477
+      ],
+      [
+       0.5418,
+       -0.1418
+      ],
+      [
+       0.5098,
+       -0.2317
+      ],
+      [
+       0.463,
+       -0.3149
+      ],
+      [
+       0.4028,
+       -0.389
+      ]
+     ],
+     "height": 0.92,
+     "round": 0.02,
+     "blend": 0.03
+    },
+    {
+     "shape": "torus",
+     "at": [
+      0,
+      0,
+      -0.3067
+     ],
+     "r": 0.689,
+     "tube": 0.011,
+     "subtract": true
+    },
+    {
+     "shape": "torus",
+     "at": [
+      0,
+      0,
+      -0.1533
+     ],
+     "r": 0.689,
+     "tube": 0.011,
+     "subtract": true
+    },
+    {
+     "shape": "torus",
+     "at": [
+      0,
+      0,
+      0.0
+     ],
+     "r": 0.689,
+     "tube": 0.011,
+     "subtract": true
+    },
+    {
+     "shape": "torus",
+     "at": [
+      0,
+      0,
+      0.1533
+     ],
+     "r": 0.689,
+     "tube": 0.011,
+     "subtract": true
+    },
+    {
+     "shape": "torus",
+     "at": [
+      0,
+      0,
+      0.3067
+     ],
+     "r": 0.689,
+     "tube": 0.011,
+     "subtract": true
+    }
+   ],
+   "move": {
+    "spin": "z",
+    "about": [
+     0,
+     0,
+     0
+    ],
+    "speed": 90.0
+   }
+  },
+  {
+   "label": "armature coil",
+   "color": "#c46a32",
+   "material": "copper",
+   "blend": 0.03,
+   "repeat": {
+    "count": 3,
+    "axis": "z"
+   },
+   "bumps": {
+    "size": 0.035,
+    "depth": 0.006
+   },
+   "shapes": [
+    {
+     "shape": "box",
+     "at": [
+      0.37,
+      0,
+      0
+     ],
+     "size": [
+      0.28,
+      0.52,
+      1.16
+     ],
+     "round": 0.12
+    },
+    {
+     "shape": "tube",
+     "points": [
+      [
+       0.3,
+       0.16,
+       -0.54
+      ],
+      [
+       0.32,
+       0.18,
+       -0.66
+      ],
+      [
+       0.3,
+       0.14,
+       -0.68
+      ]
+     ],
+     "r": 0.022,
+     "blend": 0.02
+    }
+   ],
+   "move": {
+    "spin": "z",
+    "about": [
+     0,
+     0,
+     0
+    ],
+    "speed": 90.0
+   }
+  },
+  {
+   "label": "commutator",
+   "color": "#d08345",
+   "material": "copper",
+   "blend": 0.0,
+   "repeat": {
+    "count": 3,
+    "axis": "z"
+   },
+   "shapes": [
+    {
+     "shape": "cylinder",
+     "from": [
+      0,
+      0,
+      -0.7
+     ],
+     "to": [
+      0,
+      0,
+      -1.16
+     ],
+     "r": 0.245,
+     "round": 0.015
+    },
+    {
+     "shape": "cylinder",
+     "from": [
+      0,
+      0,
+      -0.69
+     ],
+     "to": [
+      0,
+      0,
+      -0.76
+     ],
+     "r": 0.32,
+     "round": 0.015
+    },
+    {
+     "shape": "box",
+     "at": [
+      0.25,
+      0,
+      -0.96
+     ],
+     "size": [
+      0.22,
+      0.05,
+      0.56
+     ],
+     "subtract": true
+    },
+    {
+     "shape": "cylinder",
+     "from": [
+      0,
+      0,
+      -0.68
+     ],
+     "to": [
+      0,
+      0,
+      -1.18
+     ],
+     "r": 0.205,
+     "color": "#2a2622"
+    }
+   ],
+   "move": {
+    "spin": "z",
+    "about": [
+     0,
+     0,
+     0
+    ],
+    "speed": 90.0
+   }
+  },
+  {
+   "label": "shaft",
+   "color": "#dfe2e6",
+   "material": "steel",
+   "blend": 0.0,
+   "shapes": [
+    {
+     "shape": "cylinder",
+     "from": [
+      0,
+      0,
+      -1.42
+     ],
+     "to": [
+      0,
+      0,
+      1.93
+     ],
+     "r": 0.1,
+     "round": 0.03
+    }
+   ],
+   "move": {
+    "spin": "z",
+    "about": [
+     0,
+     0,
+     0
+    ],
+    "speed": 90.0
+   }
+  },
+  {
+   "color": "#cfa64b",
+   "material": "brass",
+   "blend": 0.03,
+   "shapes": [
+    {
+     "shape": "gear",
+     "at": [
+      0,
+      0,
+      1.7
+     ],
+     "r": 0.2,
+     "teeth": 11,
+     "thickness": 0.22,
+     "hole": 0.0,
+     "round": 0.02
+    },
+    {
+     "shape": "cylinder",
+     "from": [
+      0,
+      0,
+      1.53
+     ],
+     "to": [
+      0,
+      0,
+      1.6
+     ],
+     "r": 0.15,
+     "round": 0.02,
+     "blend": 0.03
+    }
+   ],
+   "move": {
+    "spin": "z",
+    "about": [
+     0,
+     0,
+     0
+    ],
+    "speed": 90.0
+   }
+  },
+  {
+   "label": "brushes",
+   "color": "#38383b",
+   "material": "matte",
+   "blend": 0.0,
+   "shapes": [
+    {
+     "shape": "box",
+     "at": [
+      0,
+      0.385,
+      -0.93
+     ],
+     "size": [
+      0.17,
+      0.3,
+      0.24
+     ],
+     "round": 0.025
+    },
+    {
+     "shape": "box",
+     "at": [
+      0,
+      -0.385,
+      -0.93
+     ],
+     "size": [
+      0.17,
+      0.3,
+      0.24
+     ],
+     "round": 0.025
+    }
+   ]
+  },
+  {
+   "color": "#d1ab55",
+   "material": "brass",
+   "blend": 0.0,
+   "shapes": [
+    {
+     "shape": "box",
+     "at": [
+      0,
+      0.57,
+      -1.05
+     ],
+     "size": [
+      0.2,
+      0.04,
+      0.5
+     ],
+     "round": 0.015
+    },
+    {
+     "shape": "box",
+     "at": [
+      0,
+      0.63,
+      -1.34
+     ],
+     "size": [
+      0.24,
+      0.2,
+      0.07
+     ],
+     "round": 0.015,
+     "blend": 0.02
+    },
+    {
+     "shape": "box",
+     "at": [
+      0,
+      0.98,
+      -1.34
+     ],
+     "size": [
+      0.2,
+      0.62,
+      0.05
+     ],
+     "round": 0.015
+    },
+    {
+     "shape": "cylinder",
+     "from": [
+      -0.15,
+      1.17,
+      -1.34
+     ],
+     "to": [
+      0.15,
+      1.17,
+      -1.34
+     ],
+     "r": 0.05,
+     "subtract": true
+    },
+    {
+     "shape": "box",
+     "at": [
+      0,
+      -0.57,
+      -1.05
+     ],
+     "size": [
+      0.2,
+      0.04,
+      0.5
+     ],
+     "round": 0.015
+    },
+    {
+     "shape": "box",
+     "at": [
+      0,
+      -0.63,
+      -1.34
+     ],
+     "size": [
+      0.24,
+      0.2,
+      0.07
+     ],
+     "round": 0.015,
+     "blend": 0.02
+    },
+    {
+     "shape": "box",
+     "at": [
+      0,
+      -0.98,
+      -1.34
+     ],
+     "size": [
+      0.2,
+      0.62,
+      0.05
+     ],
+     "round": 0.015
+    },
+    {
+     "shape": "cylinder",
+     "from": [
+      -0.15,
+      -1.17,
+      -1.34
+     ],
+     "to": [
+      0.15,
+      -1.17,
+      -1.34
+     ],
+     "r": 0.05,
+     "subtract": true
+    }
+   ]
+  },
+  {
+   "color": "#c8372d",
+   "material": "glossy",
+   "blend": 0.0,
+   "shapes": [
+    {
+     "shape": "tube",
+     "points": [
+      [
+       0,
+       -1.17,
+       -1.34
+      ],
+      [
+       0.05,
+       -1.3,
+       -1.32
+      ],
+      [
+       0.15,
+       -1.42,
+       -1.42
+      ],
+      [
+       0.3,
+       -1.46,
+       -1.47
+      ]
+     ],
+     "r": 0.048
+    }
+   ]
+  },
+  {
+   "color": "#2a2a2d",
+   "material": "glossy",
+   "blend": 0.0,
+   "shapes": [
+    {
+     "shape": "tube",
+     "points": [
+      [
+       0,
+       1.17,
+       -1.34
+      ],
+      [
+       0.05,
+       1.3,
+       -1.32
+      ],
+      [
+       0.15,
+       1.42,
+       -1.42
+      ],
+      [
+       0.3,
+       1.46,
+       -1.47
+      ]
+     ],
+     "r": 0.048
+    }
+   ]
+  }
+ ]
+}
