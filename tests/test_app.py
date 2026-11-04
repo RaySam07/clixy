@@ -174,6 +174,26 @@ class TestClickyApp:
                 except Exception:
                     pass
 
+    def test_a_press_during_a_guide_leaves_it_running(self, mocker):
+        """Holding the keys while a guide shows a step (to say "next", or by
+        accident) never ends the guide or wipes its mark; only a new question does."""
+        import threading
+        app = self._make_app(mocker)
+        mocker.patch("app.get_foreground_app", return_value=("chrome.exe", "Hark"))
+        guide_stop = threading.Event()
+        app._guide_cancel = guide_stop
+        app._cancel_event = guide_stop
+        worker = threading.Thread(target=threading.Event().wait, args=(5,), daemon=True)
+        worker.start()
+        app._worker_thread = worker
+        mocker.patch("app.guide.current", return_value=object())
+        cleared = []
+        app.sig_clear_annotations.connect(lambda: cleared.append(True))
+        app._handle_press()
+        assert not guide_stop.is_set(), "the guide carries on"
+        assert cleared == [], "its step's mark stays up"
+        app._stt.start_recording.assert_called_once()
+
     def test_stop_sets_cancel_event(self, mocker):
         app = self._make_app(mocker)
         app.stop()

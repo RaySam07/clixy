@@ -301,3 +301,99 @@ def test_the_pipeline_sends_how_tos_to_the_guide(mocker):
 def test_this_computer_is_described():
     import sysinfo
     assert sysinfo.profile()
+
+
+# --- Taking any task from the first step to the end -------------------------------------------
+
+@pytest.mark.parametrize("q", [
+    "I want to access my YouTube studio on my account. Can you tell me exactly where I can access it?",
+    "I want Hark and I want you to help me add a panel where I can add my calendar for the week",
+    "where is the export button in photoshop",
+    "open my downloads folder in file explorer",
+    "can you help me set up a meeting in teams",
+])
+def test_demands_get_a_guide_too(q):
+    assert guide.wants_guide(q)
+
+
+@pytest.mark.parametrize("q", [
+    "how does a jet engine work", "why does the polynomial drift away", "help me understand fourier transforms",
+    "explain what is happening in the video", "show me a 3d model of the heart",
+])
+def test_learning_questions_still_dont(q):
+    assert not guide.wants_guide(q)
+
+
+@pytest.mark.parametrize("said, meaning", [
+    ("", "keep"), ("next", "next"), ("done!", "next"), ("okay", "next"), ("what now", "next"),
+    ("I can't find it", "remark"), ("i cant find it", "remark"), ("nothing happened", "remark"),
+    ("it says access denied", "remark"), ("what is a fourier transform", "new"),
+    ("how do I turn on dark mode", "new"),
+])
+def test_what_you_say_to_a_running_guide(said, meaning):
+    assert guide.during_guide(said) == meaning
+
+
+def test_a_plan_is_read_and_never_spoken():
+    step = guide.parse_step('click your profile picture. [CLICK:#3:profile][STEP:1/3]'
+                            '[PLAN:click "YouTube Studio": now pick youtube studio | press "ctrl+s": then save it]')
+    assert step.say == "click your profile picture."
+    assert [(p.action, p.name, p.say) for p in step.plan] == [
+        ("click", "YouTube Studio", "now pick youtube studio"), ("press", "ctrl+s", "then save it")]
+
+
+def test_the_next_planned_click_shows_at_once_without_asking_again():
+    avatar = Element("button", "Account", (1200, 80, 1240, 120))
+    studio = Element("menu item", "YouTube Studio", (1000, 300, 1240, 340))
+    looks = [[avatar], [avatar, studio], [studio]]
+    g, log = _guide(
+        ['click your round profile picture at the top right. [CLICK:#1:profile picture][STEP:1/2]'
+         '[PLAN:click "YouTube Studio": now pick youtube studio from the menu]',
+         "you're in youtube studio. [DONE]"],
+        [("click", 1220, 100), ("click", 1100, 320)],
+    )
+    g.list_elements = lambda _m: looks.pop(0) if len(looks) > 1 else looks[0]
+    g.run("I want to get to my youtube studio", _capture(scale=1.0))
+    assert len(log["prompts"]) == 2, "step two came from the plan, not a model call"
+    assert log["said"][1][0] == "now pick youtube studio from the menu"
+    assert log["shown"][1] == [Box(1000, 300, 1240, 340)]
+    assert 'clicked "YouTube Studio"' in log["prompts"][1]
+
+
+def test_a_plan_that_no_longer_fits_the_screen_asks_the_model():
+    avatar = Element("button", "Account", (1200, 80, 1240, 120))
+    g, log = _guide(
+        ['click your profile picture. [CLICK:#1:profile picture][STEP:1/2][PLAN:click "YouTube Studio": now studio]',
+         "the menu didn't open, click your profile picture again. [CLICK:#1:profile picture][STEP:1/2]",
+         "there it is. [DONE]"],
+        [("click", 1220, 100), ("click", 1220, 100)],
+        elements=[avatar],
+    )
+    g.run("I want to get to my youtube studio", _capture(scale=1.0))
+    assert len(log["prompts"]) == 3
+    assert 'your plan for the rest (check the screen still fits it): click "YouTube Studio"' in log["prompts"][1]
+
+
+def test_i_cant_find_it_looks_again_with_what_you_said():
+    target = Element("button", "Settings", (10, 10, 60, 40))
+
+    class Watch(FakeWatch):
+        def get(self, timeout):
+            if not self.said:          # you say it before clicking anything
+                self.said = True
+                g.hear("I can't find it")
+                return None
+            return super().get(timeout)
+
+    watch = Watch([("click", 30, 20)])
+    watch.said = False
+    g, log = _guide(
+        ["click settings at the top left. [CLICK:#1:settings][STEP:1/2]",
+         "it's the little gear right at the top left corner. [CLICK:#1:settings][STEP:1/2]",
+         "that's it. [DONE]"],
+        [], elements=[target],
+    )
+    g.watch = watch
+    g.run("help me open my settings", _capture(scale=1.0))
+    assert 'the user said: "I can\'t find it"' in log["prompts"][1]
+    assert [s[1] for s in log["said"]][:2] == [1, 1], "still step one"

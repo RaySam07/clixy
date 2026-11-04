@@ -12,6 +12,16 @@ the open windows, know-how for the apps involved, a route that worked
 before, and the list of clickable things with ids). The model answers with
 one spoken sentence and one action tag; ids make the marks exact.
 
+It stays with you till the goal is reached. Holding the keys and saying
+nothing, or "next" / "done", keeps it going; "I can't find it", "nothing
+happened" make it look again with what you said (``during_guide``); only a
+new question ends it.
+
+It thinks ahead: the first reply plans the whole route ([PLAN:...], the
+next clicks by the names you'll see), each later look checks the last step
+worked, and when the next planned button is already on screen it is shown
+at once, with no model call (the plan's fast lane).
+
 Fast, so it feels like a friend beside you:
 - the sentence is spoken the moment it has streamed in, before the tags;
 - after each action it looks again as soon as the screen has settled (the
@@ -46,9 +56,62 @@ _GUIDE_WORDS = re.compile(
 )
 
 
+_TASK_VERBS = (r"open|find|access|reach|get to|go to|see|check|view|change|set|setup|turn|switch|add|remove|"
+               r"delete|create|make|upload|download|install|uninstall|share|send|connect|pair|print|save|"
+               r"export|import|rename|move|copy|sign|log|book|schedule|cancel|update|reset|fix|enable|"
+               r"disable|record|edit|post|reply|submit|start|join|use|customi[sz]e|block|unblock|mute|"
+               r"unmute|pin|unpin|restore|back ?up|clear|empty|format|sort|filter|merge|split|insert|attach")
+_DEMANDS = re.compile(
+    rf"\b(?:(?:i want|i need|i'd like|i would like|i wanna|i gotta|i have|i'm trying|i am trying) to (?:{_TASK_VERBS})\b|"
+    r"help me (?!understand|learn|think|figure out why|see why)\w+|"
+    r"(?:can|could|will|would) you (?:help me|show me|take me|walk me|guide me|get me)|"
+    r"\b(?:take|get|bring) me to\b|"
+    r"where(?:'s| is| are| do i| can i| would i| should i)\b.{0,60}\b(?:button|setting|settings|option|options|"
+    r"menu|tab|page|studio|folder|file|tool|icon|panel|toggle|switch|preference|preferences|account|profile)\b|"
+    rf"^\s*(?:please\s+)?(?:{_TASK_VERBS})\b.{{0,80}}\b(?:in|on|from|for|to|my|the)\b)",
+    re.IGNORECASE,
+)
+_LEARNING = re.compile(r"^\s*(?:why|what|explain|tell me (?:about|why|what)|how (?:does|do (?!i\b|we\b|you\b))|"
+                       r"teach me (?:about|what|why)|help me understand)\b", re.IGNORECASE)
+
+
 def wants_guide(question: str) -> bool:
-    """Is this a how-to: something to do on this computer, step by step?"""
-    return bool(_GUIDE_WORDS.search(question or ""))
+    """Is this something to do on this computer, step by step? A how-to ("how do
+    I..."), or a demand ("I want to access my YouTube Studio", "help me add a
+    panel", "where's the export button"), not a question to understand
+    something ("how does a jet engine work")."""
+    q = question or ""
+    if _GUIDE_WORDS.search(q):
+        return True
+    if _LEARNING.search(q):
+        return False
+    return bool(_DEMANDS.search(q))
+
+
+_CARRY_ON = re.compile(r"^\W*(?:next|next step|done|i did it|did it|i've done it|ok(?:ay)?|got it|yes|yep|yeah|"
+                       r"continue|go on|carry on|what now|now what|what next|what's next|and now|then what|"
+                       r"keep going|alright|right)\W*$", re.IGNORECASE)
+_REMARK = re.compile(r"\b(?:can'?t find|cannot find|can not find|couldn'?t find|don'?t see|do not see|can'?t see|"
+                     r"not there|isn'?t there|it'?s not|didn'?t work|doesn'?t work|not working|nothing happened|"
+                     r"nothing'?s happening|wrong|stuck|lost|where is it|where's it|where is that|which one|"
+                     r"what do i (?:click|press|do)|it says|it's asking|it asks|error|go back|undo|i clicked|"
+                     r"i pressed|missed|too fast|slow down|again|repeat|say that again|what was that)\b",
+                     re.IGNORECASE)
+
+
+def during_guide(text: str) -> str:
+    """What something said while a guide runs means: "keep" (nothing said, the
+    keys were held by accident), "next" (carry on: look again now), "remark"
+    (about this step: "I can't find it", "nothing happened"; look again with
+    that in mind), or "new" (a different question: the guide ends)."""
+    t = " ".join((text or "").split())
+    if not t:
+        return "keep"
+    if _CARRY_ON.match(t):
+        return "next"
+    if _REMARK.search(t) and not wants_guide(t):
+        return "remark"
+    return "new"
 
 
 SYSTEM_PROMPT = """\
@@ -63,6 +126,10 @@ think first: what's the fastest real route from here? in this order:
 a goal with parts that live in different places (cpu load and battery, say) is one move: open both side by side.
 the know-how is accurate: prefer its routes. never invent a menu, button, setting or address that isn't on screen, in the know-how, or real in this version of windows. if unsure, open the page or app that certainly has it, then look.
 
+think the whole route through before the first step, the way someone who knows this app by heart would: where it ends up, and every click on the way. keep the plan you're told unless the screen shows something else; then make a better one.
+each time you look, first check the screen: did the last step work? if it didn't (wrong page, nothing opened, a dialog or an error in the way), say so kindly in a few words and give the step that fixes it.
+finish the job: keep going until the goal is truly done on screen, never stopping half way or handing it back. if the app can't do exactly what they asked, say so honestly in one sentence and take them the closest real way.
+
 reply with the single next step only:
 - first, one or two short spoken sentences, warm and natural: what to do and, in a few words, why. all lowercase. they're spoken aloud and never shown as captions, so no lists, markdown, symbols, ids, coordinates or addresses (say "your battery settings", not the link). your first sentence is spoken while you're still writing, so make it the instruction itself.
 - then one action tag:
@@ -74,6 +141,7 @@ reply with the single next step only:
   [BOX:x1,y1,x2,y2:label] what to click when it isn't listed: its box in screenshot pixels, hugging it tightly.
   a label is one to three words naming the thing, never your sentence.
 - then [STEP:n/total]: this step's number and your best guess at the total.
+- then, on the first step and whenever the route changes, [PLAN:...]: the steps after this one, in order, separated by |, each the click with the exact name they'll see on screen and a few spoken words for it, like [PLAN:click "YouTube Studio": now pick youtube studio from the menu | click "Customisation": then customisation, on the left]. a press is press "win+i": words. leave out what you can't foresee.
 
 windows marked admin (task manager often is) hide their buttons and the user's clicks from clixy: point with a box from the screenshot and say any next click in the same sentence; when that click is the last thing to do, add [DONE] after the box.
 when the goal is reached on screen, say so in one short, happy sentence and add [DONE]. if there's a quicker way for next time than the route taken (a shortcut, a run command, a direct page), add it in a few words, like "faster next time, press windows and i", and tag it [FASTER:win+i] (the keys, or what to open).
@@ -82,13 +150,15 @@ if the last step didn't do what you expected, say so kindly and give the step th
 never refuse and never say you can't point: there's always something to open, bring forward, press or click. apart from opening things and bringing windows forward, never click or type for them; they do each step and you see the result.
 
 examples:
-- goal "project my laptop to the projector", nothing done yet: "press the windows key and p together, that opens the project menu. [KEYS:win+p:project menu][STEP:1/2]"
+- goal "project my laptop to the projector", nothing done yet: "press the windows key and p together, that opens the project menu. [KEYS:win+p:project menu][STEP:1/2][PLAN:click "Duplicate": pick duplicate, so the projector shows your screen]"
 - then the list has #4 button "Duplicate": "pick duplicate, so the projector shows exactly what's on your laptop. [CLICK:#4:duplicate][STEP:2/2]"
 - then: "that's it, you're projecting. [DONE]"
 - goal "turn on dark mode": "let's go straight to your colour settings, i'll open them for you. [OPEN:ms-settings:personalization-colors][STEP:1/2]"
 - goal "show my battery and cpu load": "i'll open task manager and your battery settings side by side, so you can see both at once. [OPEN:taskmgr][OPEN:ms-settings:batterysaver][STEP:1/2]"
 - then task manager, marked admin, is on the left on its processes page: "click performance on the left of task manager for the live cpu graph; your battery's already on the right. [BOX:14,182,60,214:performance][DONE]"
-- goal "open spotify", the open windows show spotify minimised: "spotify's already open, i'll bring it up for you. [FOCUS:spotify][STEP:1/1]"\
+- goal "open spotify", the open windows show spotify minimised: "spotify's already open, i'll bring it up for you. [FOCUS:spotify][STEP:1/1]"
+- goal "i want to get to my youtube studio", youtube is open: "click your round profile picture at the top right, youtube studio is in that menu. [CLICK:#12:profile picture][STEP:1/2][PLAN:click "YouTube Studio": now pick youtube studio]"
+- then the list has nothing new and the screen shows no menu: "the menu didn't open, so click the round profile picture once more, right at the top right. [CLICK:#12:profile picture][STEP:1/2]"\
 """
 
 
@@ -103,7 +173,9 @@ _STEP_RE = re.compile(r"\[\s*STEP\s*:\s*(\d+)\s*(?:/\s*(\d+))?\s*\]", re.IGNOREC
 _DONE_RE = re.compile(r"\[\s*DONE\s*\]", re.IGNORECASE)
 _FOCUS_RE = re.compile(r"\[\s*FOCUS\s*:\s*([^\]]+?)\s*\]", re.IGNORECASE)
 _FASTER_RE = re.compile(r"\[\s*FASTER\s*:\s*([^\]]+?)\s*\]", re.IGNORECASE)
-_CUT_OFF_RE = re.compile(r"\[\s*(?:CLICK|TYPE|STEP|DONE|FOCUS|FASTER)\b[^\]]*$", re.IGNORECASE | re.DOTALL)
+_PLAN_RE = re.compile(r"\[\s*PLAN\s*:\s*([^\]]*)\]", re.IGNORECASE)
+_CUT_OFF_RE = re.compile(r"\[\s*(?:CLICK|TYPE|STEP|DONE|FOCUS|FASTER|PLAN)\b[^\]]*$", re.IGNORECASE | re.DOTALL)
+_PLANNED_RE = re.compile(r"^\s*(click|press)\s+[\"“']([^\"”']+)[\"”']\s*(?::\s*(.*))?$", re.IGNORECASE)
 # Anything else tag-shaped ([POINT:...], a half-written tag) is never read aloud.
 _STRAY_TAG_RE = re.compile(r"\[\s*[A-Za-z_]+\s*:[^\]]*(?:\]|$)", re.DOTALL)
 
@@ -123,6 +195,28 @@ class Step:
     done: bool = False
     opens: list = field(default_factory=list)   # everything to open (two go side by side)
     faster: str = ""            # the quick way for next time ("win+i"), on the last step
+    plan: list | None = None    # the steps after this one (Planned), when the reply gave a [PLAN:...]
+
+
+@dataclass
+class Planned:
+    """A step the model foresaw: click "YouTube Studio", or press "win+i", and its words."""
+    action: str                 # click or press
+    name: str                   # the element's name on screen, or the keys
+    say: str = ""
+
+    def __str__(self) -> str:
+        return f'{self.action} "{self.name}"'
+
+
+def parse_plan(text: str) -> list[Planned]:
+    """The steps in a [PLAN:...] tag's text."""
+    out: list[Planned] = []
+    for part in (text or "").split("|"):
+        m = _PLANNED_RE.match(part)
+        if m and m.group(2).strip():
+            out.append(Planned(m.group(1).lower(), m.group(2).strip()[:80], (m.group(3) or "").strip()[:200]))
+    return out[:8]
 
 
 def parse_step(reply: str) -> Step:
@@ -134,6 +228,9 @@ def parse_step(reply: str) -> Step:
     step.done = bool(_DONE_RE.search(text))
     if m := _FASTER_RE.search(text):
         step.faster = m.group(1).strip()
+    if m := _PLAN_RE.search(text):
+        step.plan = parse_plan(m.group(1))
+    text = _PLAN_RE.sub("", text)
     import apps
     text, opens = apps.parse_open(text)
     focus = _FOCUS_RE.search(text)
@@ -437,6 +534,8 @@ class Guide:
     _confirmed: threading.Event = field(default_factory=threading.Event, init=False, repr=False)
     _stopped: threading.Event = field(default_factory=threading.Event, init=False, repr=False)
     _shortcut: str = field(default="", init=False, repr=False)   # the quick way next time ("win+i")
+    _heard: list = field(default_factory=list, init=False, repr=False)      # what you said about this step
+    _heard_event: threading.Event = field(default_factory=threading.Event, init=False, repr=False)
     _know_cache: dict = field(default_factory=dict, init=False, repr=False)
 
     # --- For the panel (any thread) -------------------------------------------------
@@ -456,6 +555,14 @@ class Guide:
         """Stop guiding (the panel's Stop)."""
         self._stopped.set()
 
+    def hear(self, text: str) -> None:
+        """Something you said about this step ("I can't find it"): it looks again
+        and answers with that in mind (any thread)."""
+        text = " ".join((text or "").split())
+        if text:
+            self._heard.append(text[:200])
+            self._heard_event.set()
+
     def _halted(self) -> bool:
         return self._stopped.is_set() or bool(self.cancelled())
 
@@ -472,27 +579,47 @@ class Guide:
         _current = self
         hint = self._route_hint(goal)
         self.watch.start()
+        plan: list[Planned] = []     # the steps the model foresaw, still to come
         try:
+            # Step one's look, with the know-how for the app in front fetched alongside.
+            wins0 = self._windows()
+            know = threading.Thread(target=self._know, args=(goal, wins0), name="clixy-guide-know", daemon=True)
+            know.start()
             found = self._elements(capture.monitor)
+            know.join(timeout=3.0)
             n = 0
             spoke = False        # this step's sentence is already out (a retry stays quiet)
             while n < self.max_steps:
                 if self._halted():
                     return last
                 lines, ids = element_lines(found, capture)
+                fast = self._from_plan(plan, ids) if not fix else None
+                if fast is not None:     # the next step is the one foreseen, and it's on screen: show it now
+                    step, plan = fast, plan[1:]
+                    self._log(f"GUIDE: step {n + 1} from the plan ({plan and len(plan) or 0} more): {step.say!r}")
+                    if self.speak is not None and step.say:
+                        self._speak(step.say)
+                    reply, spoken_to, quiet = "", 0, True
+                else:
+                    wins = self._windows()
+                    prompt = self._prompt(goal, done, lines, fix, wins, hint, self._know(goal, wins), plan)
+                    asked = self.clock()
+                    reply, spoken_to = self._ask(capture, prompt, speak=not spoke, n=n + 1)
+                    self._log(f"GUIDE: step {n + 1} reply in {self._ms(asked)} ms {reply!r}")
+                    if self._halted():
+                        return last
+                    step = parse_step(reply)
+                    if step.action in ("click", "type") and step.target not in ids and not fix:
+                        fix = f"#{step.target} isn't in the list. pick an id from the list, or use keys or a box."
+                        spoke = spoke or spoken_to > 0
+                        continue  # one retry with that said
+                    quiet = spoke
+                    if step.plan is not None:
+                        plan = step.plan
+                    elif plan:
+                        plan = plan[1:]  # this step was (most likely) the plan's next one
+                spoke, fix = False, ""
                 wins = self._windows()
-                prompt = self._prompt(goal, done, lines, fix, wins, hint, self._know(goal, wins))
-                asked = self.clock()
-                reply, spoken_to = self._ask(capture, prompt, speak=not spoke, n=n + 1)
-                self._log(f"GUIDE: step {n + 1} reply in {self._ms(asked)} ms {reply!r}")
-                if self._halted():
-                    return last
-                step = parse_step(reply)
-                if step.action in ("click", "type") and step.target not in ids and not fix:
-                    fix = f"#{step.target} isn't in the list. pick an id from the list, or use keys or a box."
-                    spoke = spoke or spoken_to > 0
-                    continue  # one retry with that said
-                quiet, spoke, fix = spoke, False, ""
                 n += 1
                 total = max(step.total, step.n, n) if (step.total or step.n) else 0
                 marks, target = self._marks(step, ids, capture)
@@ -502,7 +629,7 @@ class Guide:
                 self._confirmed.clear()
                 if step.faster:
                     self._shortcut = step.faster
-                rest = parse_step(reply[spoken_to:]).say if spoken_to else step.say
+                rest = parse_step(reply[spoken_to:]).say if spoken_to else (step.say if reply else "")
                 if self.speak is not None and rest and not quiet:
                     self._speak(rest)
                 if step.say:
@@ -534,6 +661,19 @@ class Guide:
                 outcome = self._wait(step, target, limit=self.linger_s if step.done else None,
                                      unseen=admin.app if admin is not None else "")
                 self._log(f"GUIDE: step {n} {outcome}")
+                if outcome == "heard":   # you said something about this step: look again with it in mind
+                    said = "; ".join(self._heard)
+                    self._heard.clear()
+                    self._heard_event.clear()
+                    self.clear()
+                    n -= 1
+                    plan = []
+                    fix = (f'while doing step {n + 1} ({self._describe(step, ids).replace("clicked", "click").replace("pressed", "press")}) '
+                           f'the user said: "{said}". look at the screen again and help with exactly that: '
+                           "if they can't find it, describe where it is and point at it again; if something went "
+                           "wrong, fix it.")
+                    capture, found = self._look(capture)
+                    continue
                 if step.done:   # the last mark (a click Clixy can't watch, say) stayed up for a while
                     finished = outcome != "cancel"
                     route.append(self._move(step, ids))
@@ -811,7 +951,7 @@ class Guide:
             pass
 
     def _prompt(self, goal: str, done: list[str], lines: list[str], fix: str, wins: list | None = None,
-                hint: str = "", know: str = "") -> str:
+                hint: str = "", know: str = "", plan: list | None = None) -> str:
         parts = [f'goal: "{goal.strip()}"']
         if self.about:
             parts.append(f"this computer: {self.about}")
@@ -820,6 +960,8 @@ class Guide:
         parts.append("done so far: " + ("; ".join(f"{i}. {d}" for i, d in enumerate(done, 1)) if done else "nothing yet"))
         if hint:
             parts.append(hint)
+        if plan:
+            parts.append("your plan for the rest (check the screen still fits it): " + " | ".join(str(p) for p in plan))
         if know:
             parts.append("know-how (accurate; use the fastest route that fits):\n" + know)
         if lines:
@@ -830,6 +972,22 @@ class Guide:
             parts.append(fix)
         parts.append("what's the single next step?")
         return "\n\n".join(parts)
+
+    @staticmethod
+    def _from_plan(plan: list, ids: dict) -> "Step | None":
+        """The plan's next step, if it's a click on something named exactly so on
+        screen now (one element, or one that's clearly it): ready to show with no
+        model call."""
+        if not plan or plan[0].action != "click":
+            return None
+        want = plan[0].name.strip().lower()
+        exact = [i for i, e in ids.items() if (e.name or "").strip().lower() == want]
+        if not exact:
+            exact = [i for i, e in ids.items() if (e.name or "").strip().lower().startswith(want) and len(want) >= 4]
+        if len(exact) != 1:
+            return None
+        say = plan[0].say or f"now click {plan[0].name}"
+        return Step(say=say, action="click", target=exact[0], label=plan[0].name[:40])
 
     def _ms(self, since: float) -> int:
         return round((self.clock() - since) * 1000)
@@ -877,9 +1035,11 @@ class Guide:
         while True:
             if self._halted():
                 return "cancel"
-            if self._confirmed.is_set():   # "I did it" in the panel
+            if self._confirmed.is_set():   # "I did it" in the panel, or "next" said aloud
                 self._confirmed.clear()
                 return "done"
+            if self._heard_event.is_set():   # "I can't find it"
+                return "heard"
             event = self.watch.get(0.1)
             now = self.clock()
             if event is not None:
