@@ -1737,196 +1737,63 @@ class TestDrawingAnchor:
 
 
 class TestChimeNeverBlocksThePress:
-    """Opening the audio device takes 300-700 ms on Windows; the press must not wait for it."""
+    """The press plays sfx.py's "listen_start"; opening the audio device takes
+    300-700 ms on Windows, and the press must never wait for it. (How sfx
+    opens, mixes and reopens its stream is covered in test_sfx.py.)"""
+
+    @staticmethod
+    def _settle(sfx_module, timeout=2.0):
+        import time
+        deadline = time.time() + timeout
+        while sfx_module._opening and time.time() < deadline:
+            time.sleep(0.01)
 
     def test_the_chime_returns_at_once_even_when_the_device_is_slow(self, monkeypatch):
         import time
-        import sounddevice
         import app
+        import sfx
         opened = []
 
-        class SlowStream:
-            def __init__(self, *a, **k):
-                time.sleep(0.5)  # a cold audio device
-                opened.append(self)
-            def start(self):
-                pass
-            def write(self, data):
-                pass
+        def slow_device(callback, finished):
+            time.sleep(0.5)  # a cold audio device
+            opened.append(callback)
+            raise OSError("gone")
 
-        monkeypatch.setattr(sounddevice, "OutputStream", SlowStream)
-        monkeypatch.setattr(sounddevice, "play", lambda *a, **k: time.sleep(0.5))
-        monkeypatch.setattr(app, "_CHIME_STREAM", None, raising=False)
+        monkeypatch.setattr(sfx, "_open_device", slow_device)
+        monkeypatch.setattr(sfx, "_enabled", True)
+        monkeypatch.setattr(sfx, "_stream", None)
+        monkeypatch.setattr(sfx, "_retry_at", 0.0)
         t0 = time.perf_counter()
         thread = app._play_chime_async()
-        assert time.perf_counter() - t0 < 0.05
-        thread.join(2)  # the slow open finishes inside this test, not the next one
+        thread.join(2)
+        assert time.perf_counter() - t0 < 0.1
+        self._settle(sfx)  # the slow open finishes inside this test, not the next one
+        assert opened, "the press asked for the device"
 
-    def test_one_stream_serves_every_chime(self, monkeypatch):
-        import time
-        import sounddevice
+    def test_the_chime_is_the_listen_start_sound(self, mocker):
         import app
-        opened, written = [], []
+        import sfx
+        play = mocker.patch.object(sfx, "play")
+        app._play_chime_async().join(2)
+        play.assert_called_once_with("listen_start")
 
-        class Stream:
-            def __init__(self, *a, **k):
-                opened.append(self)
-            def start(self):
-                pass
-            def write(self, data):
-                written.append(len(data))
-
-        monkeypatch.setattr(sounddevice, "OutputStream", Stream)
-        monkeypatch.setattr(app, "_CHIME_STREAM", None, raising=False)
-        for _ in range(3):
-            app._play_chime_async()
-            deadline = time.time() + 1
-            while len(written) < _ + 1 and time.time() < deadline:
-                time.sleep(0.01)
-        assert len(opened) == 1 and len(written) == 3
-
-    @staticmethod
-    def _wait(cond, timeout=2.0):
-        import time
-        deadline = time.time() + timeout
-        while not cond() and time.time() < deadline:
-            time.sleep(0.01)
-        return cond()
-
-    def test_startup_warm_up_and_a_quick_press_open_one_stream(self, monkeypatch):
-        import time
-        import sounddevice
+    def test_a_broken_sound_engine_never_reaches_the_press(self, mocker):
         import app
-        opened, written = [], []
+        import sfx
+        mocker.patch.object(sfx, "play", side_effect=RuntimeError("boom"))
+        thread = app._play_chime_async()
+        thread.join(2)
+        assert not thread.is_alive()
 
-        class SlowStream:
-            def __init__(self, *a, **k):
-                time.sleep(0.2)  # both threads arrive while the device is still opening
-                opened.append(self)
-            def start(self):
-                pass
-            def write(self, data):
-                written.append(len(data))
-            def close(self):
-                pass
-
-        monkeypatch.setattr(sounddevice, "OutputStream", SlowStream)
-        monkeypatch.setattr(app, "_CHIME_STREAM", None, raising=False)
-        warm = app._warm_chime()
-        chime = app._play_chime_async()
-        warm.join(2)
-        chime.join(2)
-        assert len(opened) == 1 and len(written) == 1
-
-    def test_rapid_presses_never_write_to_the_device_at_once(self, monkeypatch):
+    def test_startup_warms_the_sounds_off_the_main_thread(self, mocker):
         import threading
-        import time
-        import sounddevice
         import app
-        state = {"active": 0, "peak": 0, "done": 0}
-        lock = threading.Lock()
-
-        class Stream:
-            def __init__(self, *a, **k):
-                pass
-            def start(self):
-                pass
-            def write(self, data):
-                with lock:
-                    state["active"] += 1
-                    state["peak"] = max(state["peak"], state["active"])
-                time.sleep(0.1)  # a blocking write while the buffer drains
-                with lock:
-                    state["active"] -= 1
-                    state["done"] += 1
-            def close(self):
-                pass
-
-        monkeypatch.setattr(sounddevice, "OutputStream", Stream)
-        monkeypatch.setattr(app, "_CHIME_STREAM", None, raising=False)
-        for _ in range(3):
-            app._play_chime_async()
-        assert self._wait(lambda: state["done"] == 3)
-        assert state["peak"] == 1
-
-    def test_the_chime_reopens_the_device_after_a_failed_write(self, monkeypatch):
-        import sounddevice
-        import app
-        opened, written, closed = [], [], []
-
-        class Stream:
-            def __init__(self, *a, **k):
-                self.broken = not opened  # the first device goes away (headphones unplugged)
-                opened.append(self)
-            def start(self):
-                pass
-            def write(self, data):
-                if self.broken:
-                    raise sounddevice.PortAudioError("Unanticipated host error")
-                written.append(len(data))
-            def close(self):
-                closed.append(self)
-
-        monkeypatch.setattr(sounddevice, "OutputStream", Stream)
-        monkeypatch.setattr(app, "_CHIME_STREAM", None, raising=False)
-        app._play_chime_async()
-        assert self._wait(lambda: bool(opened) and closed == [opened[0]])
-        app._play_chime_async()
-        assert self._wait(lambda: len(written) == 1)
-        assert len(opened) == 2
-
-    def test_a_device_that_fails_to_start_is_closed_and_retried(self, monkeypatch):
-        import sounddevice
-        import app
-        opened, written, closed = [], [], []
-
-        class Stream:
-            def __init__(self, *a, **k):
-                self.fails = not opened  # the first device opens but will not start
-                opened.append(self)
-            def start(self):
-                if self.fails:
-                    raise sounddevice.PortAudioError("Device unavailable")
-            def write(self, data):
-                written.append(len(data))
-            def close(self):
-                closed.append(self)
-
-        monkeypatch.setattr(sounddevice, "OutputStream", Stream)
-        monkeypatch.setattr(app, "_CHIME_STREAM", None, raising=False)
-        app._play_chime_async()
-        assert self._wait(lambda: bool(opened) and closed == [opened[0]])
-        app._play_chime_async()
-        assert self._wait(lambda: len(written) == 1)
-        assert len(opened) == 2
-
-    def test_a_hung_device_never_piles_up_chime_threads(self, monkeypatch):
-        import threading
-        import time
-        import sounddevice
-        import app
-        release = threading.Event()
-
-        class HungStream:
-            def __init__(self, *a, **k):
-                pass
-            def start(self):
-                pass
-            def write(self, data):
-                release.wait(5)  # the device stops draining and never raises
-            def close(self):
-                pass
-
-        monkeypatch.setattr(sounddevice, "OutputStream", HungStream)
-        monkeypatch.setattr(app, "_CHIME_STREAM", None, raising=False)
-        threads = [app._play_chime_async() for _ in range(20)]
-        time.sleep(app._CHIME_WAIT_S + 0.5)
-        try:
-            assert sum(t.is_alive() for t in threads) == 1  # only the one stuck writing
-        finally:
-            release.set()
-            for t in threads:
-                t.join(2)
+        import sfx
+        warm = mocker.patch.object(sfx, "warm")
+        thread = app._warm_chime()
+        assert isinstance(thread, threading.Thread) and thread is not threading.current_thread()
+        thread.join(2)
+        warm.assert_called_once_with(wait=True)
 
 
 class TestAnswerMeta:

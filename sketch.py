@@ -39,6 +39,7 @@ import render3d
 import scene3d
 import theme
 from config import APP_HOME
+from ui_kit import sound
 
 NOTES_DIR = APP_HOME / "notes"
 
@@ -92,7 +93,11 @@ shapes (each also takes "color", "subtract": true to carve it out of the shapes 
 part options: "blend" 0.1-0.4 melts its shapes into one smooth form (living things are never one sphere: blend several ellipsoids); "bumps": {"size": 0.3, "depth": 0.02} for a lumpy surface ("style": "ridged" for folds like a brain); "shell": 0.05 makes it hollow; "mirror": "x" makes it symmetric (model one side); "repeat": {"count": 12, "axis": "z"} copies it round an axis (petals, spikes, teeth, blades); "at", "turn", "scale" move the whole part; "labels": [{"text": "apex", "at": [x, y, z]}] names spots on it; "opacity".
 materials: flesh, muscle, skin, bone, tooth, leaf, plastic, glossy, matte, rubber, ceramic, metal, steel, chrome, gold, copper, brass, glass, water, jelly, wood, rock, soil, glow (the sun, flames, leds), lava.
 colors: any #rrggbb, or red, crimson, muscle, artery, flesh, pink, blue, vein, navy, sky, cyan, teal, green, leaf, lime, yellow, gold, orange, fat, brown, tan, wood, sand, skin, purple, violet, white, ivory, bone, grey, silver, steel, black, copper, brass, rock, lava, ice, water.
-moving parts move: "move": {"spin": "z", "about": [x, y, z], "speed": 90} (degrees a second; orbits too), {"slide": [0, 0, 1], "amount": 0.3, "speed": 1} (a piston), {"swing": "x", "amount": 20, "speed": 0.5} (a pendulum, a valve), {"beat": 0.05, "speed": 1.2} (a heartbeat, breathing); "phase": 0-1 offsets one cycle from another.
+moving parts move: "move": {"spin": "z", "about": [x, y, z], "speed": 90} (degrees a second; orbits too), {"slide": [0, 0, 1], "amount": 0.3, "speed": 1} (something sliding on its own), {"swing": "x", "amount": 20, "speed": 0.5} (a pendulum), {"beat": 0.05, "speed": 1.2} (a heartbeat, breathing); "phase": 0-1 offsets one cycle from another.
+joined parts move as one mechanism, never on their own (a rod that drifts off its crank is wrong): give each moving part an "id". a connecting rod: {"link": "crank", "pin": [crankpin centre], "to": [wrist pin centre], "slide": "z"} (its pin end rides round on the crank, its "to" end slides along the cylinder's line, its length never changes); a piston or anything driven by that rod: {"ride": "rod"}; a part fixed to another (counterweight, flywheel): {"follow": "crank"}; a part carried by another while it moves (a planet gear on its carrier, a moon round its planet): add "on": "carrier" to its own spin. draw the rest pose so the joints meet: the rod from the crankpin to the wrist pin (place the rod part with "at": crankpin and "turn": [angle, 0, 0]), the piston's wrist pin at the rod's "to". a slider-crank:
+{"type": "part", "id": "crank", "label": "crankshaft", "material": "steel", "shapes": [{"shape": "cylinder", "from": [-0.3, 0, 0], "to": [0.3, 0, 0], "r": 0.1}, {"shape": "cylinder", "from": [-0.12, 0, 0], "to": [-0.06, 0, 0], "r": 0.5}, {"shape": "cylinder", "from": [0.06, 0, 0], "to": [0.12, 0, 0], "r": 0.5}, {"shape": "cylinder", "from": [-0.08, 0, 0.35], "to": [0.08, 0, 0.35], "r": 0.08}], "move": {"spin": "x", "about": [0, 0, 0], "speed": 120}}
+{"type": "part", "id": "rod", "label": "connecting rod", "material": "brushed", "at": [0, 0, 0.35], "shapes": [{"shape": "cylinder", "from": [0, 0, 0], "to": [0, 0, 1.3], "r": 0.06}, {"shape": "cylinder", "from": [-0.05, 0, 0], "to": [0.05, 0, 0], "r": 0.13}, {"shape": "cylinder", "from": [-0.05, 0, 1.3], "to": [0.05, 0, 1.3], "r": 0.1}], "blend": 0.06, "move": {"link": "crank", "pin": [0, 0, 0.35], "to": [0, 0, 1.65], "slide": "z"}}
+{"type": "part", "id": "piston", "label": "piston", "material": "metal", "shapes": [{"shape": "cylinder", "from": [0, 0, 1.5], "to": [0, 0, 2.0], "r": 0.42, "round": 0.03}], "move": {"ride": "rod"}}
 {"type": "cut", "normal": [x, y, z], "at": [x, y, z]} cuts it open: everything on the normal's side goes, so the insides show (hollow parts: "shell", or carve with "subtract").
 {"type": "molecule", "atoms": [["O", 0, 0, 0], ["H", 0.76, 0, 0.59], ["H", -0.76, 0, 0.59]], "bonds": [[0, 1], [0, 2]], "label": "water"}  real geometry in ångström, element colours; [0, 1, 2] is a double bond
 a good model: 6 to 30 parts, each distinct part its own part, 5-8 labels on what the explanation talks about, real shapes, colours and materials. for example, a light bulb:
@@ -852,10 +857,12 @@ class NoteCard(QWidget):
         self._timer.timeout.connect(self._tick)
 
     # --- Showing a note ----------------------------------------------------------------
-    def show_note(self, note: dict, screen=None) -> None:
+    def show_note(self, note: dict, screen=None, *, again: bool = False) -> None:
+        """Show ``note``, drawing itself in. ``again``: a note opened from the
+        notes (it's kept already, so it isn't saved a second time)."""
         self.note = note
         self._t0 = time.monotonic()
-        self._saved = False
+        self._saved = again
         width, height = (self.W3D, self.H3D) if self._three_d() else (self.W, self.H)
         if (width, height) != (self._w, self._h):   # keep the card's bottom right corner where it was
             corner = self.geometry().bottomRight()
@@ -870,6 +877,7 @@ class NoteCard(QWidget):
             self.move(area.right() - self.width() - 12, area.bottom() - self.height() - 12)
         self.show()
         self.raise_()
+        sound("note")                     # a fresh sheet lands
         self._clock, self._last, self._resting = 0.0, time.monotonic(), False
         self._turn_until = self._t0 + self.TURN_FOR_S
         self._timer.start(16 if self._model is None else 33)
@@ -974,10 +982,12 @@ class NoteCard(QWidget):
     def mousePressEvent(self, event) -> None:  # noqa: N802
         p = event.position()
         if self._clear_rect.contains(p):
+            sound("clear")
             self.clear()
             return
         for rect, text in self._chips:
             if rect.contains(p):
+                sound("send")
                 self.followup.emit(text)
                 return
         if p.y() < self.card.top() + 30:

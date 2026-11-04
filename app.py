@@ -1001,6 +1001,11 @@ class ClickyApp(QObject):
     def _handle_release(self) -> None:
         """Hotkey released: cancel previous worker, spawn new pipeline."""
         self._holding = False
+        try:
+            from ui_kit import sound
+            sound("listen_end")       # the mic closes with a soft falling note
+        except Exception:
+            pass
         import time
         # GPT-Realtime mode: capture the screen and hand it to the
         # realtime session, which commits the spoken audio + requests a
@@ -1607,12 +1612,17 @@ class ClickyApp(QObject):
         if note is not None and not cancel.is_set():
             self.sig_show_sketch.emit(note)
 
-    def _on_show_sketch(self, note: dict) -> None:
+    def _on_show_sketch(self, note: dict, again: bool = False) -> None:
         if self._note_card is None:
             self._note_card = sketch.NoteCard()
             self._note_card.followup.connect(self.ask_text)
             self._note_card.cleared.connect(lambda: self.sig_clear_annotations.emit())
-        self._note_card.show_note(note)
+        self._note_card.show_note(note, again=again)
+
+    def show_saved_note(self, note: dict) -> None:
+        """A note opened from the panel: the note card again, drawing itself in,
+        its 3D model live (Qt main thread)."""
+        self._on_show_sketch(note, again=True)
 
     def ask_text(self, question: str) -> None:
         """Ask ``question`` as if it had been spoken (a sketch note's follow-up
@@ -1826,72 +1836,21 @@ def _acquire_single_instance_mutex(kernel32=None):
     return handle
 
 
-# --- Listening chime (lazy-built + async playback) --------------------------
-
-_CHIME_SAMPLE_RATE = 44100
-_CHIME_SAMPLES = None  # float32 numpy array, built on first play
-_CHIME_STREAM = None  # output stream opened once; opening the device takes 300-700 ms
-_CHIME_LOCK = threading.Lock()  # one thread opens or writes the stream at a time
-_CHIME_WAIT_S = 1.0  # a chime that cannot reach the device by then is skipped
-
-
-def _chime_stream():
-    """The chime's output stream, opened on first use and kept open: opening
-    an audio device takes 300-700 ms on Windows, every time. Hold _CHIME_LOCK."""
-    global _CHIME_STREAM
-    if _CHIME_STREAM is None:
-        import sounddevice as _sd
-        stream = _sd.OutputStream(samplerate=_CHIME_SAMPLE_RATE, channels=1, dtype="float32")
-        try:
-            stream.start()
-        except Exception:
-            stream.close()
-            raise
-        _CHIME_STREAM = stream
-    return _CHIME_STREAM
-
-
-def _drop_chime_stream() -> None:
-    """Close a stream whose device failed (headphones unplugged, for example)
-    so the next chime opens it again. Hold _CHIME_LOCK."""
-    global _CHIME_STREAM
-    stream, _CHIME_STREAM = _CHIME_STREAM, None
-    if stream is not None:
-        try:
-            stream.close()
-        except Exception:
-            pass
-
+# --- Listening chime (sfx.py's "listen_start") ------------------------------
 
 def _play_chime_async() -> threading.Thread:
-    """Play a short 'mic is hot' chime on hotkey PRESS without blocking it.
+    """Play the 'mic is hot' sound on hotkey PRESS without blocking it.
 
-    60ms, 880Hz (A5), exponential decay, generated in memory on first use.
-    Written to a stream that stays open, from a background thread, so the
-    press handler never waits on the audio device. Errors are swallowed: the
+    It is sfx.py's "listen_start", a bright rising two-note bloop, mixed by
+    sfx's one open output stream (opening a device takes 300-700 ms, so it
+    stays open). sfx.play only queues the sound, and it runs on a thread so
+    the press handler can never wait on audio. Errors are swallowed: the
     chime is UX-only.
     """
     def _play() -> None:
-        global _CHIME_SAMPLES
         try:
-            if _CHIME_SAMPLES is None:
-                import numpy as _np
-                duration_s = 0.060
-                freq_hz = 880.0
-                t = _np.linspace(0.0, duration_s,
-                                 int(_CHIME_SAMPLE_RATE * duration_s), endpoint=False)
-                envelope = _np.exp(-t * 40.0)
-                _CHIME_SAMPLES = (
-                    _np.sin(2.0 * _np.pi * freq_hz * t) * envelope * 0.3
-                ).astype(_np.float32)
-            if not _CHIME_LOCK.acquire(timeout=_CHIME_WAIT_S):
-                return  # the device is busy or stuck: skip this chime
-            try:
-                _chime_stream().write(_CHIME_SAMPLES)
-            except Exception:
-                _drop_chime_stream()
-            finally:
-                _CHIME_LOCK.release()
+            import sfx
+            sfx.play("listen_start")
         except Exception:
             pass
     thread = threading.Thread(target=_play, daemon=True, name="chime")
@@ -1900,11 +1859,12 @@ def _play_chime_async() -> threading.Thread:
 
 
 def _warm_chime() -> threading.Thread:
-    """Open the chime stream at startup, off the main thread."""
+    """Render the interface sounds and open their output stream at startup,
+    off the main thread, so the first sound is instant."""
     def _open() -> None:
         try:
-            with _CHIME_LOCK:
-                _chime_stream()
+            import sfx
+            sfx.warm(wait=True)
         except Exception:
             pass
     thread = threading.Thread(target=_open, daemon=True, name="chime-warm")
@@ -2293,6 +2253,13 @@ if __name__ == "__main__":
         sys.exit(1)
     clicky.sig_notify.connect(tray.notify)
 
+    # The interface sounds: the audio device opens and the sounds load off the main thread.
+    try:
+        import sfx
+        sfx.warm()
+    except Exception:
+        pass
+
     # The ready-made 3D models are built once, quietly in the background, so they show at once.
     _prewarm = threading.Timer(25.0, model3d.prewarm)
     _prewarm.daemon = True
@@ -2304,6 +2271,7 @@ if __name__ == "__main__":
         _island.on_ask = clicky.ask_text
         _island.on_settings = _show_settings          # if the panel's own Settings can't open
         _island.on_settings_saved = _settings_saved
+        _island.on_open_note = clicky.show_saved_note    # Open note: the real note card, not a picture
 
     # Dev mode (tools/dev/Start-Clixy-Dev.bat): restart by itself when the code changes.
     import devmode

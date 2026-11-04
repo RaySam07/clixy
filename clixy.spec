@@ -115,6 +115,8 @@ a = Analysis(
         # Look and feel: imported lazily by overlay.py / app.py.
         "theme",
         "island",
+        "ui_kit",
+        "sfx",
         "widgets",
         "onboarding",
         "drawing",

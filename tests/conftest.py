@@ -29,6 +29,29 @@ def _no_real_audio(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_real_sound_effects(tmp_path, monkeypatch):
+    """Interface sounds (sfx.py) never reach the real speakers in tests, and
+    their render cache goes to a temp dir. Tests that press the hotkey play
+    "listen_start"; with no device to open, sfx quietly does nothing. Sound
+    tests pass their own fake stream instead."""
+    import sfx
+
+    def _no_device(callback, finished):
+        raise OSError("no real audio in tests")
+
+    monkeypatch.setattr(sfx, "_open_device", _no_device)
+    monkeypatch.setattr(sfx, "_CACHE_DIR", tmp_path / "sfx-cache")
+
+
+@pytest.fixture(autouse=True)
+def _no_ui_sounds(monkeypatch):
+    """The panel's and notch's little sounds (ui_kit.sound) never play in tests."""
+    import ui_kit
+
+    monkeypatch.setattr(ui_kit, "SILENT", True)
+
+
+@pytest.fixture(autouse=True)
 def _dashboard_offline(tmp_path, monkeypatch):
     """The notch dashboard never reaches the network or the real timetable in tests."""
     import dashboard

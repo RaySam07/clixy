@@ -1,12 +1,19 @@
-"""The Clixy panel: one near-black panel that grows out of the notch.
+"""The Clixy panel: it grows out of the notch.
 
 Click the notch (island.py) and the panel drops down from the top of the
-screen, the same black, its shoulders flaring into the screen edge like the
-notch's own:
+screen, its shoulders flaring into the screen edge like the notch's own. It
+leaves the notch black and blooms into the skin's colours as it grows
+(ui_kit: bright Daylight by default, or deep Midnight), with a breath of the
+buddy's colour at the top. Everything in it is tactile: buttons sink and
+spring back, the front note tilts toward the mouse, the cards behind lift,
+and each move has its little sound (sfx.py, through ui_kit.sound):
 
 - Home: a hello with your real shortcut as keycaps; your newest sketch note on
   warm paper (the two before it tucked behind, tilted), with Open note and Ask
   a follow-up; All notes, What Clixy remembers, and a box to type a question.
+  A 3D note shows its real model, live on the GPU (render3d), rocking gently:
+  drag it to turn it. Open note brings the note back as the pad it first
+  appeared on (sketch.NoteCard), drawing itself again, not a flat picture.
 - Working: while a guide runs (guide.py), what you asked, the steps done, the
   step now in your buddy's colour, I did it and Stop.
 - Settings: the gear turns the panel into Settings (panel_settings.py), all
@@ -25,6 +32,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import math
 import os
 import re
 import sys
@@ -46,6 +54,7 @@ from PyQt6.QtGui import (
     QPalette,
     QPen,
     QPixmap,
+    QRadialGradient,
     QTransform,
 )
 from PyQt6.QtWidgets import (
@@ -58,19 +67,15 @@ from PyQt6.QtWidgets import (
 )
 
 import theme
+import ui_kit
 from island import paint_light, tab_path
+from ui_kit import Motion, Tactile, skin, sound
 
-# --- Colours and sizes (from the approved mockups) -----------------------------------------------
+# --- Colours and sizes -------------------------------------------------------------------------------
+# The panel's own colours come from the skin (ui_kit.skin()); these are the note paper's.
 
-BG = QColor("#0B0B0D")
-TEXT = QColor("#F5F5F4")
-MUTED = QColor("#A3A3A8")
-CHIP = QColor("#17171B")
-ON_FROST = QColor("#E7E7EA")
-KEY_TEXT = QColor("#EDEDF0")
-FIELD = QColor("#141417")
-PAPER = QColor("#F4EFE6")
-PAPER_BAND = QColor("#EAE3D6")
+PAPER = QColor("#FBF8F2")
+PAPER_BAND = QColor("#F2EDE4")
 PAPER_DOT = QColor("#DCD3C3")
 INK = QColor("#1D1B18")
 BAND_TEXT = QColor("#6B655B")
@@ -79,7 +84,7 @@ PAPER_MUTED = QColor("#8A8274")
 PAPER_RING = QColor("#CFC6B5")
 
 NOTCH = (150.0, 24.0)          # where it grows from (island.SideIsland.NOTCH)
-HOME = (880.0, 610.0)
+HOME = (880.0, 650.0)
 WORK_W = 720.0
 SHOULDER = 22.0
 PAD_X, PAD_B = 84, 96          # room around the panel for its shadow
@@ -134,10 +139,8 @@ def gloss(color: QColor) -> tuple[QColor, QColor, QColor]:
 
 
 def on_accent(color: QColor) -> QColor:
-    """Text on the accent: near-black tinted with it, or white on a deep one."""
-    if theme.current_palette().on_flood.lightness() > 128:
-        return QColor(255, 255, 255)
-    return _mix(color, QColor(0, 0, 0), 0.88)
+    """Text on the accent's gel: white on a deep colour, near-black on a pale one."""
+    return ui_kit.ink_on(color)
 
 
 # --- Small painting helpers -----------------------------------------------------------------------
@@ -155,48 +158,15 @@ def _inset_top(painter: QPainter, shape: QPainterPath, color: QColor, dy: float 
 
 
 def paint_glossy(painter: QPainter, rect: QRectF, color: QColor, *, radius: float | None = None,
-                 hover: bool = False, down: bool = False) -> None:
-    """The glossy accent surface: gradient, a light 1 px rim and a bright top edge."""
-    shape = _pill(rect, radius)
-    top, mid, bottom = gloss(color)
-    if hover and not down:
-        top, mid, bottom = (_mix(c, QColor(255, 255, 255), 0.08) for c in (top, mid, bottom))
-    if down:
-        top, mid, bottom = (_mix(c, QColor(0, 0, 0), 0.08) for c in (top, mid, bottom))
-    grad = QLinearGradient(rect.topLeft(), rect.bottomLeft())
-    grad.setColorAt(0.0, top)
-    grad.setColorAt(0.6, mid)
-    grad.setColorAt(1.0, bottom)
-    painter.fillPath(shape, QBrush(grad))
-    painter.save()
-    painter.setPen(QPen(QColor(255, 255, 255, 115), 1.0))
-    painter.setBrush(Qt.BrushStyle.NoBrush)
-    painter.drawPath(_pill(rect.adjusted(0.5, 0.5, -0.5, -0.5), None if radius is None else radius - 0.5))
-    painter.restore()
-    if not down:
-        _inset_top(painter, shape, QColor(255, 255, 255, 178))
+                 hover: float = 0.0, down: float = 0.0) -> None:
+    """The accent's candy gel (ui_kit.paint_gel)."""
+    ui_kit.paint_gel(painter, rect, color, radius=radius, hover=float(hover), press=float(down))
 
 
-def paint_frost(painter: QPainter, rect: QRectF, *, radius: float | None = None, hover: bool = False,
-                down: bool = False, top: str = "#24242A", bottom: str = "#18181C") -> None:
-    """A frosted dark pill: a soft vertical gradient, a faint top highlight and ring."""
-    shape = _pill(rect, radius)
-    grad = QLinearGradient(rect.topLeft(), rect.bottomLeft())
-    a, b = QColor(top), QColor(bottom)
-    if hover:
-        a, b = a.lighter(118), b.lighter(118)
-    if down:
-        a, b = b, b
-    grad.setColorAt(0.0, a)
-    grad.setColorAt(1.0, b)
-    painter.fillPath(shape, QBrush(grad))
-    painter.save()
-    painter.setPen(QPen(QColor(255, 255, 255, 15), 1.0))
-    painter.setBrush(Qt.BrushStyle.NoBrush)
-    painter.drawPath(_pill(rect.adjusted(-0.5, -0.5, 0.5, 0.5), None if radius is None else radius + 0.5))
-    painter.restore()
-    if not down:
-        _inset_top(painter, shape, QColor(255, 255, 255, 26))
+def paint_frost(painter: QPainter, rect: QRectF, *, radius: float | None = None, hover: float = 0.0,
+                down: float = 0.0) -> None:
+    """A soft raised pill in the skin's colours (the quieter buttons)."""
+    ui_kit.paint_raised(painter, rect, skin(), radius=radius, hover=float(hover), press=float(down))
 
 
 def keycap_size(label: str, px: float = 12.0, pad=(8.0, 3.0, 4.0)) -> QSize:
@@ -207,11 +177,27 @@ def keycap_size(label: str, px: float = 12.0, pad=(8.0, 3.0, 4.0)) -> QSize:
 
 
 def paint_keycap(painter: QPainter, rect: QRectF, label: str, *, px: float = 12.0, light: bool = False,
-                 radius: float = 7.0, edge: float = 2.0) -> None:
-    """A tactile keycap: a dark gradient (or paper-light) with a 2 px bottom edge."""
+                 radius: float = 7.0, edge: float = 2.0, press: float = 0.0) -> None:
+    """A tactile keycap in the skin's colours (or paper-light on a note), with a
+    bottom edge it sinks into as it's ``press``ed (0-1)."""
     painter.save()
+    sink = edge * 0.8 * press
+    rect = rect.translated(0, sink)
+    edge -= sink
     shape = _pill(rect, radius)
-    if light:
+    sk = skin()
+    if not light:
+        painter.fillPath(shape.translated(0, edge), sk.key_edge)
+        grad = QLinearGradient(rect.topLeft(), rect.bottomLeft())
+        grad.setColorAt(0.0, sk.key_top)
+        grad.setColorAt(1.0, sk.key_bottom)
+        painter.fillPath(shape, QBrush(grad))
+        painter.setPen(QPen(sk.border, 1.0))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawPath(_pill(rect.adjusted(0.5, 0.5, -0.5, -0.5), radius - 0.5))
+        _inset_top(painter, shape, QColor(255, 255, 255, 40 if sk.dark else 230))
+        painter.setPen(sk.key_text)
+    elif light:
         painter.fillPath(shape.translated(0, edge), QColor("#CFC6B5"))
         grad = QLinearGradient(rect.topLeft(), rect.bottomLeft())
         grad.setColorAt(0.0, QColor("#FFFFFF"))
@@ -221,14 +207,6 @@ def paint_keycap(painter: QPainter, rect: QRectF, label: str, *, px: float = 12.
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawPath(_pill(rect.adjusted(0.5, 0.5, -0.5, -0.5), radius - 0.5))
         painter.setPen(INK)
-    else:
-        painter.fillPath(shape.translated(0, edge), QColor("#050506"))
-        grad = QLinearGradient(rect.topLeft(), rect.bottomLeft())
-        grad.setColorAt(0.0, QColor("#2C2C33"))
-        grad.setColorAt(1.0, QColor("#1F1F25"))
-        painter.fillPath(shape, QBrush(grad))
-        _inset_top(painter, shape, QColor(255, 255, 255, 31))
-        painter.setPen(KEY_TEXT)
     painter.setFont(mono(px))
     painter.drawText(rect.adjusted(0, -0.5, 0, -0.5), Qt.AlignmentFlag.AlignCenter, label)
     painter.restore()
@@ -365,10 +343,11 @@ def paint_icon(painter: QPainter, kind: str, rect: QRectF, color: QColor, width:
 
 # --- Buttons ---------------------------------------------------------------------------------------
 
-class PanelButton(QPushButton):
-    """A button drawn like the mockups: ``glossy`` (the accent), ``frost``
-    (dark frosted pill), ``paper`` (on the note card), ``text`` (quiet), or a
-    round icon button (``icon`` with ``round_=True``)."""
+class PanelButton(Tactile, QPushButton):
+    """A tactile button: ``glossy`` (the accent's candy gel), ``frost`` (a soft
+    raised pill in the skin's colours), ``paper`` (on a note card), ``text``
+    (quiet), or a round icon button (``icon`` with ``round_``). It grows a hair
+    under the mouse, sinks when pressed and springs back, with a sound each."""
 
     def __init__(self, text: str, kind: str = "frost", parent: QWidget | None = None, *, px: float = 14,
                  weight: int = 700, pad: tuple[float, float] = (10, 16), icon: str = "", round_: float = 0,
@@ -385,7 +364,7 @@ class PanelButton(QPushButton):
         self.setFont(self._font)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
+        self._tactile_init()
         if text:
             self.setAccessibleName(text)
         self._shadow: QGraphicsDropShadowEffect | None = None
@@ -399,15 +378,25 @@ class PanelButton(QPushButton):
 
     def recolor(self) -> None:
         if self._shadow is not None:
-            self._shadow.setColor(_rgba(accent(), 0.35))
+            self._shadow.setColor(_rgba(accent(), 0.45))
         self.update()
+
+    def _motion_step(self, dt: float) -> bool:
+        moving = super()._motion_step(dt)
+        if self._shadow is not None:       # the glow follows the press: it sinks onto the page
+            k = self.val("press")
+            base = 6 if not self._round or self._round > 34 else 4
+            self._shadow.setOffset(0, base * (1 - 0.6 * k) + 2 * self.val("hover") * (1 - k))
+            self._shadow.setBlurRadius(22 - 8 * k + 6 * self.val("hover"))
+        return moving
 
     def sizeHint(self) -> QSize:  # noqa: N802
         if self._round:
             return QSize(round(self._round), round(self._round))
         fm = QFontMetricsF(self._font)
-        border = 2 if self._border or self.kind in ("glossy", "paper") else 0
-        return QSize(round(fm.horizontalAdvance(self.text()) + 2 * self._pad[1] + border),
+        border = 2 if self._border or self.kind in ("glossy", "paper", "frost") else 0
+        icon = self._icon_px + 8 if self._icon and self.text() else 0
+        return QSize(round(fm.horizontalAdvance(self.text()) + icon + 2 * self._pad[1] + border),
                      round(fm.height() + 2 * self._pad[0] + border))
 
     def paintEvent(self, _event) -> None:  # noqa: N802
@@ -415,98 +404,148 @@ class PanelButton(QPushButton):
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         p.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
         rect = QRectF(self.rect())
-        hover, down = self.underMouse() and self.isEnabled(), self.isDown()
+        if self.kind == "frost" and not self._round:
+            rect = rect.adjusted(1, 1, -1, -2)       # room for its shadow
+        hover = self.val("hover") if self.isEnabled() else 0.0
+        down = self.val("press")
+        self.squish(p, rect, 0.06 if self._round else 0.045)
         acc = accent()
+        sk = skin()
+        if not self.isEnabled():
+            p.setOpacity(0.5)
         if self.kind == "glossy":
             paint_glossy(p, rect, acc, hover=hover, down=down)
             fg = on_accent(acc)
         elif self.kind == "paper":
             shape = _pill(rect)
             grad = QLinearGradient(rect.topLeft(), rect.bottomLeft())
-            grad.setColorAt(0.0, QColor("#FFFFFF") if not down else QColor("#F3EEE5"))
-            grad.setColorAt(1.0, QColor("#F3EEE5") if not hover else QColor("#EFE8DC"))
+            grad.setColorAt(0.0, _mix(QColor("#FFFFFF"), QColor("#F3EEE5"), down))
+            grad.setColorAt(1.0, _mix(QColor("#F3EEE5"), QColor("#EAE2D4"), hover))
             p.fillPath(shape, QBrush(grad))
-            p.setPen(QPen(QColor("#DCD3C3"), 1.0))
+            p.setPen(QPen(_mix(QColor("#DCD3C3"), acc, 0.5 * hover), 1.0))
             p.drawPath(_pill(rect.adjusted(0.5, 0.5, -0.5, -0.5)))
             fg = INK
         elif self.kind == "text":
-            fg = TEXT if hover else MUTED
+            fg = _mix(sk.text2, sk.text, hover)
         else:
-            paint_frost(p, rect.adjusted(1, 1, -1, -1) if not self._round else rect.adjusted(0.5, 0.5, -0.5, -0.5),
-                        hover=hover, down=down)
-            fg = ON_FROST if not hover else TEXT
-        if self._icon:
+            paint_frost(p, rect if not self._round else rect.adjusted(1, 1, -1, -2), hover=hover, down=down)
+            fg = _mix(sk.text2 if self._icon and not self.text() else sk.text, sk.text, hover)
+        if self._icon and self.text():          # an icon, then the words, centred together
+            size = self._icon_px
+            fm = QFontMetricsF(self._font)
+            total = size + 8 + fm.horizontalAdvance(self.text())
+            x = rect.center().x() - total / 2
+            ui_kit.paint_icon(p, self._icon, QRectF(x, rect.center().y() - size / 2, size, size),
+                              _mix(fg, accent(), 0.85), self._icon_stroke)
+            rect = QRectF(x + size + 8, rect.top(), total - size - 8 + 2, rect.height())
+        elif self._icon:
             size = self._icon_px
             box = QRectF(rect.center().x() - size / 2, rect.center().y() - size / 2, size, size)
-            paint_icon(p, self._icon, box, fg, self._icon_stroke)
+            ui_kit.paint_icon(p, self._icon, box, fg, self._icon_stroke)
         if self.text():
             p.setFont(self._font)
+            if self.kind == "glossy" and fg.lightness() > 128:   # a soft engraved shadow under white text
+                p.setPen(QColor(0, 0, 0, 50))
+                p.drawText(rect.translated(0, 1), Qt.AlignmentFlag.AlignCenter, self.text())
             p.setPen(fg)
-            p.drawText(rect.translated(0, 1 if down else 0), Qt.AlignmentFlag.AlignCenter, self.text())
+            p.drawText(rect, Qt.AlignmentFlag.AlignCenter, self.text())
         p.end()
 
 
-class AskField(QWidget):
-    """The inset box to type a question, with a glossy send button."""
+class _Edit(QLineEdit):
+    """The ask box's line: it tells its field when it gains or loses the cursor."""
+
+    focus_changed = pyqtSignal(bool)
+
+    def focusInEvent(self, event) -> None:  # noqa: N802
+        super().focusInEvent(event)
+        self.focus_changed.emit(True)
+
+    def focusOutEvent(self, event) -> None:  # noqa: N802
+        super().focusOutEvent(event)
+        self.focus_changed.emit(False)
+
+
+class AskField(Motion, QWidget):
+    """The box to type a question: a white (or ink) well that lights a ring in
+    the buddy's colour when you type, soft key ticks, and a gel send button
+    that pops forward once there's something to send."""
 
     submitted = pyqtSignal(str)
     PLACEHOLDER = "Type a question"
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.edit = QLineEdit(self)
+        self.edit = _Edit(self)
         self.edit.setFrame(False)
-        self.edit.setFont(font(14, 500))
+        self.edit.setFont(font(14, 600))
         self.edit.setPlaceholderText(self.PLACEHOLDER)
         self.edit.setAttribute(Qt.WidgetAttribute.WA_MacShowFocusRect, False)
+        self.restyle()
+        self.edit.returnPressed.connect(self._submit)
+        self.edit.textEdited.connect(self._typed)
+        self.edit.focus_changed.connect(lambda on: self.go("focus", 1.0 if on else 0.0))
+        self.send = PanelButton("", "glossy", self, icon="up", round_=34, icon_px=16, icon_stroke=2.6)
+        self.send.setAccessibleName("Ask")
+        self.send.clicked.connect(self._submit)
+        self.spring("focus", 0.0, 420.0, 30.0)
+        self.resize(330, 46)
+
+    def restyle(self) -> None:
+        """Colours from the skin (and again whenever the skin changes)."""
+        sk = skin()
         pal = self.edit.palette()
         pal.setColor(QPalette.ColorRole.Base, QColor(0, 0, 0, 0))
-        pal.setColor(QPalette.ColorRole.Text, TEXT)
-        pal.setColor(QPalette.ColorRole.PlaceholderText, QColor("#7C7C84"))
-        pal.setColor(QPalette.ColorRole.Highlight, _rgba(accent(), 0.45))
-        pal.setColor(QPalette.ColorRole.HighlightedText, TEXT)
+        pal.setColor(QPalette.ColorRole.Text, sk.text)
+        pal.setColor(QPalette.ColorRole.PlaceholderText, sk.text3)
+        pal.setColor(QPalette.ColorRole.Highlight, _rgba(accent(), 0.35))
+        pal.setColor(QPalette.ColorRole.HighlightedText, sk.text)
         self.edit.setPalette(pal)
         # Spelled out in full: the app's stylesheet paints every QLineEdit dark on white.
         self.edit.setStyleSheet(
             f"QLineEdit {{ background: transparent; border: 0; padding: 0; margin: 0; min-height: 0;"
-            f" color: {TEXT.name()}; selection-color: #FFFFFF;"
-            f" selection-background-color: {_rgba(accent(), 0.45).name(QColor.NameFormat.HexArgb)}; }}")
-        self.edit.returnPressed.connect(self._submit)
-        self.send = PanelButton("", "glossy", self, icon="arrow", round_=32, icon_px=15, icon_stroke=2.4)
-        self.send.setAccessibleName("Ask")
-        self.send.clicked.connect(self._submit)
-        self.resize(330, 44)
+            f" color: {sk.text.name()}; selection-color: {sk.text.name()};"
+            f" selection-background-color: {_rgba(accent(), 0.35).name(QColor.NameFormat.HexArgb)}; }}")
+        self.update()
+
+    def _typed(self, text: str) -> None:
+        sound("type")
+        if text.strip() and len(text.strip()) == 1:     # the first letter: the send button hops
+            self.send.go("press", 0.0, kick=-9.0)
 
     def resizeEvent(self, _event) -> None:  # noqa: N802
         h = self.height()
-        self.send.setGeometry(self.width() - 6 - 32, (h - 32) // 2, 32, 32)
-        self.edit.setGeometry(16, 0, self.width() - 16 - 8 - 6 - 32, h)
+        self.send.setGeometry(self.width() - 6 - 34, (h - 34) // 2, 34, 34)
+        self.edit.setGeometry(18, 0, self.width() - 18 - 8 - 6 - 34, h)
 
     def _submit(self) -> None:
         text = self.edit.text().strip()
         if text:
+            sound("send")
             self.submitted.emit(text)
 
     def paintEvent(self, _event) -> None:  # noqa: N802
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        rect = QRectF(self.rect()).adjusted(1, 1, -1, -1)
+        sk = skin()
+        rect = QRectF(self.rect()).adjusted(2, 2, -2, -3)
         shape = _pill(rect)
-        p.fillPath(shape, FIELD)
-        # inset 0 1px 2px rgba(0,0,0,.6): a soft dark line inside the top.
-        p.save()
+        focus = self.val("focus")
+        ui_kit.soft_shadow(p, shape, dy=2, spread=5 + 4 * focus,
+                           color=_rgba(_mix(sk.shadow, accent(), 0.5 * focus), sk.shadow.alphaF() * (0.8 + 0.6 * focus)))
+        p.fillPath(shape, sk.field)
+        p.save()                                    # a soft inset along the top: it's a well
         p.setClipPath(shape)
-        grad = QLinearGradient(rect.topLeft(), rect.topLeft() + QPointF(0, 4))
-        grad.setColorAt(0.0, QColor(0, 0, 0, 150))
+        grad = QLinearGradient(rect.topLeft(), rect.topLeft() + QPointF(0, 5))
+        grad.setColorAt(0.0, QColor(0, 0, 0, 90 if sk.dark else 18))
         grad.setColorAt(1.0, QColor(0, 0, 0, 0))
-        p.fillRect(QRectF(rect.left(), rect.top(), rect.width(), 4), QBrush(grad))
+        p.fillRect(QRectF(rect.left(), rect.top(), rect.width(), 5), QBrush(grad))
         p.restore()
-        ring = QColor(255, 255, 255, 18)
-        if self.edit.hasFocus():
-            ring = _rgba(accent(), 0.4)
-        p.setPen(QPen(ring, 1.0))
+        ring = _mix(sk.border, accent(), focus)
+        ring.setAlphaF(sk.border.alphaF() + (0.75 - sk.border.alphaF()) * focus)
+        p.setPen(QPen(ring, 1.0 + 0.6 * focus))
         p.setBrush(Qt.BrushStyle.NoBrush)
-        p.drawPath(_pill(rect.adjusted(-0.5, -0.5, 0.5, 0.5)))
+        p.drawPath(_pill(rect.adjusted(0.5, 0.5, -0.5, -0.5)))
         p.end()
 
 
@@ -514,11 +553,22 @@ class AskField(QWidget):
 
 @dataclass
 class Note:
-    """A saved sketch note: its picture, title and when it was made."""
+    """A saved sketch note: its picture, title and when it was made, and the
+    note itself (``data``, what sketch.NoteCard draws) when it was kept."""
     png: Path | None
     title: str
     when: dt.datetime
     followups: list = field(default_factory=list)
+    data: dict = field(default_factory=dict)
+
+    @property
+    def drawable(self) -> bool:
+        """It can be opened as a real note card (not just its picture)."""
+        return bool(self.data.get("items"))
+
+    @property
+    def three_d(self) -> bool:
+        return self.drawable and bool((self.data.get("view") or {}).get("3d"))
 
 
 def notes_dir() -> Path:
@@ -568,7 +618,8 @@ def load_notes(folder: Path | None = None) -> list[Note]:
             except OSError:
                 continue
         title = str(meta.get("title") or (m.group(6) if m else stem)).strip() or "Sketch note"
-        notes.append(Note(png if png.exists() else None, title, when, list(meta.get("followups") or [])))
+        notes.append(Note(png if png.exists() else None, title, when, list(meta.get("followups") or []),
+                          meta if isinstance(meta, dict) else {}))
     notes.sort(key=lambda n: n.when, reverse=True)
     return notes
 
@@ -652,15 +703,19 @@ def paint_paper(painter: QPainter, rect: QRectF, radius: float, band_h: float = 
     return shape
 
 
-class NoteStack(QWidget):
-    """The newest note on warm paper, the two before it tilted behind."""
+class NoteStack(Motion, QWidget):
+    """The newest note on warm paper, the two before it tilted behind. The front
+    card lifts under the mouse with a sheen that follows it; a card behind fans
+    out when you point at it, and slides forward (with a paper sound) when you
+    click it or turn the wheel."""
 
     open_note = pyqtSignal(object)
     follow_up = pyqtSignal(object)
 
-    CARD = QRectF(230, 0, 470, 330)
-    BACK = ((QRectF(120, 70, 220, 160), -3.0, QColor("#EFEAE0")),
-            (QRectF(60, 46, 210, 150), -8.0, QColor("#E9E3D8")))
+    TOP = 12.0                       # room above the cards to lift, and below for their shadows
+    CARD = QRectF(220, TOP, 530, 370)
+    BACK = ((QRectF(110, TOP + 84, 220, 170), -3.0, QColor("#F6F2EA")),
+            (QRectF(50, TOP + 58, 210, 160), -8.0, QColor("#EFEAE1")))
     BAND = 36.0
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -668,12 +723,24 @@ class NoteStack(QWidget):
         self.notes: list[Note] = []
         self.index = 0
         self._drawings: dict = {}
+        self._mouse = QPointF(-1, -1)
+        self._over_back: int | None = None
+        self._model = None            # the front note's live 3D model (render3d.RealModel), if it's a 3D note
+        self._model_for = None
+        self._shown_at = 0.0
+        self._orbit_from: QPointF | None = None
+        self._spin = QTimer(self)     # a 3D model rocks gently (30 frames a second while the panel shows it)
+        self._spin.timeout.connect(self._spin_tick)
         self.open_btn = PanelButton("Open note", "glossy", self, px=14, weight=800, pad=(9, 18))
         self.ask_btn = PanelButton("Ask a follow-up", "paper", self, px=14, weight=700, pad=(9, 16))
         self.open_btn.clicked.connect(lambda: self.current and self.open_note.emit(self.current))
         self.ask_btn.clicked.connect(lambda: self.current and self.follow_up.emit(self.current))
         self.setMouseTracking(True)
-        self.resize(836, 330)
+        self.spring("lift", 0.0, 380.0, 28.0)
+        self.spring("enter", 1.0, 300.0, 22.0)
+        for i in range(len(self.BACK)):
+            self.spring(f"back{i}", 0.0, 420.0, 26.0)
+        self.resize(836, 370 + 12 + 48)
         self._place()
 
     @property
@@ -684,14 +751,72 @@ class NoteStack(QWidget):
         self.notes = notes
         self.index = 0
         self._place()
+        self._use_model()
         self.update()
+
+    # --- The live 3D model --------------------------------------------------------------------
+    def _slot(self) -> QRectF:
+        """Where the drawing (or the model) goes on the front card."""
+        card = self._card().translated(0, self._lift_px())
+        top = card.top() + self.BAND + 14 + QFontMetricsF(font(21, 800, -0.015)).height() + 6
+        return QRectF(card.left() + 14, top, card.width() - 28, self.open_btn.y() - 8 - top)
+
+    def _use_model(self) -> None:
+        """Build (or keep) the live model for the front note; let go of any other."""
+        note = self.current
+        key = (str(note.png), note.title, note.when) if note is not None and note.three_d else None
+        if key == self._model_for:
+            return
+        self.release_model()
+        self._model_for = key
+        if key is None:
+            return
+        try:
+            import model3d
+            import render3d
+            self._model = render3d.RealModel.from_note(model3d.upgrade_note(note.data))
+        except Exception:
+            self._model = None
+        if self._model is not None:
+            import time
+            self._model.captions = []        # the takeaway is on the note itself; here, just the model
+            self._shown_at = time.monotonic()
+            if self.isVisible():
+                self._spin.start(33)
+
+    def release_model(self) -> None:
+        """Free the model's GPU buffers (the panel closed, or another note came forward)."""
+        self._spin.stop()
+        if self._model is not None:
+            try:
+                self._model.release()
+            except Exception:
+                pass
+        self._model = None
+        self._model_for = None
+
+    def _spin_tick(self) -> None:
+        if self._model is None or not self.isVisible():
+            self._spin.stop()
+            return
+        self.update(self._slot().adjusted(-60, -30, 60, 30).toAlignedRect())
+
+    def showEvent(self, event) -> None:  # noqa: N802
+        super().showEvent(event)
+        self._use_model()
+        if self._model is not None:
+            self._spin.start(33)
+
+    def hideEvent(self, event) -> None:  # noqa: N802
+        super().hideEvent(event)
+        self._spin.stop()
 
     def _card(self) -> QRectF:
         behind = len(self.notes) - self.index - 1
         if not self.notes:
-            return QRectF((self.width() - 470) / 2, 55, 470, 200)
+            return QRectF((self.width() - 470) / 2, self.TOP + 70, 470, 200)
         if behind <= 0:
-            return QRectF((self.width() - 470) / 2, 0, 470, 330)
+            return QRectF((self.width() - self.CARD.width()) / 2, self.TOP, self.CARD.width(), self.CARD.height())
         return QRectF(self.CARD)
 
     def _backs(self) -> list[tuple[QRectF, float, QColor, Note]]:
@@ -702,18 +827,26 @@ class NoteStack(QWidget):
                 out.append((rect, angle, colour, self.notes[j]))
         return out
 
+    def _lift_px(self) -> float:
+        return -4.0 * self.val("lift") + 26.0 * (1.0 - self.val("enter"))
+
     def _place(self) -> None:
-        card = self._card()
+        card = self._card().translated(0, self._lift_px())
         has = self.current is not None
         for b in (self.open_btn, self.ask_btn):
             b.setVisible(has)
         if not has:
             return
-        self.open_btn.setEnabled(self.current.png is not None)
+        self.open_btn.setEnabled(self.current.png is not None or self.current.drawable)
         y = card.bottom() - 18 - self.open_btn.height()
         self.open_btn.move(round(card.left() + 20), round(y))
         self.ask_btn.move(round(card.left() + 20 + self.open_btn.width() + 10),
                           round(y + (self.open_btn.height() - self.ask_btn.height()) / 2))
+
+    def _motion_step(self, dt: float) -> bool:
+        moving = super()._motion_step(dt)
+        self._place()                     # the buttons ride on the card as it lifts
+        return moving
 
     def _drawing(self, note: Note) -> QImage | None:
         if note.png is None:
@@ -736,13 +869,52 @@ class NoteStack(QWidget):
         return None
 
     def mouseMoveEvent(self, event) -> None:  # noqa: N802
-        over = self._back_at(event.position()) is not None
-        self.setCursor(Qt.CursorShape.PointingHandCursor if over else Qt.CursorShape.ArrowCursor)
+        pos = event.position()
+        if self._orbit_from is not None and self._model is not None:
+            self._model.drag(pos.x() - self._orbit_from.x(), pos.y() - self._orbit_from.y())
+            self._orbit_from = pos
+            self.update()
+            return
+        back = self._back_at(pos)
+        on_model = self._model is not None and self._slot().contains(pos)
+        self.setCursor(Qt.CursorShape.PointingHandCursor if back is not None
+                       else Qt.CursorShape.OpenHandCursor if on_model else Qt.CursorShape.ArrowCursor)
+        if back != self._over_back:
+            if self._over_back is not None:
+                self.go(f"back{self._over_back}", 0.0)
+            if back is not None:
+                self.go(f"back{back}", 1.0)
+                sound("slide", 0.5)
+            self._over_back = back
+        on_card = self.current is not None and self._card().contains(pos)
+        self.go("lift", 1.0 if on_card else 0.0)
+        self._mouse = pos
+        if on_card:
+            self.update()
+
+    def leaveEvent(self, _event) -> None:  # noqa: N802
+        self.go("lift", 0.0)
+        if self._over_back is not None:
+            self.go(f"back{self._over_back}", 0.0)
+            self._over_back = None
 
     def mousePressEvent(self, event) -> None:  # noqa: N802
         i = self._back_at(event.position())
         if i is not None:
             self.show_index(self.index + 1 + i)
+        elif self._model is not None and self._slot().contains(event.position()):
+            self._orbit_from = event.position()          # turn the model by hand
+            self.setCursor(Qt.CursorShape.ClosedHandCursor)
+
+    def mouseReleaseEvent(self, _event) -> None:  # noqa: N802
+        if self._orbit_from is not None:
+            self._orbit_from = None
+            self.setCursor(Qt.CursorShape.OpenHandCursor)
+
+    def mouseDoubleClickEvent(self, event) -> None:  # noqa: N802
+        if self._model is not None and self._slot().contains(event.position()):
+            self._model.reset_view()
+            self.update()
 
     def wheelEvent(self, event) -> None:  # noqa: N802
         step = -1 if event.angleDelta().y() > 0 else 1
@@ -751,7 +923,14 @@ class NoteStack(QWidget):
     def show_index(self, i: int) -> None:
         if self.notes and 0 <= i < len(self.notes) and i != self.index:
             self.index = i
+            for k in range(len(self.BACK)):
+                self.go(f"back{k}", 0.0, snap=True)
+            self._over_back = None
+            self.go("enter", 0.0, snap=True)      # the new front card slides up into place
+            self.go("enter", 1.0)
+            sound("slide")
             self._place()
+            self._use_model()
             self.update()
 
     def paintEvent(self, _event) -> None:  # noqa: N802
@@ -760,16 +939,21 @@ class NoteStack(QWidget):
         p.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
         p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
         dpr = self.devicePixelRatioF()
-        for rect, angle, colour, note in reversed(self._backs()):
+        sk = skin()
+        backs = self._backs()
+        for k in range(len(backs) - 1, -1, -1):
+            rect, angle, colour, note = backs[k]
+            out = self.val(f"back{k}")
             p.save()
             c = rect.center()
-            p.translate(c)
-            p.rotate(angle)
+            p.translate(c + QPointF(-10 * out, -8 * out))
+            p.rotate(angle * (1 + 0.7 * out))
             p.translate(-c)
             shape = QPainterPath()
             shape.addRoundedRect(rect, 14, 14)
-            draw_shadow(p, shape, dy=10, blur=24, color=QColor(0, 0, 0, 115), key=("back", rect.width(), rect.height()))
-            p.fillPath(shape, colour)
+            draw_shadow(p, shape, dy=10 + 6 * out, blur=24, color=_rgba(sk.shadow, min(1.0, sk.shadow.alphaF() * 2.2)),
+                        key=("back", rect.width(), rect.height(), sk.name))
+            p.fillPath(shape, _mix(colour, QColor("#FFFFFF"), 0.35 * out))
             p.setFont(font(11, 700))
             p.setPen(NOTE_META)
             p.drawText(QRectF(rect.left() + 16, rect.top() + 14, rect.width() - 32, 16),
@@ -785,13 +969,26 @@ class NoteStack(QWidget):
                 y += 15 * 1.25
             p.restore()
 
-        card = self._card()
+        lift = self.val("lift")
+        enter = max(0.0, min(1.2, self.val("enter")))
+        card = self._card().translated(0, self._lift_px())
         shape = QPainterPath()
         shape.addRoundedRect(card, 18, 18)
-        draw_shadow(p, shape, dy=18, blur=40, color=QColor(0, 0, 0, 140), key=("card", card.width(), card.height()))
+        p.setOpacity(min(1.0, 0.25 + 0.75 * enter))
+        shadow = _rgba(sk.shadow, min(1.0, sk.shadow.alphaF() * 1.9))
+        draw_shadow(p, shape, dy=12 + 8 * lift, blur=30, color=shadow, key=("card", card.width(), card.height(), sk.name))
         note = self.current
         paint_paper(p, card, 18, self.BAND, dpr)
-        p.setPen(QPen(QColor(255, 255, 255, 20), 1.0))
+        if lift > 0.01 and card.contains(self._mouse):
+            # A sheen on the paper that follows the mouse: it feels like a real card.
+            sheen = QRadialGradient(self._mouse, 220)
+            sheen.setColorAt(0.0, QColor(255, 255, 255, round(70 * lift)))
+            sheen.setColorAt(1.0, QColor(255, 255, 255, 0))
+            p.save()
+            p.setClipPath(shape)
+            p.fillRect(card, QBrush(sheen))
+            p.restore()
+        p.setPen(QPen(QColor(0, 0, 0, 22) if not sk.dark else QColor(255, 255, 255, 20), 1.0))
         p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawRoundedRect(card.adjusted(-0.5, -0.5, 0.5, 0.5), 18.5, 18.5)
 
@@ -826,6 +1023,16 @@ class NoteStack(QWidget):
                    tfm.elidedText(note.title, Qt.TextElideMode.ElideRight, card.width() - 40))
         slot = QRectF(card.left() + 20, top + tfm.height() + 6, card.width() - 40,
                       self.open_btn.y() - 8 - (top + tfm.height() + 6))
+        if self._model is not None and not self._model.failed:
+            import time
+            seen = time.monotonic() - self._shown_at
+            try:
+                self._model.paint(p, self._slot(), turn=self._model.TURN * 0.7 * math.sin(seen * 0.5), t=seen,
+                                  reveal=seen + 0.3)
+                p.end()
+                return
+            except Exception:
+                self._model.failed = True       # its picture instead
         drawing = self._drawing(note)
         if drawing is not None and slot.height() > 20:
             k = min(slot.width() / drawing.width(), slot.height() / drawing.height())
@@ -846,9 +1053,14 @@ def _greeting(name: str, now: dt.datetime | None = None) -> str:
     return f"{part}, {name}." if name else f"Good {part.lower()}."
 
 
-class HomePage(QWidget):
+BUDDY_SPOT = QRectF(14, 14, 36, 40)      # the buddy in the top bar: point at it and it hops
+
+
+class HomePage(Motion, QWidget):
     """Home: the top bar, the hello and your shortcut, the newest sketch note,
-    and the bottom row (All notes, What Clixy remembers, the ask box)."""
+    and the bottom row (All notes, What Clixy remembers, the ask box). The
+    buddy hops when you point at it; the keycaps press themselves now and then,
+    showing you what to hold."""
 
     SIZE = HOME
 
@@ -856,25 +1068,44 @@ class HomePage(QWidget):
         super().__init__(panel._body)
         self.panel = panel
         self.resize(int(HOME[0]), int(HOME[1]))
-        self.notes_btn = PanelButton("", "frost", self, icon="pencil", round_=36)
+        self.notes_btn = PanelButton("", "frost", self, icon="pencil", round_=38)
         self.notes_btn.setAccessibleName("Notes")
         self.notes_btn.setToolTip("Your sketch notes")
-        self.settings_btn = PanelButton("", "frost", self, icon="sliders", round_=36)
+        self.settings_btn = PanelButton("", "frost", self, icon="sliders", round_=38)
         self.settings_btn.setAccessibleName("Settings")
         self.settings_btn.setToolTip("Settings")
         self.stack = NoteStack(self)
-        self.all_notes = PanelButton("All notes", "frost", self)
-        self.memory = PanelButton("What Clixy remembers", "frost", self)
+        self.all_notes = PanelButton("All notes", "frost", self, icon="folder", px=14, pad=(10, 16))
+        self.memory = PanelButton("What Clixy remembers", "frost", self, icon="memory", px=14, pad=(10, 16))
         self.ask = AskField(self)
+        self.setMouseTracking(True)
+        self._on_buddy = False
+        self.spring("hop", 0.0, 260.0, 9.0)
         self._layout()
+
+    def mouseMoveEvent(self, event) -> None:  # noqa: N802
+        on = BUDDY_SPOT.contains(event.position())
+        if on and not self._on_buddy:
+            self.hop()
+        self._on_buddy = on
+        self.setCursor(Qt.CursorShape.PointingHandCursor if on else Qt.CursorShape.ArrowCursor)
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        if BUDDY_SPOT.contains(event.position()):
+            self.hop(big=True)
+
+    def hop(self, big: bool = False) -> None:
+        """The buddy jumps (and says so)."""
+        self.go("hop", 0.0, kick=-(150.0 if big else 95.0))
+        sound("buddy")
 
     def _layout(self) -> None:
         w, h = self.width(), self.height()
-        self.settings_btn.setGeometry(w - 22 - 36, 16, 36, 36)
-        self.notes_btn.setGeometry(w - 22 - 36 - 10 - 36, 16, 36, 36)
-        self.stack.setGeometry(22, 178, w - 44, 330)
-        self.ask.setGeometry(w - 22 - 330, h - 22 - 44, 330, 44)
-        y = h - 22 - 44 + (44 - self.all_notes.height()) // 2
+        self.settings_btn.setGeometry(w - 22 - 38, 15, 38, 38)
+        self.notes_btn.setGeometry(w - 22 - 38 - 10 - 38, 15, 38, 38)
+        self.stack.setGeometry(22, 172 - round(NoteStack.TOP), w - 44, 370 + 12 + 48)
+        self.ask.setGeometry(w - 22 - 340, h - 22 - 48, 340, 48)
+        y = h - 22 - 48 + (48 - self.all_notes.height()) // 2
         self.all_notes.move(22, y)
         self.memory.move(22 + self.all_notes.width() + 10, y)
 
@@ -882,64 +1113,83 @@ class HomePage(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         p.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
-        paint_top_bar(p, self, self.panel.status_text())
+        sk = skin()
+        paint_top_bar(p, self, self.panel.status_text(), hop=self.val("hop"))
         # The hello and your shortcut.
-        f = font(32, 700, -0.025)
+        f = font(34, 800, -0.03)
         fm = QFontMetricsF(f)
         p.setFont(f)
-        p.setPen(TEXT)
-        p.drawText(QRectF(0, 74, self.width(), fm.height()), Qt.AlignmentFlag.AlignCenter,
+        p.setPen(sk.text)
+        p.drawText(QRectF(0, 72, self.width(), fm.height()), Qt.AlignmentFlag.AlignCenter,
                    _greeting(self.panel.name))
         keys = [k for k in self.panel.hotkey.split(" + ") if k]
         segments: list[tuple[str, str]] = [("text", "Hold")] + [("key", k) for k in keys] + \
             [("text", "and ask, or type a question below.")]
-        paint_key_line(p, segments, QPointF(self.width() / 2, 74 + fm.height() + 10 + 12), px=15)
+        t = float(self.window().property("t") or 0.0) if self.window() else 0.0
+        paint_key_line(p, segments, QPointF(self.width() / 2, 72 + fm.height() + 12 + 12), px=15,
+                       color=sk.text2, press_at=t)
         p.end()
 
 
-def paint_top_bar(p: QPainter, page: QWidget, status: str) -> None:
+def paint_top_bar(p: QPainter, page: QWidget, status: str, *, hop: float = 0.0) -> None:
     """The buddy, "Clixy" and a status chip, on the panel's first row (y 16-52)."""
+    sk = skin()
     cy = 16 + 18
     dpr = page.devicePixelRatioF()
-    device = max(1, int(1.5 * dpr + 0.25))      # whole device pixels per sprite cell
+    device = max(1, int(2.0 * dpr + 0.25))      # whole device pixels per sprite cell
     t = (page.window().property("t") or 0.0) if page.window() else 0.0
-    theme.paint_avatar_in(p, QRectF(22 - 4, cy - 13, 26, 26), t=float(t), scale=device / (2 * dpr),
-                          device_pixel_ratio=dpr)
+    theme.paint_avatar_in(p, QRectF(18, cy - 17 + hop, 30, 32), t=float(t), scale=device / (2 * dpr),
+                          device_pixel_ratio=dpr, mood="happy" if hop < -2 else "idle")
     p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-    x = 22 + 18 + 10
-    f = font(15, 700)
+    x = 22 + 26 + 10
+    f = font(17, 800, -0.01)
     p.setFont(f)
-    p.setPen(TEXT)
+    p.setPen(sk.text)
     w = QFontMetricsF(f).horizontalAdvance("Clixy")
-    p.drawText(QRectF(x, cy - 12, w + 4, 24), Qt.AlignmentFlag.AlignVCenter, "Clixy")
+    p.drawText(QRectF(x, cy - 13, w + 4, 26), Qt.AlignmentFlag.AlignVCenter, "Clixy")
     x += w + 10
-    chip_font = font(12, 600)
+    chip_font = font(12, 700)
     cw = QFontMetricsF(chip_font).horizontalAdvance(status)
-    chip = QRectF(x, cy - 12, 10 + 6 + 6 + cw + 10, 24)
-    p.fillPath(_pill(chip), CHIP)
+    chip = QRectF(x, cy - 12, 10 + 8 + 6 + cw + 12, 24)
+    acc = accent()
+    p.fillPath(_pill(chip), _rgba(acc, 0.13 if not sk.dark else 0.2))
+    p.setPen(QPen(_rgba(acc, 0.28), 1.0))
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.drawPath(_pill(chip.adjusted(0.5, 0.5, -0.5, -0.5)))
+    live = status not in ("Ready", "")
+    beat = 0.5 + 0.5 * math.sin(float(t) * (6.0 if live else 2.0))
     p.setPen(Qt.PenStyle.NoPen)
-    p.setBrush(accent())
-    p.drawEllipse(QPointF(chip.left() + 13, cy), 3, 3)
+    p.setBrush(_rgba(acc, 0.25 * beat))
+    p.drawEllipse(QPointF(chip.left() + 14, cy), 4 + 3 * beat, 4 + 3 * beat)
+    p.setBrush(acc)
+    p.drawEllipse(QPointF(chip.left() + 14, cy), 4, 4)
     p.setFont(chip_font)
-    p.setPen(MUTED)
-    p.drawText(QRectF(chip.left() + 22, chip.top(), cw + 4, chip.height()), Qt.AlignmentFlag.AlignVCenter, status)
+    p.setPen(_mix(acc, sk.text, 0.55))
+    p.drawText(QRectF(chip.left() + 24, chip.top(), cw + 4, chip.height()), Qt.AlignmentFlag.AlignVCenter, status)
 
 
 def paint_key_line(p: QPainter, segments: list[tuple[str, str]], centre: QPointF, *, px: float = 15,
-                   color: QColor = MUTED, light: bool = False) -> None:
-    """A line of words and keycaps ("Hold [Ctrl] [Win] and ask"), centred on ``centre``."""
-    f = font(px, 500)
+                   color: QColor | None = None, light: bool = False, press_at: float | None = None) -> None:
+    """A line of words and keycaps ("Hold [Ctrl] [Win] and ask"), centred on ``centre``.
+    With ``press_at`` (seconds), the keys press themselves together every few seconds."""
+    color = color if color is not None else skin().text2
+    f = font(px, 600)
     fm = QFontMetricsF(f)
-    gap = 6.0
+    gap = 7.0
     widths = []
     for kind, text in segments:
-        widths.append(keycap_size(text).width() if kind == "key" else fm.horizontalAdvance(text))
+        widths.append(keycap_size(text, 13, (9, 4, 5)).width() if kind == "key" else fm.horizontalAdvance(text))
     total = sum(widths) + gap * (len(segments) - 1)
     x = centre.x() - total / 2
+    press = 0.0
+    if press_at is not None:
+        phase = press_at % 4.0                # every 4 s: down for a moment, then up
+        press = max(0.0, 1.0 - abs(phase - 0.35) / 0.25) if phase < 0.6 else 0.0
     for (kind, text), w in zip(segments, widths):
         if kind == "key":
-            size = keycap_size(text)
-            paint_keycap(p, QRectF(x, centre.y() - size.height() / 2 - 1, w, size.height()), text, light=light)
+            size = keycap_size(text, 13, (9, 4, 5))
+            paint_keycap(p, QRectF(x, centre.y() - size.height() / 2 - 2, w, size.height()), text, px=13,
+                         light=light, edge=3.0, radius=8.0, press=press)
         else:
             p.setFont(f)
             p.setPen(color)
@@ -998,29 +1248,33 @@ class WorkingPage(QWidget):
         p.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
         info = self.info
         acc = accent()
+        sk = skin()
         # The first row: "Guiding you", the step chip, the light.
         cy = 16 + 12
-        f = font(15, 700)
+        f = font(16, 800)
         p.setFont(f)
-        p.setPen(TEXT)
+        p.setPen(sk.text)
         w = QFontMetricsF(f).horizontalAdvance("Guiding you")
         p.drawText(QRectF(20, cy - 12, w + 4, 24), Qt.AlignmentFlag.AlignVCenter, "Guiding you")
         n, total = int(info.get("n") or 0), int(info.get("total") or 0)
         chip_text = f"{n} of {total}" if total >= n > 0 else (f"Step {n}" if n else "")
         if chip_text:
-            cf = mono(12)
+            cf = font(12, 800)
             cw = QFontMetricsF(cf).horizontalAdvance(chip_text)
-            chip = QRectF(20 + w + 10, cy - 12, cw + 20, 24)
-            p.fillPath(_pill(chip), CHIP)
+            chip = QRectF(20 + w + 10, cy - 12, cw + 22, 24)
+            p.fillPath(_pill(chip), _rgba(acc, 0.14 if not sk.dark else 0.22))
             p.setFont(cf)
-            p.setPen(MUTED)
+            p.setPen(_mix(acc, sk.text, 0.5))
             p.drawText(chip, Qt.AlignmentFlag.AlignCenter, chip_text)
         paint_light(p, QPointF(self.width() - 20 - 5, cy), 4.2, 0.95, acc, 13.0)
 
         # The paper card.
         card = QRectF(20, 16 + 24 + 16, self.width() - 40, self.card_height())
+        shape = QPainterPath()
+        shape.addRoundedRect(card, 18, 18)
+        ui_kit.soft_shadow(p, shape, dy=6, spread=12, color=sk.shadow)
         paint_paper(p, card, 18, 36, self.devicePixelRatioF())
-        p.setPen(QPen(QColor(255, 255, 255, 20), 1.0))
+        p.setPen(QPen(QColor(0, 0, 0, 20) if not sk.dark else QColor(255, 255, 255, 20), 1.0))
         p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawRoundedRect(card.adjusted(-0.5, -0.5, 0.5, 0.5), 18.5, 18.5)
         bf = font(12, 700)
@@ -1140,6 +1394,8 @@ class ClixyPanel(QWidget):
     """Settings were saved here; True when a new provider needs a restart."""
     stopped = pyqtSignal()
     closed = pyqtSignal()
+    note_opened = pyqtSignal(dict)
+    """Open note: show this saved note again as the real note card (sketch.NoteCard)."""
 
     def __init__(self) -> None:
         super().__init__(None, Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint
@@ -1194,6 +1450,17 @@ class ClixyPanel(QWidget):
         self._tick = QTimer(self)
         self._tick.timeout.connect(self._animate)
         theme.on_avatar_changed(lambda _id: self._recolor())
+        ui_kit.on_skin_changed(self._reskin)
+
+    def _reskin(self) -> None:
+        """The skin changed (Settings > Look): repaint everything in it."""
+        try:
+            self.home.ask.restyle()
+            for w in self.findChildren(QWidget):
+                w.update()
+            self.update()
+        except RuntimeError:
+            pass
 
     # --- Opening and closing ---------------------------------------------------------------------
 
@@ -1212,6 +1479,7 @@ class ClixyPanel(QWidget):
             self._w, self._h = NOTCH
             self._vw = self._vh = 0.0
             self._fade = 0.0
+            sound("open")
         self._open = True
         self._was_down = True
         self._was_esc = True
@@ -1228,6 +1496,8 @@ class ClixyPanel(QWidget):
         """Tuck back into the notch (``instant``: just go, e.g. before a screen capture)."""
         if not self._open and not self.isVisible():
             return
+        if self._open and not instant:
+            sound("close")
         self._open = False
         self._follow_note = None
         self.home.ask.edit.setPlaceholderText(AskField.PLACEHOLDER)
@@ -1238,6 +1508,7 @@ class ClixyPanel(QWidget):
 
     def _finish_close(self) -> None:
         self._tick.stop()
+        self.home.stack.release_model()
         self._last_box = None
         self._w, self._h = NOTCH
         self._fade = 0.0
@@ -1393,10 +1664,9 @@ class ClixyPanel(QWidget):
             self._last_box = box
         if self._open:
             self._watch_input()
-            if self._frame % 6 == 0 and self.view == "home":
-                self.home.update(QRect(14, 16, 30, 36))   # the buddy breathes
-            if self._frame % 30 == 0 and self.view == "home":
-                self.home.update(QRect(0, 0, 420, 60))    # the status chip
+            if self._frame % 4 == 0 and self.view == "home":
+                self.home.update(QRect(0, 0, 440, 62))    # the buddy breathes, the status light beats
+                self.home.update(QRect(0, 118, round(HOME[0]), 52))   # the keycaps press themselves
             if self._frame % 15 == 0 and self.view != "settings":
                 info = self._guide_info()
                 if info:
@@ -1410,7 +1680,7 @@ class ClixyPanel(QWidget):
         w, h = max(1.0, self._w), max(1.0, self._h)
         self._body.setGeometry(round(cx - w / 2), 0, round(w), round(h))
         page = self._page()
-        page.move(round((w - page.width()) / 2), 0)
+        page.move(round((w - page.width()) / 2), round(12 * (1.0 - self._fade)))   # it settles up into place
 
     def _shape(self) -> QPainterPath:
         w, h = self._w, self._h
@@ -1460,16 +1730,30 @@ class ClixyPanel(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         shape = self._shape()
+        sk = skin()
         big = max(0.0, min(1.0, (self._h - NOTCH[1]) / 120.0))
         if big > 0.02:
             settled = self._vw == 0 and self._vh == 0
-            draw_shadow(p, shape, dy=24, blur=40, color=QColor(10, 12, 20, round(89 * big)),
-                        key=("panel", round(self._w), round(self._h), self.width()) if settled else None)
-        p.fillPath(shape, BG)
+            draw_shadow(p, shape, dy=24, blur=44, color=QColor(10, 12, 30, round((70 if not sk.dark else 110) * big)),
+                        key=("panel", round(self._w), round(self._h), self.width(), sk.name) if settled else None)
+        # It leaves the notch black and blooms into the skin's colours as it grows.
+        bloom = max(0.0, min(1.0, (self._h - NOTCH[1]) / 160.0)) ** 0.8
+        box = shape.boundingRect()
+        if bloom < 0.999:
+            p.fillPath(shape, theme.NOTCH)
+        if bloom > 0.001:
+            p.save()
+            p.setOpacity(bloom)
+            ui_kit.paint_canvas(p, shape, QRectF(box.left(), 0, box.width(), max(1.0, self._h)), sk,
+                                dpr=self.devicePixelRatioF(), glow=self._fade)
+            p.restore()
         # A hairline that fades in away from the screen edge, as on the notch.
         edge = QLinearGradient(0, 0, 0, 22)
-        edge.setColorAt(0.0, QColor(255, 255, 255, 0))
-        edge.setColorAt(1.0, QColor(255, 255, 255, 16))
+        rim = QColor(sk.border) if bloom > 0.5 else QColor(255, 255, 255, 16)
+        clear = QColor(rim)
+        clear.setAlpha(0)
+        edge.setColorAt(0.0, clear)
+        edge.setColorAt(1.0, rim)
         p.setPen(QPen(QBrush(edge), 1.0))
         p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawPath(shape)
@@ -1495,7 +1779,10 @@ class ClixyPanel(QWidget):
         edit.setFocus()
 
     def _open_note(self, note: Note) -> None:
-        if note.png is not None:
+        if note.drawable and self.receivers(self.note_opened) > 0:
+            self.close_panel()
+            self.note_opened.emit(_best_version(note.data))   # the pad it first appeared on, drawing itself again
+        elif note.png is not None:
             self.close_panel(instant=True)
             _start(note.png)
 
@@ -1523,6 +1810,16 @@ class ClixyPanel(QWidget):
             g.stop()
         self.close_panel()
         self.stopped.emit()
+
+
+def _best_version(data: dict) -> dict:
+    """A kept note as it should look now: an older 3D note shown with the hand-built
+    model it's about (model3d.upgrade_note), or just as it was."""
+    try:
+        import model3d
+        return model3d.upgrade_note(dict(data))
+    except Exception:
+        return dict(data)
 
 
 def _running_guide():

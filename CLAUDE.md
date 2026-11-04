@@ -27,6 +27,17 @@ Clixy is Rayan Sameer's Windows AI buddy (PyQt6). This folder is the local dev c
   accent: the notch's light, the panel's glossy buttons. No bubble pill, nothing kiddish,
   no flat grey-on-black "slop"; tactile and warm (paper cards, keycaps, glossy primary).
 - No timetable. Show only real features; leave out anything with no setting behind it.
+- 4 Nov 2026, the UI level-up ("black seems dull", "HeyClicky was very interactive"):
+  `ui_kit.py` is the look and feel. Two skins: Daylight (default, bright) and Midnight
+  (deep plum ink, never flat black), plus Match Windows (`APPEARANCE`). The buddy's colour
+  is candy gel (`paint_gel`). Everything moves on springs (`Motion`, `Tactile`) and makes a
+  little sound (`ui_kit.sound` -> `sfx.py`, original synthesised sounds; `SOUND_EFFECTS`,
+  `SOUND_VOLUME`; never copy HeyClicky's sound files). The notch stays black (it is the
+  notch) but has voice bars, hopping thinking dots, talking bars, a colour thread and sparks.
+  Settings has nine sections with coloured tiles (General, Look, Sounds, Voice, Buddy,
+  Shortcut, Brain, Privacy, About). A 3D note shows its live model in the panel; Open note
+  brings back the real note card (not a picture). Check the look with
+  `tools\dev\ui_shots.py OUT --skin light|dark` before calling UI work done.
 
 ## What's next
 - Done 4 Nov 2026: the black notch with a buddy-coloured light (`island.py`), the panel

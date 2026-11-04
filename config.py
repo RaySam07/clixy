@@ -287,6 +287,21 @@ records it by having you press it; takes effect on the next start."""
 EDGE_GLOW: bool = resolve_setting("EDGE_GLOW", default="on").lower() == "on"
 """Light the screen edges in the buddy's colors while you talk."""
 
+SOUND_EFFECTS: bool = resolve_setting("SOUND_EFFECTS", default="on").lower() == "on"
+"""Play the little interface sounds (taps, whooshes, chimes; sfx.py)."""
+
+
+def _sound_volume() -> int:
+    """SOUND_VOLUME as a whole number from 0 to 100; anything unreadable is 70."""
+    try:
+        return max(0, min(100, int(round(float(resolve_setting("SOUND_VOLUME", default="70"))))))
+    except (TypeError, ValueError, OverflowError):
+        return 70
+
+
+SOUND_VOLUME: int = _sound_volume()
+"""How loud the interface sounds are, 0-100. 70 plays them as designed."""
+
 def _island_side() -> str:
     """Where the island lives: the top notch by default. Before the notch,
     every Save stored the old default ("right"), so a stored side moves to

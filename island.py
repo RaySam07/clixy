@@ -7,12 +7,16 @@ gently rounded. One light glows at its end in your buddy's colour (Ember
 burns red-orange, Splash blue), bright at the centre, deeper at the rim.
 
 At the top:
-- Resting: a slim black notch; the light glows faintly and breathes.
-- Hello: "Hey Rayan!" when Clixy starts and the first time each day.
-- Listening: it widens and says "Listening"; the light swells with your voice.
-- Thinking: "Thinking", with a soft shimmer; the light breathes.
-- Speaking: back to the slim notch with the light alive while the answer
-  plays. The answer is only ever heard, never shown.
+- Resting: a slim black notch; the light glows faintly and breathes, and a
+  thread of its colour runs along the notch's lower edge.
+- Hello: "Hey Rayan!" (and a warm chime) when Clixy starts and the first
+  time each day.
+- Listening: it widens and says "Listening"; little gel bars in the buddy's
+  colours dance with your voice and the light swells with it.
+- Thinking: "Thinking", with a soft shimmer, and three dots hopping in turn.
+- Speaking: back to the slim notch with the light alive and tiny bars
+  talking beside it while the answer plays. The answer is only ever heard,
+  never shown. When it settles, the light throws a little burst of sparks.
 - A notice (an error, "I didn't catch that") in a line or two, then it
   tucks away. A guide step shows only "Step 2 of 3".
 - Rest the mouse on it and it shows the keys to hold; click it and the
@@ -61,6 +65,7 @@ from PyQt6.QtGui import (
 from PyQt6.QtWidgets import QWidget
 
 import theme
+from ui_kit import sound
 
 
 class SideIsland(QWidget):
@@ -68,7 +73,7 @@ class SideIsland(QWidget):
     NOTCH = (150.0, 24.0)
     HELLO = (196.0, 36.0)
     HINT = (292.0, 36.0)
-    PILL = (204.0, 40.0)
+    PILL = (232.0, 40.0)
     DASH_W = 440.0
     NOTE_W = 380.0               # the widest a notice gets
     _TOP_WIN = (540, 380)        # room for the shoulders and the shadow
@@ -87,6 +92,7 @@ class SideIsland(QWidget):
     _PEEK_REACH = 16             # px from the edge: the mouse has to be on the sliver
     _LINGER = 0.6                # s it stays open after the mouse leaves
     _BARS = 13
+    _BURST_S = 0.75              # how long the sparks fly
 
     def __init__(self, side: str | None = None) -> None:
         super().__init__()
@@ -140,6 +146,8 @@ class SideIsland(QWidget):
         """app.py: opens the Settings window (if the panel's own Settings can't open)."""
         self.on_settings_saved = None
         """app.py: called with restart_needed after Done in the panel's Settings."""
+        self.on_open_note = None
+        """app.py: shows a saved note (its dict) again as the real note card."""
         self._catching = False
         self._was_down = False
         self._t0 = time.monotonic()
@@ -164,6 +172,9 @@ class SideIsland(QWidget):
         """A blur of the screen behind, taken as the dashboard opens."""
         self._near = False
         self._near_until = 0.0
+        self._burst_t0 = -10.0
+        """When the light last threw its sparks (an answer or a guide settling)."""
+        self._hello_sounded = 0.0
 
         self._collapse_timer = QTimer(self)
         self._collapse_timer.setSingleShot(True)
@@ -276,6 +287,7 @@ class SideIsland(QWidget):
             self.panel.settings_requested.connect(self._panel_settings)
             self.panel.settings_saved.connect(self._panel_settings_saved)
             self.panel.stopped.connect(self._collapse)
+            self.panel.note_opened.connect(self._panel_open_note)
         self.panel.hotkey = self.hotkey
         self.panel.name = self.name
         self._near, self._near_until, self._hover_since = False, 0.0, None
@@ -288,6 +300,10 @@ class SideIsland(QWidget):
     def _panel_settings(self) -> None:
         if callable(self.on_settings):
             self.on_settings()
+
+    def _panel_open_note(self, note: dict) -> None:
+        if callable(self.on_open_note):
+            self.on_open_note(note)
 
     def _panel_settings_saved(self, restart: bool) -> None:
         if callable(self.on_settings_saved):
@@ -311,6 +327,8 @@ class SideIsland(QWidget):
 
     def thinking(self) -> None:
         self._collapse_timer.stop()
+        if self._state == "listening":
+            sound("think")
         if self._state != "answer":
             self._state = "thinking"
         self.update()
@@ -351,6 +369,8 @@ class SideIsland(QWidget):
                 side = "left" if self.home_side == "right" else "right"
         self._move_to(side)
         self._collapse_timer.stop()
+        if n > 1:
+            sound("select")          # on to the next step
         self._state = "answer"
         self._sentences = [text.strip()] if text.strip() else []
         self._highlights = []
@@ -366,6 +386,7 @@ class SideIsland(QWidget):
         self._collapse_timer.stop()
         self._state = "note"
         self._note = " ".join(text.split())
+        sound("error", 0.7)
         self.update()
         self._collapse_timer.start(6000)
 
@@ -377,10 +398,15 @@ class SideIsland(QWidget):
         if self._state in ("listening", "thinking"):
             self._collapse()
             return
+        if self._step:                   # a guide finished: a sparkle and a little fanfare
+            sound("done")
+            self._burst_t0 = time.monotonic()
         words = sum(len(s.split()) for s in self._sentences)
         self._collapse_timer.start(int(1000 * max(2.0, min(30.0, 1.0 + 0.36 * words))))
 
     def _collapse(self) -> None:
+        if self._state == "answer" and not self._step:
+            self._burst_t0 = time.monotonic()      # the answer settles with a little burst of sparks
         self._state = "idle"
         self._step = ""
         self._move_to(self.home_side)
@@ -522,6 +548,8 @@ class SideIsland(QWidget):
             self._hover_since = None
         was_near = self._near
         self._near = now < self._near_until
+        if self._near and not was_near:
+            sound("hover")
         if self._near and not was_near and self.top and self.dashboard:
             _refresh_dashboard()  # fresh weather and classes while it opens
             self._glass = self._frosted_backdrop()
@@ -558,6 +586,10 @@ class SideIsland(QWidget):
         if self.top and self._state == "idle" and datetime.date.today() != self._greeted_on:
             self._greeted_on = datetime.date.today()  # first time each day: say hello again
             self._hello_until = now + self._HELLO_S
+        if self._hello() and self._hello_sounded != self._hello_until \
+                and now > self._hello_until - self._HELLO_S + 0.6:
+            self._hello_sounded = self._hello_until
+            sound("hello")
         tw, th = self._target()
         moving = False
         for _ in range(frames):
@@ -598,7 +630,7 @@ class SideIsland(QWidget):
         self._light_b += (bright - self._light_b) * ease
 
         self._frame += 1
-        if moving or self._state != "idle":
+        if moving or self._state != "idle" or now - self._burst_t0 < self._BURST_S:
             self.update()
         elif self._fade_dash > 0.01 and self._frame % 20 == 0:
             self.update()  # the dashboard's clock
@@ -639,16 +671,22 @@ class SideIsland(QWidget):
         t = time.monotonic() - self._t0
         accent = theme.current_palette().flood
         if self.top:
+            self._paint_thread(painter, rect, accent)
             if self._fade_notch > 0.01:
                 self._paint_notch(painter, rect)
             if self._fade_dash > 0.01:
                 self._paint_dash(painter, rect)
             if self._fade_voice > 0.01:
                 self._paint_pill(painter, rect, t)
+            if self._state == "answer" and not self._step and self._fade_voice < 0.5:
+                light = self._light_pos(rect)
+                self._paint_bars(painter, light.x() - 14.0, light.y(), t, "speak", accent, 1.0)
             if self._fade_note > 0.01:
                 self._paint_notice(painter, rect, accent)
             room = min(rect.height(), self.PILL[1]) / 2.0
             paint_light(painter, self._light_pos(rect), self._light_r, self._light_b, accent, room)
+            painter.setClipping(False)
+            self._paint_burst(painter, self._light_pos(rect), accent)
             return
         if self._w < 24:
             self._paint_sliver(painter, rect, accent)
@@ -759,7 +797,8 @@ class SideIsland(QWidget):
         painter.restore()
 
     def _paint_pill(self, painter: QPainter, rect: QRectF, t: float) -> None:
-        """Top of the screen, listening or thinking: one word, left of centre
+        """Top of the screen, listening or thinking: one word, left of centre,
+        and beside the light the bars (listening) or hopping dots (thinking)
         (the light at the right end is painted for every state)."""
         painter.save()
         painter.setOpacity(self._fade_voice)
@@ -767,6 +806,99 @@ class SideIsland(QWidget):
         self._paint_word(painter, rect.left() + self._INSET, self._row(rect),
                          "Listening" if listening else "Thinking",
                          None if listening else (t * 0.62) % 1.0)
+        light = self._light_pos(rect)
+        self._paint_bars(painter, light.x() - 17.0, light.y(), t, "listen" if listening else "think",
+                         theme.current_palette().flood, self._fade_voice)
+        painter.restore()
+
+    def _paint_bars(self, painter: QPainter, right: float, cy: float, t: float, mode: str, accent: QColor,
+                    fade: float) -> None:
+        """Little gel bars ending at ``right``: dancing with your voice ("listen"),
+        talking while the answer plays ("speak"), or three dots hopping ("think")."""
+        hot, mid, deep = accent_shades(accent)
+        painter.save()
+        painter.setPen(Qt.PenStyle.NoPen)
+        if mode == "think":
+            for i in range(3):
+                hop = max(0.0, math.sin(t * 6.2 - i * 0.95))
+                c = QPointF(right - 4 - (2 - i) * 8.0, cy - 4.5 * hop)
+                g = QRadialGradient(c - QPointF(0.6, 0.8), 3.2)
+                g.setColorAt(0.0, hot)
+                g.setColorAt(1.0, _mix(mid, deep, 0.3))
+                painter.setOpacity(fade * (0.55 + 0.45 * hop))
+                painter.setBrush(QBrush(g))
+                painter.drawEllipse(c, 2.6, 2.6)
+            painter.restore()
+            return
+        n, w, gap, top = (5, 3.0, 2.6, 17.0) if mode == "listen" else (3, 2.4, 2.4, 11.0)
+        level = self._smooth_level
+        centre = (n - 1) / 2
+        for i in range(n):
+            weight = 1.0 - abs(i - centre) / (centre + 1.0)
+            if mode == "listen":
+                wobble = 0.65 + 0.35 * math.sin(t * 10.0 + i * 1.7)
+                h = 3.5 + (top - 3.5) * min(1.0, level * 1.6) * (0.45 + 0.55 * weight) * wobble
+            else:
+                h = 3.0 + (top - 3.0) * _speech(t * 1.15 + i * 0.41) * (0.6 + 0.4 * weight)
+            x = right - (n - i) * (w + gap) + gap
+            bar = QRectF(x, cy - h / 2.0, w, h)
+            g = QLinearGradient(bar.topLeft(), bar.bottomLeft())
+            g.setColorAt(0.0, hot)
+            g.setColorAt(0.5, mid)
+            g.setColorAt(1.0, deep)
+            painter.setOpacity(fade)
+            painter.setBrush(QBrush(g))
+            painter.drawRoundedRect(bar, w / 2.0, w / 2.0)
+        painter.restore()
+
+    def _paint_thread(self, painter: QPainter, rect: QRectF, accent: QColor) -> None:
+        """A thread of the buddy's colour along the notch's lower edge, brightest
+        under the light, as if the light were spilling along it."""
+        if rect.height() < 12:
+            return
+        light = self._light_pos(rect)
+        y = rect.bottom() - 0.8
+        line = QLinearGradient(rect.left(), y, rect.right(), y)
+        clear = QColor(accent)
+        clear.setAlpha(0)
+        lit = QColor(accent)
+        lit.setAlphaF(min(1.0, 0.25 + 0.6 * self._light_b))
+        at = max(0.05, min(0.95, (light.x() - rect.left()) / max(1.0, rect.width())))
+        line.setColorAt(0.0, clear)
+        line.setColorAt(max(0.0, at - 0.42), clear)
+        line.setColorAt(at, lit)
+        line.setColorAt(min(1.0, at + 0.12), clear)
+        line.setColorAt(1.0, clear)
+        painter.save()
+        pen = QPen(QBrush(line), 1.6)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        painter.setPen(pen)
+        r = min(14.0, rect.height() * 0.4)
+        painter.drawLine(QPointF(rect.left() + r, y), QPointF(rect.right() - r, y))
+        painter.restore()
+
+    def _paint_burst(self, painter: QPainter, centre: QPointF, accent: QColor) -> None:
+        """Sparks flying out of the light (an answer or a guide just settled)."""
+        k = (time.monotonic() - self._burst_t0) / self._BURST_S
+        if not 0.0 <= k < 1.0:
+            return
+        hot, mid, _deep = accent_shades(accent)
+        ease = 1.0 - (1.0 - k) ** 3
+        painter.save()
+        painter.setPen(Qt.PenStyle.NoPen)
+        for i in range(9):
+            a = -math.pi * 0.95 + i * (math.pi * 1.9 / 8.0) + math.pi / 2
+            reach = (10.0 + 22.0 * ease) * (0.8 + 0.25 * ((i * 7) % 3))
+            c = QPointF(centre.x() + math.cos(a) * reach, centre.y() + 4.0 + math.sin(a) * reach * 0.8)
+            size = (2.6 if i % 2 else 1.8) * (1.0 - 0.6 * k)
+            painter.setOpacity((1.0 - k) ** 1.4)
+            painter.setBrush(hot if i % 2 else mid)
+            sparkle = QPainterPath(c + QPointF(0, -size * 1.8))
+            for dx, dy in ((0.35, -0.35), (1.8, 0.0), (0.35, 0.35), (0.0, 1.8), (-0.35, 0.35), (-1.8, 0.0),
+                           (-0.35, -0.35)):
+                sparkle.lineTo(c + QPointF(dx * size, dy * size))
+            sparkle.closeSubpath()
+            painter.drawPath(sparkle)
         painter.restore()
 
     def _paint_notice(self, painter: QPainter, rect: QRectF, accent: QColor) -> None:

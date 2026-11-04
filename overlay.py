@@ -1009,6 +1009,11 @@ class OverlayController:
         monitor: dict,
     ) -> None:
         """Fly the cursor from current position to Claude's target coordinate."""
+        try:
+            from ui_kit import sound
+            sound("point")
+        except Exception:
+            pass
         self._follow_timer.stop()
         self._dwell_timer.stop()
         self._state = _OverlayState.POINTING

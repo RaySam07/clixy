@@ -484,3 +484,109 @@ def test_closing_in_settings_keeps_the_old_settings(panel, stored):
     assert "EDGE_GLOW" not in stored and stored["TTS_PROVIDER"] == "cartesia"
     panel.open_on()
     assert panel.view == "home"
+
+
+def test_a_new_look_previews_live_and_back_puts_it_back(panel, stored, monkeypatch):
+    import ui_kit
+    monkeypatch.setattr(ui_kit, "_appearance", "light")
+    panel.open_on()
+    assert panel.show_settings("look")
+    page = panel.settings
+    page._look_cards["dark"].click()
+    assert ui_kit.skin() is ui_kit.MIDNIGHT, "the whole panel turns Midnight right away"
+    panel.grab()
+    page.back.click()
+    assert ui_kit.appearance() == "light" and "APPEARANCE" not in stored
+
+
+def test_done_keeps_the_look_and_the_sounds(panel, stored, monkeypatch):
+    import sys
+    import ui_kit
+
+    class FakeSfx:
+        on, vol = True, 0.7
+
+        @classmethod
+        def enabled(cls):
+            return cls.on
+
+        @classmethod
+        def set_enabled(cls, on):
+            cls.on = on
+
+        @classmethod
+        def volume(cls):
+            return cls.vol
+
+        @classmethod
+        def set_volume(cls, v):
+            cls.vol = v
+
+        @staticmethod
+        def preview(name):
+            pass
+
+    monkeypatch.setitem(sys.modules, "sfx", FakeSfx)
+    monkeypatch.setattr(ui_kit, "_appearance", "light")
+    panel.open_on()
+    assert panel.show_settings("sounds")
+    page = panel.settings
+    assert page._volume.isEnabled()
+    page._volume._set_from(page._volume._track().left() + page._volume._track().width() * 0.4)
+    assert FakeSfx.vol == pytest.approx(0.4, abs=0.02), "the volume changes as you drag"
+    page._fx_switch.click()
+    assert FakeSfx.on is False and not page._volume.isEnabled()
+    page.show_section("look")
+    page._look_cards["system"].click()
+    page.done.click()
+    assert stored["APPEARANCE"] == "system" and stored["SOUND_EFFECTS"] == "off"
+    assert stored["SOUND_VOLUME"] == "40"
+    monkeypatch.setattr(ui_kit, "_appearance", None)
+
+
+def test_every_section_has_its_tile_and_header(panel, stored):
+    import ui_kit
+    from panel_settings import HEROES, SECTIONS
+    panel.open_on()
+    assert panel.show_settings("about")
+    for key, _label in SECTIONS:
+        assert key in HEROES and (key in ui_kit.TILES), key
+        assert panel.settings._heroes[key].title
+    assert panel.settings.pages["about"].isVisible()
+
+
+def test_open_note_brings_back_the_real_note_card(panel, tmp_path, monkeypatch):
+    import json
+    import panel as panel_mod
+    folder = tmp_path / "kept"
+    folder.mkdir()
+    note = {"title": "Why the sky is blue", "items": [{"type": "text", "text": "short waves scatter"}],
+            "followups": ["Why are sunsets red?"]}
+    (folder / "2026-11-04 1000 Why the sky is blue.json").write_text(json.dumps(note), encoding="utf-8")
+    started = []
+    monkeypatch.setattr(panel_mod, "_start", started.append)
+    opened = []
+    panel.note_opened.connect(opened.append)
+    panel.notes_folder = folder
+    panel.open_on()
+    _settle(panel)
+    stack = panel.home.stack
+    assert stack.current.drawable and stack.open_btn.isEnabled(), "no picture, but it can be drawn again"
+    stack.open_btn.click()
+    assert opened == [note] and started == [], "the note card, not a picture in another app"
+    assert not panel.is_open
+
+
+def test_a_note_card_opened_again_is_not_kept_twice(qapp, monkeypatch):
+    import sketch
+    kept = []
+    monkeypatch.setattr(sketch, "save_note", lambda n, img: kept.append(n))
+    card = sketch.NoteCard()
+    try:
+        card.show_note({"title": "Again", "items": [{"type": "text", "text": "hi"}]}, again=True)
+        card._t0 -= 60
+        card._tick()
+        assert kept == []
+    finally:
+        card.clear()
+        card.close()
