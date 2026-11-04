@@ -1291,7 +1291,7 @@ class ClickyApp(QObject):
             # exactly, the next one as soon as this one is done.
             if guide.wants_guide(transcript):
                 stage = "AI"
-                self._run_guide(transcript, cursor_capture, cancel, dbg, drive=guide.wants_drive(transcript))
+                self._run_guide(transcript, cursor_capture, cancel, dbg, drive=guide.does_it(transcript))
                 return
 
             # Learning something: a sketch note draws itself while the voice explains. A
@@ -1715,10 +1715,19 @@ class ClickyApp(QObject):
         dbg.log(f"GUIDE: {goal!r}")
         self._guide_cancel = cancel
 
+        quick_ai = getattr(self, "_quick_ai", None)
+        if quick_ai is None:             # Sonnet without the thinking pass, made once and kept warm
+            from ai import thinking_variant
+            quick_ai = self._quick_ai = (thinking_variant(self._ai, effort=None)
+                                         if self._smart_ai is not self._ai else self._ai)
+
         def ask(cap, text: str):
             # Streams: the guide speaks each sentence the moment it's in, before the tags arrive.
-            with self._smart_ai.ask_stream(images=[(cap.image, cap.label)], transcript=text, history=[],
-                                           system_prompt=guide.system_prompt()) as stream:
+            # Doing it for them, the first step plans the route (thinking); the rest answer
+            # straight away, a few words and a tag, so each move follows the last quickly.
+            client = quick_ai if session.driving and session.progress()["n"] >= 1 else self._smart_ai
+            with client.ask_stream(images=[(cap.image, cap.label)], transcript=text, history=[],
+                                   system_prompt=guide.system_prompt()) as stream:
                 yield from stream.text_deltas()
 
         def fresh_capture():

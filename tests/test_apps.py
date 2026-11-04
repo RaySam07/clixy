@@ -118,3 +118,15 @@ def test_an_answer_that_opens_something_opens_it_and_doesnt_say_the_tag(mocker):
     said = " ".join(c.args[0] for c in app._tts.speak_sentence.call_args_list)
     assert "OPEN" not in said and "opening spotify" in said
     assert "[OPEN:" in app._ai.ask_stream.call_args.kwargs["system_prompt"]
+
+
+def test_a_named_browser_opens_the_link():
+    assert apps.browser_named("search it up on Chrome for me") == "chrome"
+    assert apps.browser_named("open it in Microsoft Edge") == "msedge"
+    assert apps.browser_named("search flights to calicut") == ""
+    calls = []
+    apps.open_target("https://www.google.com/search?q=ai", start=lambda *a: calls.append(a), browser="chrome")
+    assert calls == [("chrome", "https://www.google.com/search?q=ai")]
+    calls.clear()
+    apps.open_target("google.com", start=lambda *a: calls.append(a))
+    assert calls == [("https://google.com",)], "no browser named: the default one"

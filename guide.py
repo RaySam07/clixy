@@ -128,8 +128,11 @@ _FILLER = r"(?:(?:ok(?:ay)?|yeah|yes|so|and|now|please|just|hey|clixy)\W+)*"
 _SEARCH = r"(?:search|google|look)(?: (?:up|out|for))?"
 _DO_TASK = re.compile(
     rf"^\W*{_FILLER}for me\b|"
+    r"\bi (?:want|need) you to\b|"
+    r"(?:can|could|will|would) you\b[^.?!]{0,80}\bfor me\b|"
     rf"\b(?:open(?: up)?|go (?:on ?to|onto|to|into)|launch|pull up|head to)\s+(?:\S+\s+){{0,4}}?and (?:then )?"
-    rf"(?:{_SEARCH}|type|write|play|find|book|fill|check)\b|"
+    rf"(?:{_SEARCH}|type|write|play|find|book|fill|check|prepare|set ?up|create|make|organi[sz]e|start|add|"
+    r"turn|change|clear)\b|"
     rf"\b{_SEARCH}\b.{{1,80}}\b(?:on|in|using) (?:chrome|google|youtube|edge|firefox|bing|amazon|"
     rf"the (?:web|internet|browser)|(?:this|my) browser)\b|"
     rf"\b(?:on|in) (?:this |my |the )?(?:chrome|edge|firefox|(?:chrome |web )?browser)\b.{{0,30}}\b{_SEARCH}\b|"
@@ -147,6 +150,20 @@ def wants_drive(text: str) -> bool:
     if _HANDS_OFF.match(t) or _ASKING.match(t):
         return False
     return bool(_DRIVE.search(t) or _DO_TASK.search(t))
+
+
+# Asking to be shown the way, not for it to be done: "how do I...", "where's...", "help me...".
+_POINT_ONLY = re.compile(r"\b(?:how (?:do|can|would|should) (?:i|we)|how to|show me (?:how|where)|walk me through|"
+                         r"guide me|teach me|tell me (?:how|where|exactly where)|where(?:'s| is| are| do| can)|"
+                         r"help me|step by step|let me do)\b", re.IGNORECASE)
+
+
+def does_it(text: str) -> bool:
+    """Should Clixy do this job itself (when Do it for me is on)? When asked to ("for
+    me", "I want you to..."), and for a plain command ("open Voice Studio and set up
+    a new clone"); a how-to or where-is ("how do I...", "help me...") it points through."""
+    t = " ".join((text or "").split())
+    return wants_drive(t) or (wants_guide(t) and not _POINT_ONLY.search(t) and not _ASKING.match(t))
 
 
 def during_guide(text: str) -> str:
@@ -627,6 +644,7 @@ class Guide:
     routes: object = None            # memory.RouteBook
     hands: object = None             # hands.py: click, type_text, press (drive mode)
     drive_pause_s: float = 0.35      # drive mode: the mark shows this long before the click
+    take_over_moves: int = 6         # drive mode: this many long mouse moves (~240 px of sweep) is taking over
     dbg: object = None
     clock: object = time.monotonic
     sleep: object = time.sleep
@@ -655,6 +673,7 @@ class Guide:
     _asking: bool = field(default=False, init=False, repr=False)   # a risky step waits for your yes
     _showing: str = field(default="", init=False, repr=False)      # the step on show: "" (Clixy may do it) or why not
     _know_cache: dict = field(default_factory=dict, init=False, repr=False)
+    _browser: str = field(default="", init=False, repr=False)      # the browser the goal names ("chrome")
 
     # --- For the panel (any thread) -------------------------------------------------
 
@@ -726,8 +745,13 @@ class Guide:
         self._goal = " ".join((goal or "").split())
         _current = self
         hint = self._route_hint(goal)
+        import apps
+        self._browser = apps.browser_named(goal)
         self.watch.start()
         plan: list[Planned] = []     # the steps the model foresaw, still to come
+        last_click = ""              # the element the last step clicked: a planned repeat of it is skipped
+        if self.driving and self.speak is not None:
+            self._speak("on it.")    # doing it: a word now, then quiet till the result
         try:
             # Step one's look, with the know-how for the app in front fetched alongside.
             wins0 = self._windows()
@@ -742,17 +766,21 @@ class Guide:
                     return last
                 lines, ids = element_lines(found, capture)
                 fast = self._from_plan(plan, ids) if not fix else None
+                if fast is not None and last_click and (ids[fast.target].name or "").strip().lower() == last_click:
+                    self._log(f"GUIDE: the plan clicks {last_click!r} again: looking afresh instead")
+                    fast, plan = None, []
+                    fix = f'you just clicked "{last_click}". if the screen shows it did nothing, try another way.'
                 if fast is not None:     # the next step is the one foreseen, and it's on screen: show it now
                     step, plan = fast, plan[1:]
                     self._log(f"GUIDE: step {n + 1} from the plan ({plan and len(plan) or 0} more): {step.say!r}")
-                    if self.speak is not None and step.say:
+                    if self.speak is not None and step.say and not self.driving:
                         self._speak(step.say)
                     reply, spoken_to, quiet = "", 0, True
                 else:
                     wins = self._windows()
                     prompt = self._prompt(goal, done, lines, fix, wins, hint, self._know(goal, wins), plan)
                     asked = self.clock()
-                    reply, spoken_to = self._ask(capture, prompt, speak=not spoke, n=n + 1)
+                    reply, spoken_to = self._ask(capture, prompt, speak=not spoke and not self.driving, n=n + 1)
                     self._log(f"GUIDE: step {n + 1} reply in {self._ms(asked)} ms {reply!r}")
                     if self._halted():
                         return last
@@ -778,7 +806,9 @@ class Guide:
                 if step.faster:
                     self._shortcut = step.faster
                 rest = parse_step(reply[spoken_to:]).say if spoken_to else (step.say if reply else "")
-                if self.speak is not None and rest and not quiet:
+                # Doing it for them, the steps are shown, not told: only the result is spoken.
+                told = not self.driving or step.done or (not marks and step.action not in ("open", "focus"))
+                if self.speak is not None and rest and not quiet and told:
                     self._speak(rest)
                 if step.say:
                     self.say(step.say, n, total, (target, capture.monitor) if target else None)
@@ -847,6 +877,7 @@ class Guide:
                 done.append(self._describe(step, ids))
                 route.append(self._move(step, ids))
                 self._done_labels.append(step_label(step, ids, past=True))
+                last_click = (ids[step.target].name or "").strip().lower() if step.target in ids else ""
                 self.clear()
                 if step.action == "keys":
                     import apps
@@ -903,6 +934,8 @@ class Guide:
         if self.open is None:
             return ""
         try:
+            if self._browser:            # "search it on Chrome": its links open in Chrome
+                return self.open(target, browser=self._browser) or ""
             return self.open(target) or ""
         except Exception:
             return ""
@@ -1125,8 +1158,11 @@ class Guide:
         if hint:
             parts.append(hint)
         if self.driving:
-            parts.append("mode: you're doing it for them while they watch. one step at a time as usual, but say "
-                         "each in a few words as you do it, first person (\"opening your profile menu\"). anything "
+            parts.append("mode: you're doing it yourself while they watch, so be quick and quiet. before the tag "
+                         "write only a few words naming the move, first person (\"opening voice cloning\"): it's "
+                         "shown, not spoken. no explanations, no apologies, never describe a slip: just fix it. "
+                         "never hand it back or ask them to do a step you can do; keep going till it's done. the "
+                         "only words spoken are the result when it's done (one or two natural sentences). anything "
                          "that sends, buys, pays, deletes, posts or signs out: say what it will do and ask first "
                          "(\"want me to send it?\"). never type a password or card number.")
         if plan:
@@ -1193,12 +1229,16 @@ class Guide:
     def _user_input(self) -> str:
         """Your own input since the last look: "esc", "input" (a click, a key, a mouse
         move: you're taking over), or "". Clixy's own input never counts (it's injected)."""
-        seen = ""
+        seen, moves = "", 0
         while (event := self.watch.get(0)) is not None:
             if event[0] == "combo" and event[1] == frozenset({"esc"}):
                 return "esc"
-            seen = "input"
-        return seen
+            if event[0] == "move":
+                moves += 1
+            else:
+                seen = "input"
+        # A hand resting on the mouse nudges it: only a real sweep (several long moves) is taking over.
+        return seen or ("input" if moves >= self.take_over_moves else "")
 
     def _aside(self, sentence: str) -> None:
         """A short spoken aside (handing over, asking first): heard, never shown."""

@@ -213,9 +213,22 @@ def find_app(name: str, apps: dict[str, str] | None = None) -> str | None:
     return by_lower[close[0]] if close else None
 
 
-def open_target(target: str, *, start=None) -> str:
+_BROWSERS = {"google chrome": "chrome", "chrome": "chrome", "microsoft edge": "msedge", "edge": "msedge",
+             "firefox": "firefox", "brave": "brave", "opera": "opera"}
+_BROWSER_RE = re.compile(r"\b(" + "|".join(_BROWSERS) + r")\b", re.IGNORECASE)
+
+
+def browser_named(text: str) -> str:
+    """The browser a request names ("search it on Chrome" -> "chrome"), as Windows
+    knows its program; "" when it names none (links then open in the default one)."""
+    m = _BROWSER_RE.search(text or "")
+    return _BROWSERS[m.group(1).lower()] if m else ""
+
+
+def open_target(target: str, *, start=None, browser: str = "") -> str:
     """Open an app, a website or a Settings page. Returns what was opened
-    ("Spotify", "youtube.com"), or "" when nothing matched."""
+    ("Spotify", "youtube.com"), or "" when nothing matched. A website opens in
+    ``browser`` ("chrome") when given, else in the default browser."""
     start = start or _start
     kind = kind_of(target)
     if kind == "settings":
@@ -244,7 +257,10 @@ def open_target(target: str, *, start=None) -> str:
         url = target.strip()
         if not re.match(r"^https?://", url, re.I):
             url = "https://" + url
-        start(url)
+        try:
+            start(browser, url) if browser else start(url)
+        except OSError:
+            start(url)                   # that browser isn't installed: the default one
         return re.sub(r"^https?://(www\.)?", "", url).rstrip("/")
     name = find_app(target)
     if name is not None:

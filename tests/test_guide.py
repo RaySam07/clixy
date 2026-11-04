@@ -423,7 +423,7 @@ def test_asked_to_do_it_clixy_does_each_step_itself():
     g.set_drive(True)
     g.run("open my youtube studio for me", _capture(scale=1.0))
     assert acted == [("click", 1220, 100), ("click", 600, 35), ("type", "youtube studio"), ("press", "enter")]
-    assert "mode: you're doing it for them" in log["prompts"][0]
+    assert "mode: you're doing it yourself while they watch" in log["prompts"][0]
     assert log["shown"][0] == [Box(1200, 80, 1240, 120)], "it shows where it's about to click first"
 
 
@@ -546,3 +546,67 @@ def test_the_guide_voice_starts_on_the_first_phrase_too():
     early.feed("click your round profile picture at the top right so the menu opens. then ")
     early.feed("pick studio. [CLICK:#3:profile]")
     assert heard == ["click your round profile picture,", "at the top right so the menu opens.", "then pick studio."]
+
+
+# --- Do it as commanded: quick, quiet, not put off by a resting hand ------------------------------
+
+def test_doing_it_says_on_it_then_only_the_result():
+    acted, spoken = [], []
+    profile = Element("button", "Account", (1200, 80, 1240, 120))
+    g, log = _guide(["opening your profile menu. [CLICK:#1:profile][STEP:1/2]",
+                     "your studio's open, with today's views up top. [DONE]"],
+                    [], elements=[profile], hands=_hands(acted), speak=spoken.append)
+    g.set_drive(True)
+    g.run("open my youtube studio for me", _capture(scale=1.0))
+    assert acted == [("click", 1220, 100)]
+    assert spoken == ["on it.", "your studio's open, with today's views up top."], "steps are shown, not told"
+    assert log["said"][0][0] == "opening your profile menu."
+
+
+def test_a_resting_hand_nudging_the_mouse_is_not_taking_over():
+    acted = []
+    a = Element("button", "Settings", (10, 10, 60, 40))
+    g, _ = _guide(["opening settings. [CLICK:#1:settings][STEP:1/1][DONE]"], [("move", 500, 500), ("move", 545, 500)],
+                  elements=[a], hands=_hands(acted))
+    g.set_drive(True)
+    g.run("open settings for me", _capture(scale=1.0))
+    assert acted == [("click", 35, 25)] and g.driving
+
+    swept = []
+    g2, _ = _guide(["opening settings. [CLICK:#1:settings][STEP:1/2]"],
+                   [("move", 100 + 50 * i, 500) for i in range(6)], elements=[a], hands=_hands(swept))
+    g2.set_drive(True)
+    g2.max_steps = 1
+    g2.run("open settings for me", _capture(scale=1.0))
+    assert swept == [] and not g2.driving, "a real sweep of the mouse is taking over"
+
+
+def test_a_planned_click_that_just_happened_is_not_repeated():
+    acted = []
+    sample = Element("button", "Voice sample", (100, 100, 200, 140))
+    g, log = _guide(['opening voice sample. [CLICK:#1:voice sample][STEP:1/2][PLAN:click "Voice sample": opens it]',
+                     "the recorder's ready. [DONE]"], [], elements=[sample], hands=_hands(acted))
+    g.set_drive(True)
+    g.run("set up a new voice clone for me", _capture(scale=1.0))
+    assert acted == [("click", 150, 120)], "clicked once, not again from the plan"
+    assert len(log["prompts"]) == 2 and 'you just clicked "voice sample"' in log["prompts"][1]
+
+
+def test_links_open_in_the_browser_the_goal_names():
+    opened = []
+    g, _ = _guide([], [])
+    g.open = lambda target, **kw: opened.append((target, kw)) or "google.com"
+    g._browser = "chrome"
+    assert g._open("https://www.google.com/search?q=ai") == "google.com"
+    assert opened == [("https://www.google.com/search?q=ai", {"browser": "chrome"})]
+
+
+@pytest.mark.parametrize("said, does", [
+    ("Can you open up Voice Studio and prepare for me a new Voice Clone page so I can record? That's it.", True),
+    ("I want you to now open up a new voice cloning page so all I have to do is record my voice.", True),
+    ("turn on dark mode", True), ("take me to display settings", True),
+    ("how do I turn on dark mode", False), ("help me add a panel in hark", False),
+    ("where is the export button", False), ("what is a binary tree", False), ("is this good for me", False),
+])
+def test_a_command_is_done_and_a_how_to_is_shown(said, does):
+    assert guide.does_it(said) is does
