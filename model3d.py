@@ -31,7 +31,7 @@ from scipy import ndimage
 
 LIBRARY = Path(__file__).with_name("models3d")
 CACHE = Path.home() / ".clixy" / "cache" / "3d"
-CACHE_VERSION = 4
+CACHE_VERSION = 5
 MAX_PARTS = 60
 MAX_SHAPES = 240          # all parts together
 F = np.float32
@@ -302,17 +302,19 @@ def catmull_rom(pts: np.ndarray, per: int = 8, closed: bool = False) -> np.ndarr
     return np.vstack(out)
 
 
+_LATTICE = np.random.default_rng(1307).uniform(-1.0, 1.0, 64 ** 3).astype(F)   # the same bumps every time
+
+
 def value_noise(P: np.ndarray) -> np.ndarray:
-    """Smooth 3D noise in -1..1 (hashed lattice, cubic fade)."""
+    """Smooth 3D noise in -1..1 (a random lattice that repeats every 64 units, cubic fade)."""
     i = np.floor(P).astype(np.int64)
     f = (P - i).astype(F)
     u = f * f * (3 - 2 * f)
+    ix, iy, iz = i[:, 0] & 63, i[:, 1] & 63, i[:, 2] & 63
+    jx, jy, jz = (ix + 1) & 63, (iy + 1) & 63, (iz + 1) & 63
 
     def h(dx, dy, dz):
-        n = ((i[:, 0] + dx) * 73856093) ^ ((i[:, 1] + dy) * 19349663) ^ ((i[:, 2] + dz) * 83492791)
-        n = (n ^ (n >> 13)) * 1274126177
-        n = n ^ (n >> 16)
-        return ((n & 0xFFFF).astype(F) / 32767.5) - 1.0
+        return _LATTICE[((jx if dx else ix) * 64 + (jy if dy else iy)) * 64 + (jz if dz else iz)]
 
     x0 = h(0, 0, 0) * (1 - u[:, 0]) + h(1, 0, 0) * u[:, 0]
     x1 = h(0, 1, 0) * (1 - u[:, 0]) + h(1, 1, 0) * u[:, 0]
@@ -743,11 +745,16 @@ class Part:
             d = np.abs(d) - F(self.shell / 2)
         if self.bumps:
             size, depth, style = self.bumps
-            n = value_noise(raw * F(self.scale / size) + 17.3) + 0.5 * value_noise(raw * F(2.03 * self.scale / size))
-            n = n / 1.5
-            if style == "ridged":      # folds, like a brain or a walnut
-                n = 1.0 - 2.0 * np.abs(n)
-            d = d + F(depth) * n
+            # Only near the surface: further out the bumps can't change which side a point is on.
+            near = np.flatnonzero(np.abs(d) < F(max(6 * depth, 1e-6)))
+            if len(near):
+                q = raw[near]
+                n = value_noise(q * F(self.scale / size) + 17.3) + 0.5 * value_noise(q * F(2.03 * self.scale / size))
+                n = n / 1.5
+                if style == "ridged":      # folds, like a brain or a walnut
+                    n = 1.0 - 2.0 * np.abs(n)
+                d = d.copy()
+                d[near] += F(depth) * n
         if with_cut:
             for nrm, at in self.cuts:          # in the part's own frame
                 d = np.maximum(d, ((raw - at.astype(F)) @ nrm.astype(F)) * F(self.scale))
