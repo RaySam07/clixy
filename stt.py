@@ -1021,6 +1021,20 @@ class _CartesiaSession:
 # --- FasterWhisperSTT (local offline provider) ------------------------------
 
 _MODEL_WAIT_S = 300.0
+
+HOTWORDS = "Clixy, Claude, ChatGPT, GPT, Gemini, Copilot, VoiceStudio, YouTube Studio, Chrome, WhatsApp"
+"""Names Whisper would otherwise mishear ("Quick-See" for Clixy, "GPD" for GPT)."""
+
+
+def _pcm_to_float(data: bytes):
+    import numpy as np
+    return np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0
+
+
+def _rms(data: bytes) -> float:
+    import numpy as np
+    samples = np.frombuffer(data[: len(data) // 2 * 2], dtype=np.int16).astype(np.float32) / 32768.0
+    return float(np.sqrt(np.mean(samples * samples))) if samples.size else 0.0
 """How long a question waits for the speech model on its first download."""
 
 def _add_cuda_dll_dirs() -> None:
@@ -1082,6 +1096,13 @@ class FasterWhisperSTT(STT):
         self._latest_partial = ""
         self._model_ready = threading.Event()
         self._model_error: Exception | None = None
+        self.hotwords = HOTWORDS
+        self.early_every_s = 0.5
+        """While you talk, what you've said so far is transcribed this often."""
+        self._early_lock = threading.Lock()
+        self._early: tuple[int, str] = (0, "")      # (bytes of audio covered, their text)
+        self.reused_early = False
+        """The last stop_recording() answered from the pass made while you talked."""
 
     def _default_model_factory(self):
         """On an NVIDIA GPU when one works ("auto" or "cuda"): about 0.1 s per
@@ -1155,12 +1176,60 @@ class FasterWhisperSTT(STT):
         self._ensure_mic()
         self._buffer = bytearray()
         self._chunk_count = 0
+        self._early = (0, "")
         self._recording = True
+        self._take = getattr(self, "_take", 0) + 1
+        if self.early_every_s:
+            threading.Thread(target=self._early_loop, args=(self._take,), daemon=True, name="whisper-early").start()
+
+    def _transcribe(self, audio) -> str:
+        options = dict(language="en", beam_size=1, without_timestamps=True, condition_on_previous_text=False)
+        if self.hotwords:
+            options["hotwords"] = self.hotwords        # names it would otherwise mishear ("Clixy")
+        segments, _info = self._model.transcribe(audio, **options)
+        return " ".join(seg.text for seg in segments).strip()
+
+    def _early_loop(self, take: int) -> None:
+        """While you talk: transcribe what's been said so far every ``early_every_s``,
+        so letting go can reuse it instead of starting from scratch (the GPU is idle
+        while you speak anyway)."""
+        step = int(self._sample_rate * 2 * self.early_every_s)
+        while self._recording and self._take == take:      # this recording only
+            time.sleep(0.05)
+            if self._model is None or self._model_error is not None or not self._model_ready.is_set():
+                continue
+            size = len(self._buffer)
+            if size - self._early[0] < step:
+                continue
+            with self._early_lock:
+                if not self._recording or self._take != take:
+                    return
+                try:
+                    text = self._transcribe(_pcm_to_float(bytes(self._buffer[:size])))
+                except Exception:
+                    return
+                self._early = (size, text)
+
+    def _early_text(self, data: bytes) -> str | None:
+        """The text from while you talked, if everything after it is quiet (you'd
+        finished): letting go then costs no listening time. None: listen again."""
+        covered, text = self._early
+        if not covered or not text or covered > len(data):
+            return None
+        tail = data[covered:]
+        if len(tail) > self._sample_rate * 2 * 1.0:      # more than a second it hasn't heard
+            return None
+        if len(tail) < self._sample_rate * 2 * 0.05:
+            return text
+        whole, rest = _rms(data), _rms(tail)
+        return text if rest < 0.15 * whole else None
 
     def stop_recording(self) -> str:
         """Stop buffering, transcribe the buffer, return the text. Waits for
-        the model if it's still loading."""
+        the model if it's still loading. When the pass made while you talked
+        already covers it all (the rest is quiet), that text comes back at once."""
         self._recording = False
+        self.reused_early = False
         if not self._buffer:
             return ""
         if not self._model_ready.wait(timeout=_MODEL_WAIT_S):
@@ -1172,13 +1241,12 @@ class FasterWhisperSTT(STT):
                 "On-device listening couldn't load its model. Check your internet for the one-time "
                 "download, or set Voice to Cloud in Clixy's Settings."
             ) from self._model_error
-        import numpy as np
-        audio = (
-            np.frombuffer(bytes(self._buffer), dtype=np.int16).astype(np.float32)
-            / 32768.0
-        )
-        segments, _info = self._model.transcribe(audio, language="en", beam_size=1)
-        text = " ".join(seg.text for seg in segments).strip()
+        with self._early_lock:        # a pass still running finishes first: it may cover it all
+            data = bytes(self._buffer)
+            text = self._early_text(data)
+            self.reused_early = text is not None
+            if text is None:
+                text = self._transcribe(_pcm_to_float(data))
         self._latest_partial = text
         if self._partial_cb is not None:
             try:

@@ -1153,6 +1153,8 @@ class ClickyApp(QObject):
                 transcript = self._stt.stop_recording()
                 dbg.log(f"STT: {self._stt._chunk_count} audio chunks captured")
                 dbg.log(f"STT: latest partial: {self._stt._latest_partial!r}")
+                if getattr(self._stt, "reused_early", False):
+                    dbg.log("STT: used the pass made while you talked (nothing new after it)")
             dbg.log(f"STT: final transcript ({len(transcript)} chars): {transcript!r}")
             _log(f"Transcript: {transcript!r}")
             running = guide.current() if self._guiding() else None

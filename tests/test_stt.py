@@ -537,6 +537,38 @@ class TestFasterWhisperSTT:
         stt._on_audio(b"\x01\x00" * 1024, 1024, None, None)
         assert stt.stop_recording() == ""  # nothing buffered
 
+    def _talk(self, mocker, tail):
+        import time
+        import numpy as np
+        from stt import FasterWhisperSTT
+        calls = []
+        model = mocker.MagicMock()
+        model.transcribe.side_effect = lambda audio, **kw: (calls.append(kw) or [self._seg("open chrome")], None)
+        stt = FasterWhisperSTT(model_factory=lambda: model, audio_stream_factory=lambda cb: mocker.MagicMock())
+        stt.connect()
+        stt._model_ready.wait(2)
+        stt.start_recording()
+        speech = (np.sin(np.arange(16000) / 5) * 8000).astype(np.int16).tobytes()     # a second of talking
+        stt._on_audio(speech, 16000, None, None)
+        deadline = time.time() + 2
+        while stt._early[0] == 0 and time.time() < deadline:
+            time.sleep(0.01)
+        stt._on_audio(tail, len(tail) // 2, None, None)
+        return stt, stt.stop_recording(), calls
+
+    def test_letting_go_after_you_finish_reuses_the_pass_made_while_you_talked(self, mocker):
+        import numpy as np
+        stt, text, calls = self._talk(mocker, np.zeros(3200, np.int16).tobytes())      # 0.2 s of quiet
+        assert text == "open chrome" and stt.reused_early
+        assert len(calls) == 1, "no second pass after letting go"
+        assert "Clixy" in calls[0]["hotwords"] and calls[0]["without_timestamps"]
+
+    def test_words_after_the_last_pass_are_listened_to(self, mocker):
+        import numpy as np
+        more = (np.sin(np.arange(4800) / 5) * 8000).astype(np.int16).tobytes()       # 0.3 s more talking
+        stt, text, calls = self._talk(mocker, more)
+        assert not stt.reused_early and len(calls) == 2
+
     def test_lazy_no_faster_whisper_import_when_using_di(self):
         import sys
         sys.modules.pop("faster_whisper", None)
