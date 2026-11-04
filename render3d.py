@@ -87,6 +87,8 @@ vec3 studio(vec3 d, float r) {
   c += vec3(3.2, 3.1, 2.95) * smoothstep(0.83 - w, 0.93 - w * 0.4, dot(d, normalize(vec3(-0.55, 0.62, 0.55)))) * (1.0 - 0.55 * r);
   c += vec3(1.5, 1.6, 1.75) * smoothstep(0.90 - w, 0.97 - w * 0.4, dot(d, normalize(vec3(0.9, 0.2, 0.25)))) * (1.0 - 0.55 * r);
   c += vec3(1.1) * smoothstep(0.86 - w, 0.95 - w * 0.4, dot(d, normalize(vec3(0.1, 0.35, -0.95)))) * (1.0 - 0.55 * r);
+  // A big soft light behind the camera, so metal facing you shows light, not the dark floor.
+  c += vec3(0.95, 0.93, 0.9) * smoothstep(0.55 - w, 0.85 - w * 0.4, dot(d, normalize(vec3(0.15, 0.25, 1.0)))) * (1.0 - 0.55 * r);
   return c;
 }
 
@@ -585,6 +587,7 @@ class _Label:
         self.color = color
         self.anchor = None          # model space, at rest
         self.fixed = False          # a spot the model names (not found by looking)
+        self.still = False          # on a part spinning on its own axis: the label holds still
         self.tip = False            # named right beside the spot (an arrow's tip), not on a leader line
         self.side = 1
         self.rect = QRectF()
@@ -704,6 +707,21 @@ class RealModel:
                 lb.fixed = True
                 lb.tip = tip
                 self.labels.append(lb)
+
+        for lb in self.labels:
+            lb.still = self._spins_in_place(self.model.meshes[lb.k])
+
+    @staticmethod
+    def _spins_in_place(mesh) -> bool:
+        """A gear, a wheel, a fan: spinning about an axis through itself (a planet orbiting
+        the sun is not), so a spot on it stays where it is."""
+        mo = mesh.part.motion
+        if mo is None or mo.kind != "spin":
+            return False
+        c = mesh.centre - mo.at
+        off = float(np.linalg.norm(c - (c @ mo.axis) * mo.axis))
+        reach = float(np.linalg.norm(mesh.pos - mesh.centre, axis=1).max()) if len(mesh.pos) else 0.0
+        return off < 0.3 * max(reach, 1e-9)
 
     def label_count(self) -> int:
         return len(self.labels)
@@ -906,7 +924,7 @@ class RealModel:
 
         anchors = {}
         for lb in self.labels:
-            m = mats[lb.k]
+            m = np.eye(4) if lb.still else mats[lb.k]
             anchors[id(lb)] = screen(m[:3, :3] @ lb.anchor + m[:3, 3])
         bottom = canvas.bottom() - row * len(self.captions) - (6 if self.captions else 0)
         from scene3d import _spread

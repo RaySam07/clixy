@@ -31,7 +31,7 @@ from scipy import ndimage
 
 LIBRARY = Path(__file__).with_name("models3d")
 CACHE = Path.home() / ".clixy" / "cache" / "3d"
-CACHE_VERSION = 5
+CACHE_VERSION = 6
 MAX_PARTS = 60
 MAX_SHAPES = 240          # all parts together
 MAX_PART_SHAPES = 64      # in one part
@@ -1008,11 +1008,11 @@ def mesh_part(part: Part, h: float) -> Mesh | None:
                 centre=verts.mean(0).astype(np.float64), grid=(D, lo, h))
 
 
-def _lookup(meshes: list[Mesh], P: np.ndarray, skip: int | None = None) -> np.ndarray:
-    """The whole model's distance at points (from each part's grid)."""
+def _lookup(meshes: list[Mesh], P: np.ndarray, use=None) -> np.ndarray:
+    """The model's distance at points (from each part's grid; only the parts in ``use``)."""
     out = np.full(len(P), 1e3, F)
     for k, m in enumerate(meshes):
-        if m.grid is None or k == skip:
+        if m.grid is None or (use is not None and k not in use):
             continue
         D, lo, h = m.grid
         g = (P - lo) / h
@@ -1027,12 +1027,17 @@ def _lookup(meshes: list[Mesh], P: np.ndarray, skip: int | None = None) -> np.nd
 def ambient_occlusion(meshes: list[Mesh], size: float) -> None:
     """How enclosed each vertex is by the model around it (dark in creases and gaps)."""
     steps = np.array([0.012, 0.03, 0.055, 0.085, 0.12]) * size
-    for m in meshes:
+    # Parts that turn or slide only shade themselves, and nothing else is shaded by them:
+    # worked out at rest, their shading would be wrong as soon as they move.
+    moving = {k for k, m in enumerate(meshes) if m.part.motion is not None and m.part.motion.kind in ("spin", "slide", "swing")}
+    still = set(range(len(meshes))) - moving
+    for k, m in enumerate(meshes):
         occ = np.zeros(len(m.pos), F)
         w = 1.0
+        use = {k} if k in moving else still
         for s in steps:
             P = (m.pos + m.nrm * F(s)).astype(F)
-            d = _lookup(meshes, P)
+            d = _lookup(meshes, P, use)
             occ += F(w) * np.maximum(F(s) - d, 0) / F(s)
             w *= 0.75
         m.ao = np.clip(1.0 - 0.42 * occ, 0.18, 1.0).astype(F)
@@ -1505,7 +1510,7 @@ class Model:
 
     # What a part shows but doesn't change about its shape or colours: choosing labels or
     # picking parts out never rebuilds a model.
-    _LOOKS_ONLY = ("label", "labels", "dim", "anchor", "move", "opacity", "name")
+    _LOOKS_ONLY = ("label", "labels", "dim", "anchor", "opacity", "name")
 
     def key(self) -> str:
         def shape_only(p):
