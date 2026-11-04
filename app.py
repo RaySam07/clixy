@@ -88,6 +88,15 @@ Settings are saved (ClickyApp.apply_live_settings), never per question."""
 
 _SENTENCE_END_RE = re.compile(r"[.!?]\s")
 _CLAUSE_END_RE = re.compile(r"[,;:]\s")
+_INTENT_PROMPT = """\
+you sort what someone said to clixy, an assistant with hands on their windows computer: it can click, type and go \
+through any app or site for them. reply with one word only.
+do: they want clixy to carry something out on the computer: go to an app or site and do something there (message \
+someone, search, type, play, find or check something in an app or their account and report back, change a setting, \
+fill something in), or anything asked "for me".
+show: they want to be shown how or where to do it themselves (how do i, where is, guide me, walk me through, teach me).
+answer: a question to answer or explain, small talk, a question about what's on the screen right now, or just \
+opening one app or site with nothing to do there."""
 _DO_TAG_RE = re.compile(r"^\s*\[\s*DO\s*\]", re.IGNORECASE)   # the answer model: "a job for the hands"
 _STRAY_POINT_RE = re.compile(r"\[\s*POINT\b[^\]]*\]?", re.IGNORECASE)
 
@@ -1304,14 +1313,28 @@ class ClickyApp(QObject):
             # hand-built 3D model that fits shows at once; anything else is sketched by the
             # thinking model. Either way the voice knows the card is coming, so it teaches
             # the thing instead of talking about the screen or what it can't show.
+            # Do, show or answer? Asked of the quick model alongside the answer (text only), so a
+            # job said any way reaches the hands before a word of an answer is spoken.
+            intent: dict = {}
+            intent_ready = threading.Event()
+            if self._can_sort():
+                threading.Thread(target=self._intent, args=(transcript, intent, intent_ready, dbg),
+                                 daemon=True, name="clixy-intent").start()
+            else:
+                intent_ready.set()
+
             if sketch.wants_sketch(transcript):
                 instant = sketch.library_note(transcript)
                 if instant is not None:
                     dbg.log(f"SKETCH: at once, the hand-built {instant['items'][0]['name']!r}")
                     self.sig_show_sketch.emit(instant)
                 else:
-                    threading.Thread(target=self._make_sketch, args=(transcript, cursor_capture, cancel, dbg),
-                                     daemon=True, name="clixy-sketch").start()
+                    def sketch_unless_a_job() -> None:
+                        intent_ready.wait(2.0)
+                        if intent.get("intent") not in ("do", "show"):
+                            self._make_sketch(transcript, cursor_capture, cancel, dbg)
+
+                    threading.Thread(target=sketch_unless_a_job, daemon=True, name="clixy-sketch").start()
                 user_text = f"{user_text}\n\n{sketch.VOICE_HINT}"
 
             dbg.log("LLM: streaming started...")
@@ -1365,7 +1388,7 @@ class ClickyApp(QObject):
                     _ask_kwargs.get("system_prompt", _CLICKY_SYSTEM_PROMPT) + apps.prompt_block())
 
             stage = "AI"
-            handed = False
+            handed, hand_drive = False, True
             with self._ai.ask_stream(**_ask_kwargs) as stream:
                 first_token = True
                 first_sentence_s = None
@@ -1383,6 +1406,11 @@ class ClickyApp(QObject):
                         tag_started = True
                     if not tag_started:
                         sentences, sentence_buffer = flush_sentences(sentence_buffer, clause=not flushed)
+                        if sentences and not flushed:
+                            intent_ready.wait(1.5)      # never start answering what's a job
+                            if intent.get("intent") in ("do", "show"):
+                                handed, hand_drive = True, intent["intent"] == "do"
+                                break
                         for s in sentences:
                             if cancel.is_set():
                                 return
@@ -1392,6 +1420,10 @@ class ClickyApp(QObject):
                                 first_sentence_s = time.monotonic() - getattr(self, "_released_at", time.monotonic())
                             flushed.append(s)
 
+                if not handed and not flushed:     # a reply that was only tags ([OPEN:...])
+                    intent_ready.wait(1.5)
+                    if intent.get("intent") in ("do", "show"):
+                        handed, hand_drive = True, intent["intent"] == "do"
                 if not handed:
                     result = stream.final_result()
                     usage = stream.usage()
@@ -1401,8 +1433,8 @@ class ClickyApp(QObject):
                     )
 
             if handed and not cancel.is_set():
-                dbg.log("LLM: [DO], so Clixy does it itself")
-                self._run_guide(transcript, cursor_capture, cancel, dbg, drive=True)
+                dbg.log(f"LLM: it's a job, so Clixy {'does it' if hand_drive else 'shows the way'}")
+                self._run_guide(transcript, cursor_capture, cancel, dbg, drive=hand_drive)
                 return
 
             if cancel.is_set():
@@ -1711,6 +1743,26 @@ class ClickyApp(QObject):
             args=(self._current_app, self._current_title, self._cancel_event, captured),
             kwargs={"question": question}, daemon=True, name="clixy-pipeline")
         self._worker_thread.start()
+
+    def _can_sort(self) -> bool:
+        """A cloud model is answering (a local one is too slow to ask twice)."""
+        from ai import AIClient
+        return isinstance(self._ai, AIClient) and type(self._ai).__name__ != "OllamaClient"
+
+    def _intent(self, text: str, box: dict, ready: threading.Event, dbg) -> None:
+        """"do", "show" or "answer" for what was said, from a one-word text-only question to the
+        quick model (well under a cent; ~0.5 s, while the answer is starting anyway)."""
+        started = time.monotonic()
+        try:
+            with self._ai.ask_stream(images=[], transcript=text, history=[], system_prompt=_INTENT_PROMPT,
+                                     max_tokens=3) as stream:
+                word = "".join(stream.text_deltas()).strip().lower()
+            box["intent"] = next((w for w in ("do", "show", "answer") if word.startswith(w)), "")
+        except Exception as exc:
+            word, box["intent"] = f"failed: {type(exc).__name__}", ""
+        finally:
+            ready.set()
+        dbg.log(f"INTENT: {box.get('intent') or word!r} in {round((time.monotonic() - started) * 1000)} ms")
 
     def _guiding(self) -> bool:
         """A guide is running and hasn't been told to stop."""

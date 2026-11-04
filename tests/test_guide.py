@@ -727,3 +727,44 @@ def test_links_open_in_the_browser_they_use():
 ])
 def test_play_and_open_the_latest_are_jobs(said):
     assert guide.does_it(said)
+
+
+# --- Following someone who goes their own way ----------------------------------------------------
+
+def _screen(shade):
+    from PIL import Image
+    cap = _capture(scale=1.0)
+    cap.image = Image.new("RGB", (320, 200), (shade, shade, shade))
+    return cap
+
+
+def test_a_click_elsewhere_that_changes_the_page_is_followed_at_once():
+    a = Element("button", "Settings", (10, 10, 60, 40))
+    g, log = _guide(["click settings. [CLICK:#1:settings][STEP:1/2]", "you're there already. [DONE]"],
+                    [("click", 700, 500)], elements=[a])
+    g.capture = lambda: _screen(20)                  # the page moved on under their click
+    g.run("open settings", _screen(230))
+    assert len(log["prompts"]) == 2, "it looked again straight away, not after a 40 s nudge"
+    assert "they went their own way" in log["prompts"][1]
+
+
+def test_a_click_elsewhere_that_changes_nothing_keeps_the_step():
+    a = Element("button", "Settings", (10, 10, 60, 40))
+    g, log = _guide(["click settings. [CLICK:#1:settings][STEP:1/2]", "that's it. [DONE]"],
+                    [("click", 700, 500), ("click", 30, 20)], elements=[a])
+    g.capture = lambda: _screen(230)                 # same screen as when it was shown
+    g.run("open settings", _screen(230))
+    assert "they went their own way" not in log["prompts"][1]
+    assert 'clicked "Settings"' in log["prompts"][1]
+
+
+@pytest.mark.parametrize("said, does", [
+    ("Hey Clixy, can you go onto Chrome and then go onto WhatsApp and message Wasif and say, what's the plan?", True),
+    ("You were tasked to go to WhatsApp and go tell Wasif what the plan is for today", True),
+    ("Go onto Chrome, open up the WhatsApp Web and locate Vasif's Chat", True),
+    ("Go on to spaceship.com where I bought the domain and tell me exactly what domains I own", True),
+    ("message wasif saying i'll be late", True),
+    ("how do I open settings and change the wallpaper", False),
+])
+def test_his_whatsapp_and_spaceship_jobs_are_done(said, does):
+    assert guide.does_it(said) is does

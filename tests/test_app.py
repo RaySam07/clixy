@@ -496,6 +496,44 @@ class TestClickyApp:
         assert not app._tts.speak_sentence.called
         fake_stream.final_result.assert_not_called()
 
+    @pytest.mark.parametrize("verdict, ran", [("do", [True]), ("show", [False]), ("answer", [])])
+    def test_the_do_show_or_answer_verdict_comes_before_any_word(self, mocker, verdict, ran):
+        """The quick model's one-word verdict: a job goes to the hands before a word of an
+        answer is spoken; a how-to is shown; anything else is answered as before."""
+        import queue as _queue
+        import threading
+        from PIL import Image
+        app = self._make_app(mocker)
+        fake_cap = mocker.MagicMock()
+        fake_cap.image = Image.new("RGB", (1280, 800))
+        fake_cap.label = "screen 1 of 1"
+        fake_cap.scale_x = 1.0; fake_cap.scale_y = 1.0
+        fake_cap.monitor = {"left": 0, "top": 0, "width": 1920, "height": 1080}
+        fake_cap.target_width = 1280; fake_cap.target_height = 800
+        fake_cap.is_cursor_screen = True
+        app._press_captures = [fake_cap]
+        app._press_memory = ""
+        app._press_cursor_pos = (100, 100)
+        app._stt.stop_recording.return_value = "could you sort out tonight's dinner booking"
+        fake_stream = mocker.MagicMock()
+        fake_stream.text_deltas.return_value = iter(["i can't book ", "that for you. ", "[POINT:none]"])
+        fake_stream.final_result.return_value = mocker.MagicMock(spoken_text="i can't book that for you.",
+                                                                 coordinate=None, element_label=None,
+                                                                 screen_number=None)
+        app._ai.ask_stream.return_value.__enter__ = mocker.MagicMock(return_value=fake_stream)
+        app._ai.ask_stream.return_value.__exit__ = mocker.MagicMock(return_value=False)
+        app._can_sort = lambda: True
+        app._intent = lambda text, box, ready, dbg: (box.update(intent=verdict), ready.set())
+        drives = []
+        mocker.patch.object(app, "_run_guide",
+                            side_effect=lambda goal, cap, cancel, dbg, drive=False: drives.append(drive))
+        capture_queue: _queue.Queue = _queue.Queue(maxsize=1)
+        capture_queue.put(([fake_cap], "", "test: reusing press-time captures"))
+        app._pipeline_worker("TEST.EXE", "TestWindow", threading.Event(), capture_queue)
+        assert drives == ran
+        spoken = [c.args[0] for c in app._tts.speak_sentence.call_args_list]
+        assert (spoken == []) is bool(ran), "a job is never answered in words"
+
     def test_a_label_written_before_the_box_is_never_spoken(self, mocker):
         """A local model may write the label first; its '?' must not flush the
         JSON to the voice before the coordinates arrive."""

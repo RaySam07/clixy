@@ -135,6 +135,11 @@ _DO_TASK = re.compile(
     r"\bask (?!me\b|you\b|yourself\b|him\b|her\b|them\b)\w[\w.-]* (?:what|when|where|who|why|how|if|whether|to|for|"
     r"about)\b|"
     r"(?:can|could|will|would) you\b[^.?!]{0,80}\bfor me\b|"
+    r"\b(?:open(?: up)?|go (?:on ?to|onto|to|into|over to)|launch|pull up|head (?:over )?to|get on|hop on)\s+"
+    r"(?:\S+\s+){0,7}?and (?:then )?(?:go|open|message|text|tell|send|reply|call|check|look|see|read|locate|find|"
+    r"get|grab|pull|download|buy|play|watch|show)\b|"
+    r"\b(?:message|text|dm|whatsapp|email|reply to) (?!me\b)[A-Za-z][\w'-]+ (?:and )?(?:say|saying|tell|asking|that|on|"
+    r"about|to)\b|"
     rf"\b(?:open(?: up)?|go (?:on ?to|onto|to|into)|launch|pull up|head to)\s+(?:\S+\s+){{0,4}}?and (?:then )?"
     rf"(?:{_SEARCH}|ask|type|write|play|find|book|fill|check|prepare|set ?up|create|make|organi[sz]e|start|add|"
     r"turn|change|clear)\b|"
@@ -154,7 +159,9 @@ def wants_drive(text: str) -> bool:
     t = " ".join((text or "").split())
     if _HANDS_OFF.match(t) or _ASKING.match(t):
         return False
-    return bool(_DRIVE.search(t) or _DO_TASK.search(t))
+    if _DRIVE.search(t):
+        return True
+    return bool(_DO_TASK.search(t)) and not _POINT_ONLY.search(t)
 
 
 # Asking to be shown the way, not for it to be done: "how do I...", "where's...", "help me...".
@@ -958,6 +965,7 @@ class Guide:
                         chained = self._chain(step.then, ids, wins, capture)
                 else:
                     self.watch.drain()
+                    self._shown = capture
                     self.show(marks, capture.monitor)
                     self._approved.clear()
                     name = ids[step.target].name if step.target in ids else ""
@@ -972,6 +980,13 @@ class Guide:
                         self._log(f"GUIDE: drive: did it on your yes ({'ok' if ok else 'failed'})")
                     self._asking = False
                 self._log(f"GUIDE: step {n} {outcome}")
+                if outcome == "moved":   # they went their own way and the screen moved on: follow them
+                    self.clear()
+                    n -= 1
+                    fix = ("they went their own way (clicked something else) and the screen has changed. work "
+                           "from the screen as it is now: if what they did gets them there, carry on from here.")
+                    capture, found = self._look(capture)
+                    continue
                 if outcome == "heard":   # you said something about this step: look again with it in mind
                     said = "; ".join(self._heard)
                     self._heard.clear()
@@ -1411,6 +1426,25 @@ class Guide:
         self.sleep(0.35)            # let the page catch up before the next look
         return ok
 
+    def _screen_moved(self) -> bool:
+        """The screen looks different from when this step was shown (the page changed under
+        a click of theirs), judged on small grey thumbnails so a moving pointer doesn't count."""
+        shown = getattr(self, "_shown", None)
+        before = getattr(shown, "image", None)
+        if before is None:
+            return False
+        try:
+            fresh = self.capture()
+            after = getattr(fresh, "image", None)
+            if after is None:
+                return False
+            import numpy as np
+            a = np.asarray(before.convert("L").resize((96, 54)), dtype=np.float32)
+            b = np.asarray(after.convert("L").resize((96, 54)), dtype=np.float32)
+            return float(np.mean(np.abs(a - b))) > 6.0
+        except Exception:
+            return False
+
     def _await_input(self, limit: float) -> None:
         end = self.clock() + limit
         while self.clock() < end and not self._halted():
@@ -1512,6 +1546,7 @@ class Guide:
         nudged = False
         typed = 0
         acted = False   # you've clicked or pressed something since this step showed
+        clicked_off = False   # ...a click somewhere other than the step's own target
         next_look = start + 0.3
         while True:
             if self._halted():
@@ -1528,6 +1563,8 @@ class Guide:
                 if kind == "click" and target is not None and _inside(event[1], event[2], target):
                     if step.action != "type":
                         return "done"
+                elif kind == "click":
+                    clicked_off = True
                 elif kind == "combo":
                     keys = event[1]
                     if want and want <= keys:
@@ -1544,6 +1581,8 @@ class Guide:
                 check_at = None
                 if self.foreground() != window:
                     return "done"
+                if clicked_off and self._screen_moved():
+                    return "moved"   # a click elsewhere changed the page: they're ahead, or on another way
                 if step.action == "type" and typed >= max(1, len(step.text) // 2):
                     return "done"
             if now >= next_look:

@@ -130,3 +130,11 @@ Clixy is Rayan Sameer's Windows AI buddy (PyQt6). This folder is the local dev c
   Every step after the first answers without thinking (`app._quick_ai`). Links open in the
   browser he uses (`guide.usual_browser`, not Edge when another is open). Whisper retries
   without the hints when it "hears" them (`stt._echoes`).
+- 4 Nov 2026 (13:00), "not even able to go to WhatsApp or change tabs": the guide was fine
+  (WhatsApp Web, tab switch, search and open a chat in 27 s); his jobs never reached it.
+  Haiku ignored the [DO] rule ("i can't type the message to wasif for you"). Now a one-word
+  do/show/answer verdict from the quick model runs alongside every answer (`app._intent`,
+  text only, `_INTENT_PROMPT`); the first spoken word waits for it (<=1.5 s), a "do" goes
+  to the hands, a sketch waits for it too. "How do I..." always shows, even naming a job.
+  And when he clicks something else and the page changes, the guide follows him within
+  ~0.5 s (`Guide._screen_moved`, outcome "moved") instead of waiting 40 s on step one.
