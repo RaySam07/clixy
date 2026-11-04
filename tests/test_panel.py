@@ -590,3 +590,41 @@ def test_a_note_card_opened_again_is_not_kept_twice(qapp, monkeypatch):
     finally:
         card.clear()
         card.close()
+
+
+def test_home_is_colourful_tiles_with_real_counts(panel, notes):
+    panel.notes_folder = notes
+    panel.open_on()
+    _settle(panel)
+    home = panel.home
+    assert home.all_notes.line == "3 drawn so far", "the real count (none of these is 3D)"
+    assert len(home.all_notes.pictures) == 3, "real thumbnails fanned on the tile"
+    panel.grab()
+
+
+def test_the_do_it_for_me_tile_asks_what_to_do_and_hands_it_over(panel, monkeypatch):
+    asked = []
+    panel.asked.connect(asked.append)
+    monkeypatch.setattr(panel, "_activate", lambda: None)
+    panel.open_on()
+    panel.home.do_it.click()
+    assert panel.home.ask.edit.placeholderText() == "What should I do for you?"
+    panel.home.ask.edit.setText("turn on dark mode")
+    panel.home.ask.edit.returnPressed.emit()
+    from PyQt6.QtTest import QTest
+    QTest.qWait(200)
+    assert asked == ["turn on dark mode for me"]
+
+
+def test_the_arrows_in_the_notes_corner_flip_through_them(panel, notes):
+    from PyQt6.QtCore import QEvent, QPointF, Qt
+    from PyQt6.QtGui import QMouseEvent
+    panel.notes_folder = notes
+    panel.open_on()
+    _settle(panel)
+    stack = panel.home.stack
+    prev, _mid, nxt = stack._nav()
+    at = QPointF(nxt.center())
+    stack.mousePressEvent(QMouseEvent(QEvent.Type.MouseButtonPress, at, at, Qt.MouseButton.LeftButton,
+                                      Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier))
+    assert stack.index == 1

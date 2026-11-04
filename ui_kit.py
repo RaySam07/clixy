@@ -705,6 +705,15 @@ def icon_path(kind: str, rect: QRectF) -> tuple[QPainterPath, QPainterPath]:
         path.addRoundedRect(QRectF(pt(3.5, 4.5), pt(20.5, 16)), 2 * s, 2 * s)
         line((9, 20), (15, 20))
         line((12, 16), (12, 20))
+    elif kind == "cursor":                    # a pointer, mid-click
+        arrow = QPainterPath(pt(6, 4))
+        for x, y in ((6, 19), (10, 15.2), (12.8, 21), (15.4, 19.8), (12.6, 14), (18, 14)):
+            arrow.lineTo(pt(x, y))
+        arrow.closeSubpath()
+        path.addPath(arrow)
+        line((3.2, 3.2), (1.6, 1.6))
+        line((10, 2.6), (10.4, 0.8))
+        line((2.6, 10), (0.8, 10.4))
     elif kind == "close":
         line((6.5, 6.5), (17.5, 17.5))
         line((17.5, 6.5), (6.5, 17.5))
