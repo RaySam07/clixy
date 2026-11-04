@@ -30,8 +30,19 @@ Clixy is Rayan Sameer's Windows AI buddy (PyQt6). This folder is the local dev c
 
 ## What's next
 - Done 4 Nov 2026: the black notch with a buddy-coloured light (`island.py`), the panel
-  (`panel.py`, `panel_settings.py`), real 3D on the note card (`scene3d.NoteModel`), and
-  smarter guide mode (below). Not yet tried by Rayan with a real click: the panel opening.
+  (`panel.py`, `panel_settings.py`), smarter guide mode (below). Not yet tried by Rayan with
+  a real click: the panel opening.
+- Real 3D (night of 4 Nov 2026, after Rayan called the first 3D heart "balls and tubes"):
+  `model3d.py` turns parts written as JSON (blended ellipsoids, tubes, lathes, extrusions,
+  gears, cuts, shells, mirrors, repeats) into smooth meshes (signed distance fields, surface
+  nets, ambient occlusion), cached in ~/.clixy/cache/3d; `render3d.py` draws them on the GPU
+  (moderngl, offscreen OpenGL 3.3): physically based materials, soft shadows, labels on
+  leader lines, drag to turn, scroll to zoom. Hand-built showpiece models live in
+  `models3d/` (heart, engine, cells...) and Sonnet uses them by name; anything else it
+  sculpts from parts. 3D maths (vectors, surfaces) is real 3D too. `scene3d.NoteModel` is
+  only the fallback (no OpenGL, or old linked-part notes). The language is
+  `docs/3d-models.md`; check any model by eye with `tools\dev\render_note.py`. His bar:
+  premium 3D-app quality, never toy shapes.
 - Next: "Do it for me" (Clixy acting in apps; see the end of `docs/plans/guide-mode.md`),
   the task-doing brain (ask Rayan which connectors first), a VoiceStudio voice option.
 - Guide mode (`guide.py`, `docs/plans/guide-mode.md`): speaks each step as soon as its
@@ -43,11 +54,13 @@ Clixy is Rayan Sameer's Windows AI buddy (PyQt6). This folder is the local dev c
   on start and once a day; Listening / Thinking with the light moving; a hint on hover;
   click opens the panel (Home, Working while guiding, Settings). Left and right edges are
   still in Settings. `dashboard.py` is greeting, time, date and weather only.
+- Listening: faster-whisper "auto" = small.en on the GPU (0.09 s; base.en misheard "draw me"
+  as "don't be"), base.en on the CPU.
 - Brain: answers on Claude Haiku 5.5 (thinking off, about twice as fast to the first word as
   Sonnet; Rayan chose this 4 Nov 2026); guide steps and
   sketch notes on Sonnet 5.5 with low-effort adaptive thinking (`ai.thinking_variant`).
   `apps.py` opens apps, sites and ms-settings pages ([OPEN:...]).
 - Sketch notes (`sketch.py`): any learning question gets a hand-drawn note card (graphs,
-  solid lit 3D models (scene3d.NoteModel, wireframe fallback), steps, cycle, compare, timeline, mind map, key points) with follow-up
+  real 3D models (render3d, above), steps, cycle, compare, timeline, mind map, key points) with follow-up
   buttons and Clear; notes are kept in ~/.clixy/notes. Formulas go through a whitelist
   evaluator in floating point; keep it that way.
