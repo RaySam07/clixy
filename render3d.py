@@ -122,6 +122,11 @@ void main() {
   }
   vec3 base = lin(v_col);
   float rough = u_rough, metal = u_metal, coat = u_coat, sss = u_sss;
+  if (sss > 0.3 && u_bump > 0.0) {   // living things are never one flat colour: soft blotches, a little gloss variation
+    float m = fbm(v_obj * u_bumpscale * 0.18 + 3.1);
+    base *= 0.86 + 0.28 * m;
+    rough = clamp(rough + 0.12 * (fbm(v_obj * u_bumpscale * 0.33 + 7.7) - 0.5), 0.05, 1.0);
+  }
   if (v_cut > 0.5) { rough = max(rough, 0.6); metal = 0.0; coat *= 0.3; base *= 0.95; }
   if (u_dim > 0.5) { float l = dot(base, vec3(0.3, 0.59, 0.11)); base = mix(vec3(l), base, 0.25) * 0.75 + 0.12; }
   float ao = v_ao;
