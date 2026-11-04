@@ -229,3 +229,9 @@ def watch(front, every_s: float = 20.0) -> None:
                 pass
 
     threading.Thread(target=loop, daemon=True, name="clixy-laptop").start()
+
+
+def forget() -> None:
+    """Forget history: start an empty map, not seeded again (the file goes with the memory folder)."""
+    global _map
+    _map = LaptopMap(_path())

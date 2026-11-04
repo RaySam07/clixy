@@ -828,3 +828,18 @@ def test_enter_in_the_whatsapp_search_box_or_an_ai_chat_goes_through():
 ])
 def test_which_windows_send_to_people(title, exe, people):
     assert guide.talks_to_people(_front(title, exe)) is people
+
+
+def test_the_guide_knows_his_people_and_learns_their_chats():
+    acted, learned = [], []
+    chat = Element("listitem", "Waseeeeeeef 12:30 PM k", (40, 300, 400, 360))
+    g, log = _guide(["opening his chat. [CLICK:#1:wasif][STEP:1/2]", "his chat's open. [DONE]"],
+                    [], elements=[chat], hands=_hands(acted),
+                    people='the people he means: Wasif (flatmate; whatsapp chat "Waseeeeeeef")',
+                    learn_chat=lambda goal, name: learned.append((goal, name)))
+    g.windows = lambda: _front("(95) WhatsApp - Google Chrome")
+    g.set_drive(True)
+    g.run("find wasif on whatsapp", _capture(scale=1.0))
+    assert 'his people (find a chat by its whatsapp name' in log["prompts"][0]
+    assert 'whatsapp chat "Waseeeeeeef"' in log["prompts"][0]
+    assert learned == [("find wasif on whatsapp", "Waseeeeeeef 12:30 PM k")]

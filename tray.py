@@ -214,6 +214,11 @@ def forget_history() -> list[Path]:
                 shutil.rmtree(child) if child.is_dir() else child.unlink()
             except OSError:
                 failed.append(child)
+    for module in ("people", "laptop"):      # what's held in memory goes too, or it's saved back
+        try:
+            __import__(module).forget()
+        except Exception:
+            pass
     index = Path(INDEX_DB_PATH)
     for path in (index, index.with_name(index.name + "-wal"), index.with_name(index.name + "-shm")):
         try:

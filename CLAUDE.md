@@ -149,3 +149,13 @@ Clixy is Rayan Sameer's Windows AI buddy (PyQt6). This folder is the local dev c
   Outlook/Gmail/mail, Teams, Slack, Discord, Telegram...), Enter (or a typed new line) is
   "risky": doing it for him, Clixy types the message and asks "want me to send it?". Enter
   in a field named search/find there, or in an AI chat (Hark, ChatGPT), still goes through.
+- 4 Nov 2026, "my own personal bot who knows my go-to people for emails/WhatsApp":
+  `people.py` keeps his people (name he uses, spellings Whisper writes, WhatsApp chat name,
+  email, who they are, how he writes to them), matched by sound (`people.alike`: "Vasif" =
+  "Wasif" = "Waseeeeeeef"). It learns a chat's name when the guide clicks a chat in a
+  messaging window for a name he said (`Guide.learn_chat`), keeps what he tells it
+  ([PERSON:name|who:...|email:...] in an answer, `people.keep_told`), and the guide and
+  answers get the people he means (`people.summary(goal)`). people.json in the memory
+  folder, only while history is on; Forget history clears it (and the laptop map) in
+  memory too. Seeding from his Gmail sent mail waits on the Gmail connector's sign-in
+  (it refused with "requires authentication" though listed as connected).

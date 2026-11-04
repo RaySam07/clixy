@@ -33,6 +33,7 @@ from PyQt6.QtWidgets import QApplication
 import apps
 import guide
 import laptop
+import people
 import kb
 import model3d
 import sketch
@@ -1261,7 +1262,8 @@ class ClickyApp(QObject):
                 return
 
             user_text = transcript
-            about = "; ".join(part for part in (sysinfo.profile(), laptop.summary()) if part)
+            about = "; ".join(part for part in (sysinfo.profile(), laptop.summary(), people.summary(transcript))
+                              if part)
             if about:
                 user_text = f"[this computer, use silently: {about}]\n{user_text}"
             if memory_context:
@@ -1386,7 +1388,8 @@ class ClickyApp(QObject):
             if type(self._ai).__name__ != "OllamaClient":  # its box prompt is matched by identity
                 # It can open apps, websites and Settings pages, and knows this PC's apps.
                 _ask_kwargs["system_prompt"] = (
-                    _ask_kwargs.get("system_prompt", _CLICKY_SYSTEM_PROMPT) + apps.prompt_block())
+                    _ask_kwargs.get("system_prompt", _CLICKY_SYSTEM_PROMPT) + apps.prompt_block()
+                    + "\n" + people.PROMPT)
 
             stage = "AI"
             handed, hand_drive = False, True
@@ -1449,7 +1452,7 @@ class ClickyApp(QObject):
             # in result.spoken_text because ai.py's parser only strips [POINT].
             # Parse + strip them here so TTS never reads coordinates aloud, and
             # map their screenshot coords to physical for the overlay.
-            spoken_text = result.spoken_text
+            spoken_text = people.keep_told(result.spoken_text)   # "wasif's my flatmate": kept
             # "Open Spotify", "go to youtube", "take me to display settings": open it.
             spoken_text, to_open = apps.parse_open(spoken_text)
             spoken_text = _STRAY_POINT_RE.sub("", spoken_text).strip()
@@ -1825,6 +1828,8 @@ class ClickyApp(QObject):
             foreground=snap.foreground,
             about=sysinfo.profile(),
             habits=laptop.summary(),
+            people=people.summary(goal),
+            learn_chat=people.learn_chat if keep else None,
             refine=snap.refine,
             open=apps.open_target,
             speak=self._tts.speak_sentence,

@@ -112,3 +112,11 @@ def _laptop_map_in_tmp(tmp_path, monkeypatch):
     import laptop
     monkeypatch.setattr(laptop, "_path", lambda: tmp_path / "memory" / "laptop.json")
     monkeypatch.setattr(laptop, "_map", None)
+
+
+@pytest.fixture(autouse=True)
+def _people_in_tmp(tmp_path, monkeypatch):
+    """His people live in a temp folder in tests, never the real memory folder, and start empty."""
+    import people
+    monkeypatch.setattr(people, "_path", lambda: tmp_path / "memory" / "people.json")
+    monkeypatch.setattr(people, "_book", None)

@@ -723,6 +723,8 @@ class Guide:
     watch: object = field(default_factory=InputWatch)
     about: str = ""
     habits: str = ""                 # laptop.summary(): his apps, his sites and where they live, his browser
+    people: str = ""                 # people.summary(goal): who he means, their chat names, how he writes to them
+    learn_chat: object = None        # people.learn_chat(goal, element name): a chat opened for a name he said
     refine: object = None            # snap.refine, for BOX steps
     open: object = None              # apps.open_target, for OPEN steps
     speak: object = None             # tts.speak_sentence: the voice, sentence by sentence as it streams
@@ -1034,6 +1036,12 @@ class Guide:
                 done.append(self._describe(step, ids))
                 route.append(self._move(step, ids))
                 self._done_labels.append(step_label(step, ids, past=True))
+                if step.action == "click" and step.target in ids and self.learn_chat is not None \
+                        and talks_to_people(wins):
+                    try:                   # said "Wasif", opened "Waseeeeeeef": that's his chat
+                        self.learn_chat(self._goal, ids[step.target].name or "")
+                    except Exception:
+                        pass
                 for move in chained:
                     done.append(self._describe(move, ids))
                     self._done_labels.append(step_label(move, ids, past=True))
@@ -1316,6 +1324,9 @@ class Guide:
             parts.append(f"this computer: {self.about}")
         if self.habits:
             parts.append(f"his laptop, learned from using it with him: {self.habits}")
+        if self.people:
+            parts.append("his people (find a chat by its whatsapp name, an email by the address, and write the way "
+                         f"he writes to them): {self.people}")
         if wins:
             parts.append("open windows, front first:\n" + "\n".join(window_lines(wins)))
         parts.append("done so far: " + ("; ".join(f"{i}. {d}" for i, d in enumerate(done, 1)) if done else "nothing yet"))
