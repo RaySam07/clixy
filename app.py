@@ -875,6 +875,11 @@ class ClickyApp(QObject):
         # what you say may be "next" or "I can't find it".
         if not guiding:
             self.sig_clear_annotations.emit()
+        # Busy (talking, thinking or on a job) when the keys went down: a tap with
+        # nothing said then ends the whole session (_stop_everything).
+        speaking = getattr(self._tts, "_current_thread", None)
+        self._busy_at_press = bool(guiding or (speaking is not None and speaking.is_alive())
+                                   or (self._worker_thread is not None and self._worker_thread.is_alive()))
         self._tts.stop()
         # Prevent TTS speaker decay from leaking into this PTT's transcript
         # (acoustic feedback loop). 200ms window tuned to real laptop-mic decay.
@@ -1172,13 +1177,16 @@ class ClickyApp(QObject):
                     dbg.log("STT: used the pass made while you talked (nothing new after it)")
             dbg.log(f"STT: final transcript ({len(transcript)} chars): {transcript!r}")
             _log(f"Transcript: {transcript!r}")
+            busy = getattr(self, "_busy_at_press", False)
+            self._busy_at_press = False
+            if guide.wants_stop(transcript) or (not transcript.strip() and busy and question is None):
+                self._stop_everything(dbg, transcript)
+                return
             running = guide.current() if self._guiding() else None
             if running is not None:
                 what = guide.during_guide(transcript)
-                if what == "keep":
-                    dbg.log("GUIDE: keys held with nothing said: still guiding")
-                    progress = running.progress()      # the notch shows this step again
-                    self.sig_guide_step.emit(progress["now"], progress["n"], progress["total"], None)
+                if what == "stop":              # the keys tapped with nothing said, or "stop"
+                    self._stop_everything(dbg, transcript)
                     return
                 if what == "next":
                     if running.awaiting_yes:
@@ -1767,6 +1775,26 @@ class ClickyApp(QObject):
         finally:
             ready.set()
         dbg.log(f"INTENT: {box.get('intent') or word!r} in {round((time.monotonic() - started) * 1000)} ms")
+
+    def _stop_everything(self, dbg, said: str) -> None:
+        """Ctrl + Win tapped while Clixy was talking, thinking or on a job, or "stop" said:
+        the voice, the answer, the job and any waiting after it all end, and nothing is said."""
+        dbg.log(f"STOP: {said!r}: voice, answer and any job stopped")
+        _log("Stopped.")
+        self._tts.stop()
+        try:
+            import jobs
+            jobs.clear_queue()
+        except Exception:
+            pass
+        running = guide.current()
+        if running is not None:
+            running.stop()
+        if self._guide_cancel is not None:
+            self._guide_cancel.set()
+        self.sig_clear_annotations.emit()
+        self.sig_hide_spinner.emit()
+        self.sig_island_note.emit("Stopped.")
 
     def _guiding(self) -> bool:
         """A guide is running and hasn't been told to stop."""

@@ -105,6 +105,18 @@ def wants_guide(question: str) -> bool:
     return bool(_DEMANDS.search(q)) or (wants_drive(q) and len(q.split()) >= 3)
 
 
+# "Stop", "can you stop it now?", "never mind": everything stops, and nothing more is said.
+_STOP = re.compile(r"^\W*(?:(?:hey|ok(?:ay)?|oh|no)\W+)?(?:clixy\W+)?(?:(?:can|could|would|will) you\s+|please\s+|just\s+)?"
+                   r"(?:stop(?:\s+(?:it|that|this|talking|now|everything|the guide|guiding|there))?|be quiet|quiet|"
+                   r"shut up|shush|hush|cancel(?:\s+(?:it|that|this))?|never ?mind|that'?s enough|enough|end it|leave it)"
+                   r"(?:\W+(?:now|please|thanks|thank you|clixy|for now|it))*\W*$", re.IGNORECASE)
+
+
+def wants_stop(text: str) -> bool:
+    """Asked to stop: Clixy's voice, the answer and any job end at once."""
+    return bool(_STOP.match(" ".join((text or "").split())))
+
+
 _CARRY_ON = re.compile(r"^\W*(?:next|next step|done|i did it|did it|i've done it|ok(?:ay)?|got it|yes|yep|yeah|"
                        r"continue|go on|carry on|what now|now what|what next|what's next|and now|then what|"
                        r"keep going|alright|right)\W*$", re.IGNORECASE)
@@ -179,15 +191,15 @@ def does_it(text: str) -> bool:
 
 
 def during_guide(text: str) -> str:
-    """What something said while a guide runs means: "keep" (nothing said, the
-    keys were held by accident), "next" (carry on: look again now), "remark"
+    """What something said while a guide runs means: "stop" (the keys tapped with
+    nothing said, or "stop": the guide ends), "next" (carry on: look again now), "remark"
     (about this step: "I can't find it", "nothing happened"; look again with
     that in mind), "drive" ("do it for me": Clixy does the steps), "hands off"
     ("let me do it": back to pointing), or "new" (a different question: the
     guide ends)."""
     t = " ".join((text or "").split())
-    if not t:
-        return "keep"
+    if not t or wants_stop(t):
+        return "stop"
     if _HANDS_OFF.match(t):
         return "hands off"
     if (_DRIVE.search(t) and not _HANDS_OFF.match(t) and not _GUIDE_WORDS.search(t)

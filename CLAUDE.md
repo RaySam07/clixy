@@ -69,8 +69,8 @@ Clixy is Rayan Sameer's Windows AI buddy (PyQt6). This folder is the local dev c
 - 4 Nov 2026, "clixy must do a complete answer, from step 1 to whatever, carefully,
   intelligently, quick": any do-something request ("I want to access my YouTube Studio",
   "help me add a panel", "where's the export button") goes to guide mode, not only
-  "how do I"; the guide stays till done (an empty press or "next" carries on, "I can't
-  find it" makes it look again, only a new question ends it: `guide.during_guide`,
+  "how do I"; the guide stays till done ("next" carries on, "I can't find it" makes it
+  look again, a new question ends it; since 5 Nov an empty tap of the keys or "stop" ends it: `guide.during_guide`,
   `Guide.hear`, `app._guiding`); it plans the route ([PLAN:...]) and shows a planned click
   at once when that button is on screen (no model call), and checks each step worked.
 - 4 Nov 2026, "a smooth humane interaction": a learning question that names a hand-built
@@ -159,3 +159,9 @@ Clixy is Rayan Sameer's Windows AI buddy (PyQt6). This folder is the local dev c
   folder, only while history is on; Forget history clears it (and the laptop map) in
   memory too. Seeding from his Gmail sent mail waits on the Gmail connector's sign-in
   (it refused with "requires authentication" though listed as connected).
+- 5 Nov 2026, "if I tap Ctrl+Win during speech it should shut that session": a tap with
+  nothing said while Clixy was talking, thinking or on a job (`app._busy_at_press`), or
+  "stop" / "can you stop it now?" / "never mind" (`guide.wants_stop`), ends everything at
+  once (`app._stop_everything`: voice, answer, the job and the line after it) and says
+  nothing; the notch shows "Stopped." A tap when nothing was happening is the old
+  no-speech hint. (He'd quit Clixy from the tray after "can you stop it now?" got an answer.)

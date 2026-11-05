@@ -534,6 +534,48 @@ class TestClickyApp:
         spoken = [c.args[0] for c in app._tts.speak_sentence.call_args_list]
         assert (spoken == []) is bool(ran), "a job is never answered in words"
 
+    def _stop_run(self, mocker, said, busy, guiding=True):
+        import queue as _queue
+        import threading
+        from PIL import Image
+        import guide as guide_mod
+        app = self._make_app(mocker)
+        fake_cap = mocker.MagicMock()
+        fake_cap.image = Image.new("RGB", (1280, 800))
+        fake_cap.label = "screen 1 of 1"
+        fake_cap.scale_x = 1.0; fake_cap.scale_y = 1.0
+        fake_cap.monitor = {"left": 0, "top": 0, "width": 1920, "height": 1080}
+        fake_cap.target_width = 1280; fake_cap.target_height = 800
+        fake_cap.is_cursor_screen = True
+        app._press_captures = [fake_cap]
+        app._press_memory = ""
+        app._press_cursor_pos = (100, 100)
+        app._stt.stop_recording.return_value = said
+        app._busy_at_press = busy
+        job = mocker.MagicMock()
+        mocker.patch.object(guide_mod, "current", return_value=job if guiding else None)
+        app._guide_cancel = threading.Event() if guiding else None
+        notes = []
+        app.sig_island_note.connect(notes.append)
+        capture_queue: _queue.Queue = _queue.Queue(maxsize=1)
+        capture_queue.put(([fake_cap], "", "test: reusing press-time captures"))
+        app._pipeline_worker("TEST.EXE", "TestWindow", threading.Event(), capture_queue)
+        return app, job, notes
+
+    @pytest.mark.parametrize("said, busy", [("", True), ("Can you stop it now?", False), ("never mind", True)])
+    def test_a_tap_while_busy_or_stop_ends_everything_quietly(self, mocker, said, busy):
+        app, job, notes = self._stop_run(mocker, said, busy)
+        job.stop.assert_called_once()
+        assert app._guide_cancel.is_set()
+        app._ai.ask_stream.assert_not_called()
+        assert not app._tts.speak_sentence.called, "nothing more is said"
+        assert notes == ["Stopped."]
+
+    def test_a_tap_when_nothing_was_happening_is_not_a_stop(self, mocker):
+        app, job, notes = self._stop_run(mocker, "", False, guiding=False)
+        job.stop.assert_not_called()
+        assert notes and notes != ["Stopped."], "still the no-speech hint"
+
     def test_a_label_written_before_the_box_is_never_spoken(self, mocker):
         """A local model may write the label first; its '?' must not flush the
         JSON to the voice before the coordinates arrive."""

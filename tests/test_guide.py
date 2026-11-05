@@ -325,7 +325,7 @@ def test_learning_questions_still_dont(q):
 
 
 @pytest.mark.parametrize("said, meaning", [
-    ("", "keep"), ("next", "next"), ("done!", "next"), ("okay", "next"), ("what now", "next"),
+    ("", "stop"), ("stop", "stop"), ("next", "next"), ("done!", "next"), ("okay", "next"), ("what now", "next"),
     ("I can't find it", "remark"), ("i cant find it", "remark"), ("nothing happened", "remark"),
     ("it says access denied", "remark"), ("what is a fourier transform", "new"),
     ("how do I turn on dark mode", "new"),
