@@ -13,7 +13,7 @@
 
 #define AppName "Clixy"
 #ifndef AppVersion
-  #define AppVersion "1.0.1"
+  #define AppVersion "1.1.0"
 #endif
 #define AppPublisher "Rayan Sameer"
 #define AppURL "https://github.com/RaySam07/clixy"

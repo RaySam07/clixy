@@ -3,11 +3,17 @@
 Clixy is Rayan Sameer's Windows AI buddy (PyQt6). This folder is the local dev copy.
 
 ## Rules
-- **Never push to GitHub** and never add a remote. This copy stays on this laptop. The public
-  repo (RaySam07/clixy) only gets changes when Rayan explicitly asks to ship one.
+- **GitHub: deployed continuously** (Rayan, 5 Nov 2026: "continuously deploy onto GitHub, I
+  want to see my contributions"). Every commit on `local-dev` is pushed to the public repo's
+  `main` (github.com/RaySam07/clixy) by the local `.git/hooks/post-commit`, by URL: never add
+  a remote, never force-push, never rewrite pushed history. The hook skips a push whose new
+  commits hold anything key-like and logs to `.git/clixy-push.log`. Commits are authored
+  with his GitHub email (the repo's `user.email`) so they count on his profile; don't change it.
 - **Never handle API keys.** They live in Windows Credential Manager (keyring). Don't read,
-  print or paste them.
-- `main` is the live app (v1.0.1). Build on `local-dev`. Commit locally as you go.
+  print or paste them. Never commit his data (notes, memory, people, laptop map, debug logs).
+- `main` is the live app (v1.1.0). Build on `local-dev`. Commit as you go. A release is a
+  GitHub release `v<VERSION>` (version.py and installer/clixy.iss); publishing it builds
+  Clixy-Setup.exe and the portable zip (.github/workflows/release.yml).
 
 ## Running it
 - `tools\dev\Start-Clixy-Dev.bat` runs Clixy from this folder in dev mode. It restarts by
